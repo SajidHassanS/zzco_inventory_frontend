@@ -1,0 +1,64 @@
+.product-summary {
+  width: 100%;
+  .info-summary {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  
+}
+.info-box {
+  border-radius: 10px; // Add border radius
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); // Add shadow
+  display: flex; // Use flexbox for layout
+  justify-content: space-between; // Space between name and value
+  padding: 10px; // Add some padding
+  // ... other existing styles ...
+}
+
+.card {
+  border: 1px solid #ccc;
+  // border-bottom: 3px solid var(--light-blue);
+  padding: 5px;
+  background-color: #f5f6fa;
+}
+
+.card1 {
+  background-color: #b624ff;
+}
+.card2 {
+  background-color: #32963d;
+}
+.card3 {
+  background-color: #c41849;
+}
+.card4 {
+  background-color: #03a5fc;
+}
+.info-summary {
+  display: flex; // Use flexbox for layout
+  flex-wrap: wrap; // Allow wrapping for responsiveness
+  gap: 5px; // Set a consistent gap between cards
+  // justify-content: space-between; // Space between cards
+}
+
+.info-box {
+  border-radius: 10px; // Add border radius
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); // Add shadow
+  flex: 1 1 calc(33% - 20px); // Responsive width, adjust as needed
+  min-width: 250px; // Minimum width for smaller screens
+  padding: 10px; // Add some padding
+  // ... other existing styles ...
+}
+
+// Media query for smaller screens
+@media (max-width: 768px) {
+  .info-box {
+    flex: 1 1 calc(50% - 20px); // Two cards per row on smaller screens
+  }
+}
+
+@media (max-width: 480px) {
+  .info-box {
+    flex: 1 1 100%; // One card per row on very small screens
+  }
+}
