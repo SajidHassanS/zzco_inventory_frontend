@@ -5,7 +5,7 @@ import axios from 'axios';
 const TransactionHistoryModal = ({ open, onClose, entry, entryType }) => {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
-  const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:5000/";
+  const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://13.60.223.186:5000/";
 
   useEffect(() => {
     const fetchTransactions = async () => {
