@@ -5,7 +5,10 @@ const API_URL = `${BACKEND_URL}api/suppliers/`;
 
 // Get all customers
 const getCustomers = async () => {
-  const response = await axios.get(API_URL);
+  const response = await axios.get(API_URL, {
+    withCredentials: true, // ✅ Sends session/auth cookies with the request
+  });
+
   return response.data;
 };
 

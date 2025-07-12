@@ -1,113 +1,118 @@
+// src/components/Customer.jsx
+
 import React, { useEffect, useState } from "react";
 import BankList from "./BankList";
 import { Box, Button, Grid, Modal, TextField, Typography } from "@mui/material";
-import axios from 'axios';
-import Select from 'react-select'; // Importing react-select for a searchable dropdown
+import Select from "react-select";
+import axios from "axios";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+
+// Read backend URL and build API base (including your API Gateway stage)
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const API_BASE = `${BACKEND_URL}inventory/api`;
+
+// Create an axios instance that always sends your JWT and cookies
+const api = axios.create({
+  baseURL: API_BASE,
+  withCredentials: true,
+});
+const token = localStorage.getItem("jwt");
+if (token) {
+  api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+}
+
 const Customer = () => {
-  const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-// const BACKEND_URL = "https://zzcoinventorymanagmentbackend.up.railway.app";
-const API_URL = `${BACKEND_URL}api/Cash/`;
+  // Modal open/close state
   const [openModal, setOpenModal] = useState(false);
   const [openCashModal, setOpenCashModal] = useState(false);
-  const [bankName, setBankName] = useState(""); // State for bank name
-  const [amount, setAmount] = useState(""); // State for amount
-  
 
-  const handleOpenCashModal = () => setOpenCashModal(true);
-  const handleCloseCashModal = () => setOpenCashModal(false);
+  // Form fields
+  const [bankName, setBankName] = useState("");
+  const [amount, setAmount] = useState("");
 
-  const handleOpenModal = () => setOpenModal(true);
-  const handleCloseModal = () => setOpenModal(false);
-
-  const handleInputChange = (selectedOption) => {
-    setBankName(selectedOption ? selectedOption.value : "");
-  };
-
-  const handleAmountChange = (event) => {
-    setAmount(event.target.value);
-  };
-
+  // Data lists
   const [banks, setBanks] = useState([]);
-  const [cash, setCash] = useState([]);
   const [cashData, setCashData] = useState({
     totalBalance: 0,
     latestEntry: null,
-    allEntries: []
+    allEntries: [],
   });
 
+  // Handlers to open/close modals
+  const handleOpenModal = () => setOpenModal(true);
+  const handleCloseModal = () => setOpenModal(false);
+  const handleOpenCashModal = () => setOpenCashModal(true);
+  const handleCloseCashModal = () => setOpenCashModal(false);
 
+  // Form change handlers
+  const handleInputChange = (option) => setBankName(option?.value || "");
+  const handleAmountChange = (e) => setAmount(e.target.value);
+
+  // Fetch all banks
   const fetchBanks = async () => {
     try {
-      const response = await axios.get(`${BACKEND_URL}api/banks/all`);
-      setBanks(response.data);
-      console.log("Fetched banks:", response.data);
-    } catch (error) {
-      console.error("There was an error fetching the bank data!", error);
-    }
-  };
-  const fetchCash = async () => {
-    try {
-      const response = await axios.get(`${API_URL}/all`);
-      // setCash(response);
-      setCashData(response.data);
-      console.log("Fetched cash:", response.data);
-    } catch (error) {
-      console.error("There was an error fetching the Cash data!", error);
+      const res = await api.get("/banks/all");
+      setBanks(res.data);
+    } catch (err) {
+      console.error("Error fetching banks:", err);
+      toast.error("Failed to load banks");
     }
   };
 
+  // Fetch cash summary
+  const fetchCash = async () => {
+    try {
+      const res = await api.get("/cash/all");
+      setCashData(res.data);
+    } catch (err) {
+      console.error("Error fetching cash:", err);
+      toast.error("Failed to load cash data");
+    }
+  };
+
+  // Initial load
   useEffect(() => {
     fetchBanks();
     fetchCash();
   }, []);
 
-  const refreshBanks = () => {
+  // Refresh both datasets
+  const refreshAll = () => {
     fetchBanks();
     fetchCash();
   };
 
+  // Submit new bank
   const handleSubmit = async () => {
     try {
-      const res = await axios.post(`${BACKEND_URL}api/banks/add`, {
-        bankName,
-        amount,
-      }, { withCredentials: true });
-
-      if (res) {
-        toast.success("Bank Added Successfully!");
-      }
+      await api.post("/banks/add", { bankName, amount });
+      toast.success("Bank added successfully!");
       handleCloseModal();
-      refreshBanks(); // Refresh the bank list after adding a new bank
-    } catch (error) {
-      console.error("There was an error adding the bank!", error);
-      toast.error("Failed to add bank. Please try again.");
+      refreshAll();
+    } catch (err) {
+      console.error("Error adding bank:", err);
+      toast.error("Failed to add bank");
     }
   };
-// handle submit cash
+
+  // Submit new cash entry
   const handleCashSubmit = async () => {
     try {
-      console.log(amount);
-      const res = await axios.post(`${BACKEND_URL}api/cash/add`, {
+      const res = await api.post("/cash/add", {
         balance: amount,
-        type:"add",
-      }, { withCredentials: true });
-      
-      console.log(amount);
-      if (res) {
-        toast.success(res.data.message);
-      }
-      fetchCash();
+        type: "add",
+      });
+      toast.success(res.data.message || "Cash added successfully!");
       handleCloseCashModal();
-    
-    } catch (error) {
-      console.error("There was an error adding Cash!", error);
-      toast.error("Failed to add Cash. Please try again.");
+      fetchCash();
+    } catch (err) {
+      console.error("Error adding cash:", err);
+      toast.error("Failed to add cash");
     }
   };
 
-  // Comprehensive list of banks in Pakistan
+  // Dropdown options for banks
   const bankOptions = [
     { value: "Al Baraka Bank (Pakistan) Limited", label: "Al Baraka Bank (Pakistan) Limited" },
     { value: "Allied Bank Limited (ABL)", label: "Allied Bank Limited (ABL)" },
@@ -149,108 +154,92 @@ const API_URL = `${BACKEND_URL}api/Cash/`;
     { value: "HabibMetro (Sirat Islamic Banking)", label: "HabibMetro (Sirat Islamic Banking)" },
     { value: "Silk Bank (Emaan Islamic Banking)", label: "Silk Bank (Emaan Islamic Banking)" },
     { value: "Bank Of Khyber (Islamic Window)", label: "Bank Of Khyber (Islamic Window)" },
-    // Add more banks if necessary
   ];
 
   return (
-    <Box sx={{ m: 0, p: 3, width: "100%" }}>
-      <Grid container justifyContent={"flex-end"} gap={2}>
-        <Button 
-          variant="outlined" 
-          sx={{ borderColor: "dark", color: "dark" }}
-          onClick={handleOpenModal}
-        >
-          Add Bank
-        </Button>
-        <Button 
-          variant="outlined" 
-          sx={{ borderColor: "dark", color: "dark" }}
-          onClick={handleOpenCashModal}
-        >
-          Add Cash
-        </Button>
+    <Box sx={{ p: 3 }}>
+      <Grid container justifyContent="flex-end" spacing={2}>
+        <Grid item>
+          <Button variant="outlined" onClick={handleOpenModal}>
+            Add Bank
+          </Button>
+        </Grid>
+        <Grid item>
+          <Button variant="outlined" onClick={handleOpenCashModal}>
+            Add Cash
+          </Button>
+        </Grid>
       </Grid>
-      <BankList banks={banks} refreshBanks={refreshBanks} cash={cashData} />
-      
-      <Modal
-        open={openModal}
-        onClose={handleCloseModal}
-        aria-labelledby="modal-title"
-        aria-describedby="modal-description"
-      >
-        <Box sx={{ 
-          width: 400, 
-          p: 3, 
-          mx: "auto", 
-          mt: 5, 
-          bgcolor: "background.paper", 
-          boxShadow: 24, 
-          borderRadius: 1 
-        }}>
-          <Typography variant="h6" id="modal-title">Add Bank</Typography>
+
+      <BankList banks={banks} refreshBanks={refreshAll} cash={cashData} />
+
+      {/* Add Bank Modal */}
+      <Modal open={openModal} onClose={handleCloseModal}>
+        <Box
+          sx={{
+            width: 400,
+            p: 3,
+            m: "auto",
+            mt: 8,
+            bgcolor: "background.paper",
+            boxShadow: 24,
+            borderRadius: 1,
+          }}
+        >
+          <Typography variant="h6" gutterBottom>
+            Add Bank
+          </Typography>
           <Select
             options={bankOptions}
             onChange={handleInputChange}
-            placeholder="Select a bank..."
+            placeholder="Select a bank…"
             isSearchable
-            name="bankName"
-            styles={{ marginBottom: "16px" }}
           />
           <TextField
             fullWidth
             margin="normal"
             label="Amount"
-            name="amount"
             type="number"
             value={amount}
             onChange={handleAmountChange}
           />
-          <Button 
-            variant="contained" 
-            color="primary" 
-            onClick={handleSubmit}
-          >
+          <Button variant="contained" onClick={handleSubmit}>
             Submit
           </Button>
         </Box>
       </Modal>
-      
-      <Modal
-        open={openCashModal}
-        onClose={handleCloseCashModal}
-        aria-labelledby="modal-title"
-        aria-describedby="modal-description"
-      >
-        <Box sx={{ 
-          width: 400, 
-          p: 3, 
-          mx: "auto", 
-          mt: 5, 
-          bgcolor: "background.paper", 
-          boxShadow: 24, 
-          borderRadius: 1 
-        }}>
-     
+
+      {/* Add Cash Modal */}
+      <Modal open={openCashModal} onClose={handleCloseCashModal}>
+        <Box
+          sx={{
+            width: 400,
+            p: 3,
+            m: "auto",
+            mt: 8,
+            bgcolor: "background.paper",
+            boxShadow: 24,
+            borderRadius: 1,
+          }}
+        >
+          <Typography variant="h6" gutterBottom>
+            Add Cash
+          </Typography>
           <TextField
             fullWidth
             margin="normal"
             label="Amount"
-            name="amount"
             type="number"
             value={amount}
             onChange={handleAmountChange}
           />
-          <Button 
-            variant="contained" 
-            color="primary" 
-            onClick={handleCashSubmit}
-          >
+          <Button variant="contained" onClick={handleCashSubmit}>
             Submit
           </Button>
         </Box>
       </Modal>
-    
-      <ToastContainer />
+
+      <ToastContainer position="bottom-right" />
     </Box>
   );
 };

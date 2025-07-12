@@ -29,9 +29,9 @@ const outOfStockIcon = <BsCartX size={40} color="#fff" />;
 const bankIcon = <BsBank2 size={40} color="#fff" />;
 const cashIcon = <FaMoneyBillWave size={40} color="#fff" />;
 
-const API_URL  = process.env.REACT_APP_BACKEND_URL;
-  
-  const BACKEND_URL = `${API_URL}api/customers`;
+const API_URL = process.env.REACT_APP_BACKEND_URL;
+
+const BACKEND_URL = `${API_URL}api/customers`;
 // Format Amount
 export const formatNumbers = (x) => {
   return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
@@ -65,22 +65,23 @@ const ProductSummary = ({ products, bank, cashs }) => {
     return Array.isArray(bank) ? bank.reduce((total, bank) => total + (bank.balance || 0), 0) : 0;
   }, [bank]);
 
-
   const fetchCashAndBanks = async () => {
     try {
       const [cashResponse, bankResponse] = await Promise.all([
-        axios.get(`${BACKEND_URL}` ),
-        axios.get(`${BACKEND_URL}`),
+        axios.get(`${BACKEND_URL}`, { withCredentials: true }), // ✅ Send cookies
+        axios.get(`${BACKEND_URL}`, { withCredentials: true })  // ✅ Send cookies
       ]);
 
       setCash(Array.isArray(cashResponse.data) ? cashResponse.data : []);
       setBanks(Array.isArray(bankResponse.data) ? bankResponse.data : []);
+
       console.log("Fetched cash:", cashResponse.data);
       console.log("Fetched banks:", bankResponse.data);
     } catch (error) {
       console.error("There was an error fetching the cash or bank data!", error);
     }
   };
+
 
 
   useEffect(() => {
@@ -103,26 +104,26 @@ const ProductSummary = ({ products, bank, cashs }) => {
     <div className="product-summary">
       <h3 className="--mt">Inventory Stats</h3>
       <div className="info-summary">
-      <InfoBox
-    icon={productIcon}
-    title={"Total Products"}
-    count={products.length}
-    bgColor="card1"
-  />
-  <div onClick={openModal}>
-    <InfoBox
-      icon={outOfStockIcon}
-      title={"Out of Stock"}
-      count={outOfStock}
-      bgColor="card3"
-    />
-  </div>
-  <InfoBox
-    icon={categoryIcon}
-    title={"All Categories"}
-    count={category.length}
-    bgColor="card4"
-  />
+        <InfoBox
+          icon={productIcon}
+          title={"Total Products"}
+          count={products.length}
+          bgColor="card1"
+        />
+        <div onClick={openModal}>
+          <InfoBox
+            icon={outOfStockIcon}
+            title={"Out of Stock"}
+            count={outOfStock}
+            bgColor="card3"
+          />
+        </div>
+        <InfoBox
+          icon={categoryIcon}
+          title={"All Categories"}
+          count={category.length}
+          bgColor="card4"
+        />
         {!isManager && (
           <>
             <InfoBox

@@ -6,9 +6,9 @@ import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
 
-const API_URL  = process.env.REACT_APP_BACKEND_URL;
-  
-  const BACKEND_URL = `${API_URL}api/`;
+const API_URL = process.env.REACT_APP_BACKEND_URL;
+
+const BACKEND_URL = `${API_URL}api/`;
 
 
 const Customer = () => {
@@ -36,12 +36,18 @@ const Customer = () => {
   // Fetch list of managers
   const fetchCustomers = async () => {
     try {
-      const response = await axios.get(`${BACKEND_URL}manager/allmanager`)
+      const response = await axios.get(
+        `${BACKEND_URL}manager/allmanager`,
+        {
+          withCredentials: true, // ✅ Important for sending session cookies
+        }
+      );
       setCustomers(response.data);
     } catch (error) {
       console.error("Error fetching manager data:", error);
     }
   };
+
 
   useEffect(() => {
     fetchCustomers();
@@ -53,7 +59,7 @@ const Customer = () => {
       case "username":
         setUsername(value);
         break;
-     
+
       case "phone":
         setPhone(value);
         break;
@@ -76,10 +82,10 @@ const Customer = () => {
 
     try {
       const res = await axios.post(`${BACKEND_URL}manager/managerRegister`
-         ,
+        ,
         {
           username,
-         
+
           phone,
           privileges: privilegesObject, // Send object instead of array
         },
@@ -100,8 +106,8 @@ const Customer = () => {
   return (
     <Box sx={{ m: 0, p: 3, width: "100%" }}>
       <Grid container justifyContent={"flex-end"}>
-        <Button 
-          variant="outlined" 
+        <Button
+          variant="outlined"
           sx={{ borderColor: "dark", color: "dark" }}
           onClick={handleOpenModal}
         >
@@ -119,7 +125,7 @@ const Customer = () => {
       >
         <Box sx={{ width: 400, p: 3, mx: "auto", mt: 5, bgcolor: "background.paper", boxShadow: 24, borderRadius: 1 }}>
           <Typography variant="h6" id="modal-title">Add Manager</Typography>
-          
+
           {/* Form Fields */}
           <TextField
             fullWidth

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import {
- 
+
   Typography,
   Container,
   Card,
@@ -12,7 +12,7 @@ import {
   DialogContent,
   DialogActions,
   TextField,
-  Grid,  
+  Grid,
   MenuItem,
   Select,
   InputLabel,
@@ -20,7 +20,7 @@ import {
 } from "@mui/material";
 import { useDispatch, useSelector } from "react-redux";
 import { getProducts } from "../../redux/features/product/productSlice";
-import { getBanks } from "../../redux/features/Bank/bankSlice"; 
+import { getBanks } from "../../redux/features/Bank/bankSlice";
 import axios from "axios";
 import CustomTable from "../../components/CustomTable/CustomTable"; // Import the CustomTable component
 // import { getProducts } from "../../redux/features/product/productSlice";
@@ -67,7 +67,7 @@ const ViewExpenses = () => {
   // const BACKEND_URL = "https://zzcoinventorymanagmentbackend.up.railway.app";
   const API_URL = `${BACKEND_URL}api`;
 
- 
+
   const { products } = useSelector((state) => state.product);
 
 
@@ -83,68 +83,71 @@ const ViewExpenses = () => {
   useEffect(() => {
     filterEntriesByDate();
   }, [selectedDate, ledgerEntries]);
-  
+
   const fetchSales = async () => {
     try {
-        const response = await axios.get(`${API_URL}/sales/allsales`, { withCredentials: true });
+      const response = await axios.get(`${API_URL}/sales/allsales`, { withCredentials: true });
 
-        const salesData = response.data.map(sale => ({
-            ...sale,
-            id: sale._id, // Added id for identifier
-            type: 'Sale',
-            amount: sale.totalSaleAmount, // Positive amount for sales (debit)
-            date: new Date(sale.saleDate),
-            description: `Sale of ${sale.stockSold} units of product ${sale.productID ? sale.productID.name : 'Unknown'} to customer ${sale.customerID ? sale.customerID.username : 'Unknown'}`,
-        }));
-        // setSales(salesData); // Store sales data in state
-        // console.log("Sale", salesData);
+      const salesData = response.data.map(sale => ({
+        ...sale,
+        id: sale._id, // Added id for identifier
+        type: 'Sale',
+        amount: sale.totalSaleAmount, // Positive amount for sales (debit)
+        date: new Date(sale.saleDate),
+        description: `Sale of ${sale.stockSold} units of product ${sale.productID ? sale.productID.name : 'Unknown'} to customer ${sale.customerID ? sale.customerID.username : 'Unknown'}`,
+      }));
+      // setSales(salesData); // Store sales data in state
+      // console.log("Sale", salesData);
 
-        updateLedger(salesData);
+      updateLedger(salesData);
     } catch (err) {
-        console.error("Error fetching sales:", err);
+      console.error("Error fetching sales:", err);
     }
-};
-const fetchExpenses = async () => {
-  try {
-    const response = await axios.get(`${API_URL}/expenses/all`);
-    console.log("🔍 API Response (Expenses):", response.data); // ✅ Debugging log
+  };
+  const fetchExpenses = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/expenses/all`, {
+        withCredentials: true, // ✅ Enables cookies for auth/session
+      });
 
-    const expensesData = response.data.map((expense) => ({
-      ...expense,
-      id: expense._id,
-      type: "Expense",
-      amount: -Math.abs(expense.amount), // ✅ Ensure negative amount for expenses
-      date: new Date(expense.createdAt),
-      description: expense.description || expense.expenseName,
-      paymentMethod: expense.paymentMethod || "N/A",
-    }));
+      console.log("🔍 API Response (Expenses):", response.data); // ✅ Debugging log
 
-    console.log("🛠 Final Expense Data:", expensesData); // ✅ Debugging log
-    updateLedger(expensesData);
-  } catch (err) {
-    console.error("❌ Error fetching expenses:", err);
-  }
-};
+      const expensesData = response.data.map((expense) => ({
+        ...expense,
+        id: expense._id,
+        type: "Expense",
+        amount: -Math.abs(expense.amount), // ✅ Ensure negative amount for expenses
+        date: new Date(expense.createdAt),
+        description: expense.description || expense.expenseName,
+        paymentMethod: expense.paymentMethod || "N/A",
+      }));
+
+      console.log("🛠 Final Expense Data:", expensesData); // ✅ Debugging log
+      updateLedger(expensesData);
+    } catch (err) {
+      console.error("❌ Error fetching expenses:", err);
+    }
+  };
 
 
 
-const updateLedger = (newEntries) => {
-  setLedgerEntries((prevEntries) => {
-    const updatedEntries = [...prevEntries];
+  const updateLedger = (newEntries) => {
+    setLedgerEntries((prevEntries) => {
+      const updatedEntries = [...prevEntries];
 
-    newEntries.forEach((newEntry) => {
-      const exists = updatedEntries.some((entry) => entry.id === newEntry.id);
-      if (!exists) {
-        updatedEntries.push({
-          ...newEntry,
-          paymentMethod: newEntry.paymentMethod || "N/A", // ✅ Ensure payment method is set
-        });
-      }
+      newEntries.forEach((newEntry) => {
+        const exists = updatedEntries.some((entry) => entry.id === newEntry.id);
+        if (!exists) {
+          updatedEntries.push({
+            ...newEntry,
+            paymentMethod: newEntry.paymentMethod || "N/A", // ✅ Ensure payment method is set
+          });
+        }
+      });
+
+      return updatedEntries.sort((a, b) => new Date(b.date) - new Date(a.date));
     });
-
-    return updatedEntries.sort((a, b) => new Date(b.date) - new Date(a.date));
-  });
-};
+  };
 
   useEffect(() => {
     if (products.length > 0) {
@@ -175,19 +178,19 @@ const updateLedger = (newEntries) => {
     setExpense((prevExpense) => ({
       ...prevExpense,
       [name]: name === "amount" ? parseFloat(value) || "" : value, // ✅ Remove `trim()`
-  }));
+    }));
 
     if (name === "paymentMethod" && (value === "cash" || value === "credit")) {
-        setExpense((prevExpense) => ({
-            ...prevExpense,
-            expenseDate: new Date().toISOString().split("T")[0],
-            chequeDate: "",
-            bankID: "",
-            image: null,
-        }));
-        setImagePreview("");
+      setExpense((prevExpense) => ({
+        ...prevExpense,
+        expenseDate: new Date().toISOString().split("T")[0],
+        chequeDate: "",
+        bankID: "",
+        image: null,
+      }));
+      setImagePreview("");
     }
-};
+  };
 
 
 
@@ -206,57 +209,57 @@ const updateLedger = (newEntries) => {
     console.log("🚀 Expense Data Before Sending:", expense);
 
     if (!expense.expenseName || !expense.amount || !expense.description) {
-        console.error("⚠️ Missing Fields:", expense);
-        alert("Please fill all required fields.");
-        return;
+      console.error("⚠️ Missing Fields:", expense);
+      alert("Please fill all required fields.");
+      return;
     }
 
     const formData = new FormData();
 
     // ✅ Ensure values are properly set with encoding
-    formData.append("expenseName", expense.expenseName); 
+    formData.append("expenseName", expense.expenseName);
     formData.append("amount", String(expense.amount)); // Convert to string
     formData.append("description", expense.description);
     formData.append("expenseDate", expense.expenseDate);
     formData.append("paymentMethod", expense.paymentMethod);
 
     if (expense.paymentMethod === "cheque" || expense.paymentMethod === "online") {
-        formData.append("bankID", expense.bankID);
+      formData.append("bankID", expense.bankID);
     }
     if (expense.paymentMethod === "cheque") {
-        formData.append("chequeDate", expense.chequeDate);
+      formData.append("chequeDate", expense.chequeDate);
     }
     if (expense.image) {
-        formData.append("image", expense.image);
+      formData.append("image", expense.image);
     }
 
     console.log("🛠️ FormData Before Sending:", [...formData.entries()]); // Debugging log
 
     try {
-        const response = await axios.post(`${API_URL}/expenses/add`, formData, {
-            headers: { "Content-Type": "multipart/form-data" },
-        });
+      const response = await axios.post(`${API_URL}/expenses/add`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
 
-        console.log("✅ API Response:", response.data);
-        alert("Expense Added Successfully");
-        setShowExpenseModal(false);
-        fetchExpenses();
+      console.log("✅ API Response:", response.data);
+      alert("Expense Added Successfully");
+      setShowExpenseModal(false);
+      fetchExpenses();
 
-        // Reset Form
-        setExpense({ 
-            expenseName: "", 
-            amount: "", 
-            description: "", 
-            paymentMethod: "", 
-            bankID: "", 
-            chequeDate: "", 
-            image: null 
-        });
+      // Reset Form
+      setExpense({
+        expenseName: "",
+        amount: "",
+        description: "",
+        paymentMethod: "",
+        bankID: "",
+        chequeDate: "",
+        image: null
+      });
     } catch (error) {
-        console.error("❌ Error Details:", error.response?.data || error.message);
-        alert(error.response?.data?.message || "Failed to add expense. Please try again.");
+      console.error("❌ Error Details:", error.response?.data || error.message);
+      alert(error.response?.data?.message || "Failed to add expense. Please try again.");
     }
-};
+  };
 
 
   const toggleExpenseModal = () => {
@@ -349,7 +352,7 @@ const updateLedger = (newEntries) => {
       headerName: 'Total Amount',
       renderCell: (row) => row.balance.toFixed(2)
     }
-];
+  ];
 
 
 
@@ -401,7 +404,7 @@ const updateLedger = (newEntries) => {
                 rowsPerPage={rowsPerPage}
                 onPageChange={handlePageChange}
                 onRowsPerPageChange={handleRowsPerPageChange}
-                // rowKey={(row) => `${row.date}-${row.description}`} // Pass the unique key
+              // rowKey={(row) => `${row.date}-${row.description}`} // Pass the unique key
 
               />
             </>
@@ -497,7 +500,7 @@ const updateLedger = (newEntries) => {
               )}
             </Grid>
 
-            
+
           </form>
         </DialogContent>
         <DialogActions>

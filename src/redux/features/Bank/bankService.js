@@ -1,47 +1,59 @@
 import axios from "axios";
+
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 // const BACKEND_URL = "https://zzcoinventorymanagmentbackend.up.railway.app";
 
 const API_URL = `${BACKEND_URL}api/banks`;
 
-// Create New Product
+// Create New Bank
 const createBank = async (formData) => {
   const response = await axios.post(`${API_URL}/add`, formData, {
     headers: {
-      "Content-Type": "multipart/form-data", // Set the content type to handle file uploads
+      "Content-Type": "multipart/form-data",
     },
+    withCredentials: true, // ✅ Send auth cookies
   });
-  return response.data; // Return the response data
+  return response.data;
 };
 
-// Get all bank
+// Get All Banks
 const getAllBanks = async () => {
-  const response = await axios.get(`${API_URL}/all`);  
+  const response = await axios.get(`${API_URL}/all`, {
+    withCredentials: true, // ✅ Send auth cookies
+  });
   return response.data;
 };
 
-// Delete a Product
+// Delete a Bank
 const deleteProduct = async (id) => {
-  const response = await axios.delete(API_URL + id);
+  const response = await axios.delete(`${API_URL}${id}`, {
+    withCredentials: true, // ✅ Send auth cookies
+  });
   return response.data;
 };
-// Get a Product
+
+// Get a Single Bank
 const getProduct = async (id) => {
-  const response = await axios.get(API_URL + id);
+  const response = await axios.get(`${API_URL}${id}`, {
+    withCredentials: true, // ✅ Send auth cookies
+  });
   return response.data;
 };
-// Update Product
+
+// Update a Bank
 const updateProduct = async (id, formData) => {
-  const response = await axios.patch(`${API_URL}${id}`, formData);
+  const response = await axios.patch(`${API_URL}${id}`, formData, {
+    withCredentials: true, // ✅ Send auth cookies
+  });
   return response.data;
 };
 
 const bankService = {
   createBank,
   getAllBanks,
-  // getProduct,
-  // deleteProduct,
-  // updateProduct,
+  getProduct,
+  deleteProduct,
+  updateProduct,
 };
 
 export default bankService;

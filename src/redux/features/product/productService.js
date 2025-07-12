@@ -1,56 +1,78 @@
+// src/redux/features/product/productService.js
+
 import axios from "axios";
-// const BACKEND_URL = "https://zzcoinventorymanagmentbackend.up.railway.app";
-// const BACKEND_URL = "https://zzcoinventorymanagmentbackend.up.railway.app";
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API_URL = `${BACKEND_URL}api/products/`;
- 
-// Create New Product
+
+// Build your API base URL (include the /inventory/api stage)
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL; // e.g. https://xyz.execute-api.eu-north-1.amazonaws.com/
+const API_BASE = `${BACKEND_URL}inventory/api`;     // ← include your stage name
+
+// Create a single axios instance for all product calls
+const api = axios.create({
+  baseURL: API_BASE,
+  withCredentials: true,   // send cookies if you’re still using them
+});
+
+// Automatically attach your JWT (which you must save to localStorage on login)
+const token = localStorage.getItem("jwt");
+if (token) {
+  api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+}
+
+// Create New Product (multipart form)
 const createProduct = async (formData) => {
-  const response = await axios.post(API_URL, formData, {
-    headers: {
-      "Content-Type": "multipart/form-data", // Set the content type to handle file uploads
-    },
-  });
-  return response.data; // Return the response data
+  const response = await api.post(
+    "/products",
+    formData,
+    { headers: { "Content-Type": "multipart/form-data" } }
+  );
+  return response.data;
 };
 
 // Get all products
 const getProducts = async () => {
-  const response = await axios.get(API_URL);
+  const response = await api.get("/products");
   return response.data;
 };
 
 // Delete a Product
 const deleteProduct = async (id) => {
-  const response = await axios.delete(API_URL + id);
+  const response = await api.delete(`/products/${id}`);
   return response.data;
 };
-// Get a Product
+
+// Get a single Product
 const getProduct = async (id) => {
-  const response = await axios.get(API_URL + id);
+  const response = await api.get(`/products/${id}`);
   return response.data;
 };
-// Update Product
+
+// Update Product (partial update)
 const updateProduct = async (id, formData) => {
-  const response = await axios.patch(`${API_URL}${id}`, formData);
+  const response = await api.patch(`/products/${id}`, formData);
   return response.data;
 };
-const updateReceivedQuantity = async (id, receivedQuantity,warehouse) => {
-  const response = await axios.patch(`${API_URL}receive/${id}`, { receivedQuantity,warehouse });
+
+// Update Received Quantity
+const updateReceivedQuantity = async (id, receivedQuantity, warehouse) => {
+  const response = await api.patch(
+    `/products/receive/${id}`,
+    { receivedQuantity, warehouse }
+  );
   return response.data;
 };
+
+// Get Product Stock
 const getProductStock = async (id) => {
-  const response = await axios.get(`${API_URL}${id}/stock`);
+  const response = await api.get(`/products/${id}/stock`);
   return response.data;
 };
-const productService = {
+
+export default {
   createProduct,
   getProducts,
   getProduct,
   deleteProduct,
   updateProduct,
   updateReceivedQuantity,
-  getProductStock
+  getProductStock,
 };
-
-export default productService;

@@ -17,7 +17,10 @@ const TransactionHistoryModal = ({ open, onClose, entry, entryType }) => {
           ? `api/banks/${entry._id}/transactions`
           : `api/cash/${entry._id}/transactions`;
 
-        const response = await axios.get(`${BACKEND_URL}${apiPath}`);
+        const response = await axios.get(`${BACKEND_URL}${apiPath}`, {
+          withCredentials: true, // ✅ Important for cross-origin cookie-based auth
+        });
+
         setTransactions(response.data); // Expecting an array
       } catch (error) {
         console.error("Failed to fetch transactions", error.response?.data || error);

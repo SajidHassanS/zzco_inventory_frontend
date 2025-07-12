@@ -1,3 +1,5 @@
+// src/pages/Sales.jsx
+
 import React, { useState, useEffect } from "react";
 import AddSale from "../../components/SaleProduct/AddSale";
 import { useDispatch, useSelector } from "react-redux";
@@ -20,27 +22,37 @@ import {
   TablePagination,
   CircularProgress,
 } from "@mui/material";
-import axios from "axios";
+import axios from "axios"; // ← CHANGED
+
+// ——— NEW: build API base (include your API Gateway stage) ———
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL; // e.g. https://xyz.execute-api...amazonaws.com/
+const API_BASE = `${BACKEND_URL}inventory/api`;         // ← CHANGED
+const api = axios.create({                              // ← CHANGED
+  baseURL: API_BASE,
+  withCredentials: true,
+});
+// ← CHANGED: attach JWT if present
+const token = localStorage.getItem("jwt");
+if (token) {
+  api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+}
 
 function Sales() {
   const [showSaleModal, setShowSaleModal] = useState(false);
   const [sales, setAllSalesData] = useState([]);
   const [customer, setAllCustomer] = useState([]);
-  const [banks, setBanks] = useState([]); // ✅ Added state for banks
+  const [banks, setBanks] = useState([]);
   const [updatePage, setUpdatePage] = useState(true);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [loading, setLoading] = useState(true); // ✅ Added loading state
-  const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-  const API_URL = `${BACKEND_URL}api`;
+  const [loading, setLoading] = useState(true);
 
   useRedirectLoggedOutUser("/login");
   const dispatch = useDispatch();
 
   const isLoggedIn = useSelector(selectIsLoggedIn);
-  const { products, isLoading: isProductsLoading, isError, message } = useSelector(
-    (state) => state.product
-  );
+  const { products, isLoading: isProductsLoading, isError, message } =
+    useSelector((state) => state.product);
 
   useEffect(() => {
     if (isLoggedIn) {
@@ -53,45 +65,43 @@ function Sales() {
 
   useEffect(() => {
     if (isLoggedIn) {
-      setLoading(true); 
-      Promise.all([fetchSalesData(), fetchCustomerData(), fetchBankData()]) // ✅ Fetch banks
-        .then(() => setLoading(false)) 
-        .catch(() => setLoading(false)); 
+      setLoading(true);
+      Promise.all([
+        fetchSalesData(),
+        fetchCustomerData(),
+        fetchBankData(),
+      ])
+        .then(() => setLoading(false))
+        .catch(() => setLoading(false));
     }
   }, [isLoggedIn, updatePage]);
 
-  const fetchCustomerData = () => {
-    return fetch(`${API_URL}/customers/allcustomer`, {
-      credentials: "include",
-    })
-      .then((response) => response.json())
-      .then((data) => {
-        setAllCustomer(data);
-      })
-      .catch((err) => console.log(err));
+  // ← CHANGED: use `api` instance instead of raw axios + API_URL
+  const fetchCustomerData = async () => {
+    try {
+      const response = await api.get("/customers/allcustomer"); // ← CHANGED
+      setAllCustomer(response.data);
+    } catch (error) {
+      console.error("Error fetching customers:", error);
+    }
   };
 
-  const fetchSalesData = () => {
-    return fetch(`${API_URL}/sales/allsales`, {
-      credentials: "include",
-    })
-      .then((response) => response.json())
-      .then((data) => {
-        setAllSalesData(data);
-      })
-      .catch((err) => console.log(err));
+  const fetchSalesData = async () => {
+    try {
+      const response = await api.get("/sales/allsales"); // ← CHANGED
+      setAllSalesData(response.data);
+    } catch (error) {
+      console.error("Error fetching sales:", error);
+    }
   };
 
-  // ✅ Fetch bank data
-  const fetchBankData = () => {
-    return fetch(`${API_URL}/banks/all`, {
-      credentials: "include",
-    })
-      .then((response) => response.json())
-      .then((data) => {
-        setBanks(data);  // ✅ Store fetched banks in state
-      })
-      .catch((err) => console.log(err));
+  const fetchBankData = async () => {
+    try {
+      const response = await api.get("/banks/all"); // ← CHANGED
+      setBanks(response.data);
+    } catch (error) {
+      console.error("Error fetching banks:", error);
+    }
   };
 
   const addSaleModalSetting = () => {
@@ -102,10 +112,9 @@ function Sales() {
     setUpdatePage(!updatePage);
   };
 
-  // ✅ New function to record the sale transaction in the customer's ledger
   const recordSaleTransaction = async (saleData) => {
     try {
-      await axios.post(`${API_URL}/customers/sale-transaction`, saleData, { withCredentials: true });
+      await api.post("/customers/sale-transaction", saleData); // ← CHANGED
       console.log("Sale transaction recorded in customer's ledger");
     } catch (error) {
       console.error("Error recording sale transaction:", error);
@@ -116,14 +125,14 @@ function Sales() {
     const saleTransactionData = {
       customerId: saleData.customerID,
       amount: saleData.totalSaleAmount,
-      paymentMethod: saleData.paymentMethod || 'cash',
+      paymentMethod: saleData.paymentMethod || "cash",
       saleDate: saleData.saleDate || new Date(),
     };
-  
+
     recordSaleTransaction(saleTransactionData);
     handlePageUpdate();
   };
-  
+
   const handleChangePage = (event, newPage) => {
     setPage(newPage);
   };
@@ -154,7 +163,7 @@ function Sales() {
               addSaleModalSetting={addSaleModalSetting}
               products={products}
               customer={customer}
-              banks={banks}  // ✅ Pass banks to AddSale
+              banks={banks}
               fetchCustomerData={fetchCustomerData}
               handlePageUpdate={handlePageUpdate}
               onSaleSubmit={handleSaleSubmit}
@@ -177,14 +186,28 @@ function Sales() {
                 </TableHead>
                 <TableBody>
                   {sales
-                    .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                    .slice(
+                      page * rowsPerPage,
+                      page * rowsPerPage + rowsPerPage
+                    )
                     .map((element) => (
                       <TableRow key={element._id}>
-                        <TableCell>{element.productID?.name || "Unknown Product"}</TableCell>
-                        <TableCell>{element.customerID?.username || "Unknown Customer"}</TableCell>
+                        <TableCell>
+                          {element.productID?.name || "Unknown Product"}
+                        </TableCell>
+                        <TableCell>
+                          {element.customerID?.username ||
+                            "Unknown Customer"}
+                        </TableCell>
                         <TableCell>{element.stockSold}</TableCell>
-                        <TableCell>{new Date(element.saleDate).toLocaleDateString()}</TableCell>
-                        <TableCell>{element.totalSaleAmount}</TableCell>
+                        <TableCell>
+                          {new Date(
+                            element.saleDate
+                          ).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell>
+                          {element.totalSaleAmount}
+                        </TableCell>
                       </TableRow>
                     ))}
                 </TableBody>
