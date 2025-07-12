@@ -4,7 +4,7 @@ import axios from "axios";
 
 // Build your API base URL (include the /inventory/api stage)
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL; // e.g. https://xyz.execute-api.eu-north-1.amazonaws.com/
-const API_BASE = `${BACKEND_URL}inventory/api`;     // ← include your stage name
+const API_BASE = `${BACKEND_URL}/api`;     // ← include your stage name
 
 // Create a single axios instance for all product calls
 const api = axios.create({
