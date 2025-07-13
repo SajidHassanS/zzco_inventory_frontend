@@ -24,7 +24,13 @@ const DeleteCustomerModal = ({ open, onClose, customer, onSuccess }) => {
     }
 
     try {
-      const response = await axios.delete(`${BACKEND_URL}api/customers/delete-customer/${customer._id}`);
+     const response = await axios.delete(
+  `${BACKEND_URL}api/customers/delete-customer/${customer._id}`,
+  {
+    withCredentials: true, // ✅ Must include this to send session cookies
+  }
+);
+
       toast.success(response.data.message || "Customer deleted successfully");
       onSuccess(); // Callback to refresh the customer list
       onClose(); // Close the modal

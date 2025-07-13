@@ -31,9 +31,10 @@ const getProducts = async () => {
   return response.data;
 };
 
-// Delete a Product
 const deleteProduct = async id => {
-  const response = await api.delete(`/products/${id}`);
+  const response = await api.delete(`/products/${id}`, {
+    withCredentials: true // ✅ crucial for sending cookies/session
+  });
   return response.data;
 };
 

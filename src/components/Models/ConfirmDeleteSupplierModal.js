@@ -11,7 +11,10 @@ const ConfirmDeleteSupplierModal = ({ open, onClose, supplier, onSuccess }) => {
     if (!supplier || !supplier._id) return; // Ensure valid supplier is selected
     console.log(`Deleting supplier:`, supplier._id); // Log to confirm
     try {
-      const response = await axios.delete(`${API_URL}/delete/${supplier._id}`);
+      const response = await axios.delete(`${API_URL}/delete/${supplier._id}`, {
+  withCredentials: true, // ✅ this enables cookie/session authentication
+});
+
       console.log(response.data);
       onSuccess();
     } catch (error) {
