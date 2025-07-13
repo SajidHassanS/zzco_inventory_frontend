@@ -1,20 +1,20 @@
 import React, { Fragment, useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import axios from 'axios';
+import axios from "axios";
 import Loader from "../../components/loader/Loader";
 import { getProducts } from "../../redux/features/product/productSlice"; // Import getProducts
 
 import ProductForm from "../../components/product/productForm/ProductForm";
 import {
   createProduct,
-  selectIsLoading,
+  selectIsLoading
 } from "../../redux/features/product/productSlice";
 import Modal from "@mui/material/Modal"; // Import the Modal component
 import Supplier from "../Supplier/Supplier"; // Import the Supplier component
 import { getWarehouses } from "../../redux/features/WareHouse/warehouseSlice";
 import { getBanks } from "../../redux/features/Bank/bankSlice";
-import { getSuppliers } from '../../redux/features/supplier/supplierSlice';
+import { getSuppliers } from "../../redux/features/supplier/supplierSlice";
 import { toast, ToastContainer } from "react-toastify";
 import {
   Grid,
@@ -37,26 +37,26 @@ import {
   TableHead, // Add this import
   TableBody, // Add this import
   TableRow, // Add this import
-  TableCell,
+  TableCell
 } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import AddSupplierModal from "../../components/Models/addSupplierModel";
 import AddWareHouseModal from "../../components/Models/AddWareHouse";
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-// const BACKEND_URL = "https://zzcoinventorymanagmentbackend.up.railway.app";
+
 const API_URL = `${BACKEND_URL}api/suppliers`;
 
 const StyledPaper = styled(Paper)(({ theme }) => ({
   padding: theme.spacing(3),
   margin: theme.spacing(3, 0),
-  backgroundColor: theme.palette.background.default,
+  backgroundColor: theme.palette.background.default
 }));
 
 const StyledCard = styled(Card)(({ theme }) => ({
-  marginBottom: theme.spacing(3),
+  marginBottom: theme.spacing(3)
 }));
 
-const steps = ['Product Details', 'Shipping & Payment', 'Review'];
+const steps = ["Product Details", "Shipping & Payment", "Review"];
 
 const initialState = {
   name: "",
@@ -64,19 +64,22 @@ const initialState = {
   quantity: "",
   price: "",
   description: "",
-  status: false,
+  status: false
 };
 
 const AddProduct = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const products = useSelector((state) => state.product.products); // Fetch existing products
+  const products = useSelector(state => state.product.products); // Fetch existing products
   const [showStepper, setShowStepper] = useState(false); // State to control stepper visibility
   const [openModal, setOpenModal] = useState(false); // State to control the modal visibility
 
-  useEffect(() => {
-    dispatch(getProducts()); // Fetch products on component mount
-  }, [dispatch]);
+  useEffect(
+    () => {
+      dispatch(getProducts()); // Fetch products on component mount
+    },
+    [dispatch]
+  );
   const handleAddProductClick = () => {
     setOpenModal(true); // Show the modal when button is clicked
     setActiveStep(0); // Reset to the first step
@@ -99,42 +102,41 @@ const AddProduct = () => {
   const handleOpenModalwarehouse = () => setOpenWareHosueModal(true);
   const handleCloseModalwarehouse = () => setOpenWareHosueModal(false);
   const isLoading = useSelector(selectIsLoading);
-  const banks = useSelector((state) => state.bank.banks);
-  const warehouses = useSelector((state) => state.warehouse.warehouses);
-  const suppliers = useSelector((state) => state.supplier.suppliers);
+  const banks = useSelector(state => state.bank.banks);
+  const warehouses = useSelector(state => state.warehouse.warehouses);
+  const suppliers = useSelector(state => state.supplier.suppliers);
   const [openImageModal, setOpenImageModal] = useState(false);
-const [selectedImage, setSelectedImage] = useState(null);
+  const [selectedImage, setSelectedImage] = useState(null);
 
-
-  useEffect(() => {
-    dispatch(getBanks());
-    dispatch(getWarehouses());
-    dispatch(getSuppliers());
-  }, [dispatch]);
+  useEffect(
+    () => {
+      dispatch(getBanks());
+      dispatch(getWarehouses());
+      dispatch(getSuppliers());
+    },
+    [dispatch]
+  );
   const handleOpenSupplierModal = () => setOpenSupplierModal(true); // Function to open the supplier modal
   const handleCloseSupplierModal = () => setOpenSupplierModal(false); // Function to close the supplier modal
 
-  const handleInputChange = (e) => {
+  const handleInputChange = e => {
     const { name, value } = e.target;
     setProduct({ ...product, [name]: value });
   };
 
-  const handleImageClick = (imageUrl) => {
+  const handleImageClick = imageUrl => {
     setSelectedImage(imageUrl);
     setOpenImageModal(true);
   };
-  
 
-  const handleSupplierChange = (event) => {
+  const handleSupplierChange = event => {
     const selectedSupplier = suppliers.find(s => s._id === event.target.value);
     if (selectedSupplier) {
       setSupplier({ id: selectedSupplier._id, name: selectedSupplier.name });
     }
   };
 
-  
-
-  const handleImageChange = (e) => {
+  const handleImageChange = e => {
     const file = e.target.files[0];
     if (file) {
       setProductImage(file);
@@ -143,11 +145,11 @@ const [selectedImage, setSelectedImage] = useState(null);
   };
 
   const handleNext = () => {
-    setActiveStep((prevActiveStep) => prevActiveStep + 1);
+    setActiveStep(prevActiveStep => prevActiveStep + 1);
   };
 
   const handleBack = () => {
-    setActiveStep((prevActiveStep) => prevActiveStep - 1);
+    setActiveStep(prevActiveStep => prevActiveStep - 1);
   };
 
   const recordSupplierTransaction = async () => {
@@ -158,11 +160,14 @@ const [selectedImage, setSelectedImage] = useState(null);
       amount: product.price * product.quantity,
       paymentMethod: paymentMethod,
       chequeDate: paymentMethod === "cheque" ? chequeDate : null,
-      type: "debit",
+      type: "debit"
     };
 
     try {
-      await axios.post(`${API_URL}/${supplier.id}/transaction`, transactionData);
+      await axios.post(
+        `${API_URL}/${supplier.id}/transaction`,
+        transactionData
+      );
       toast.success("Transaction recorded in supplier history.");
     } catch (error) {
       console.error("Failed to record transaction:", error);
@@ -201,7 +206,7 @@ const [selectedImage, setSelectedImage] = useState(null);
     handleNext();
   };
 
-  const getStepContent = (step) => {
+  const getStepContent = step => {
     switch (step) {
       case 0:
         return (
@@ -251,7 +256,7 @@ const [selectedImage, setSelectedImage] = useState(null);
                     fullWidth
                     multiline
                     rows={4}
-                     name="description"
+                    name="description"
                     type="string"
                     label="Description"
                     value={product.description}
@@ -260,28 +265,30 @@ const [selectedImage, setSelectedImage] = useState(null);
                 </Grid>
 
                 <Grid item xs={12}>
-  <input
-    accept="image/*"
-    style={{ display: 'none' }}
-    id="raised-button-file"
-    type="file"
-    onChange={handleImageChange}
-  />
-  <label htmlFor="raised-button-file">
-    <Button variant="contained" component="span">
-      Upload Product Image
-    </Button>
-  </label>
-  
-  {imagePreview && (
-    <img 
-      src={imagePreview} 
-      alt="Preview" 
-      style={{ marginTop: 10, maxWidth: '100%', maxHeight: 200 }} 
-    />
-  )}
-</Grid>
+                  <input
+                    accept="image/*"
+                    style={{ display: "none" }}
+                    id="raised-button-file"
+                    type="file"
+                    onChange={handleImageChange}
+                  />
+                  <label htmlFor="raised-button-file">
+                    <Button variant="contained" component="span">
+                      Upload Product Image
+                    </Button>
+                  </label>
 
+                  {imagePreview &&
+                    <img
+                      src={imagePreview}
+                      alt="Preview"
+                      style={{
+                        marginTop: 10,
+                        maxWidth: "100%",
+                        maxHeight: 200
+                      }}
+                    />}
+                </Grid>
               </Grid>
             </CardContent>
           </StyledCard>
@@ -296,39 +303,42 @@ const [selectedImage, setSelectedImage] = useState(null);
                     <InputLabel>Shipping Type</InputLabel>
                     <Select
                       value={shippingType}
-                      onChange={(e) => setShippingType(e.target.value)}
+                      onChange={e => setShippingType(e.target.value)}
                     >
                       <MenuItem value="local">Local</MenuItem>
                       <MenuItem value="international">International</MenuItem>
                     </Select>
                   </FormControl>
                 </Grid>
-                {shippingType === "local" && (
+                {shippingType === "local" &&
                   <Grid item xs={12} sm={6}>
                     <FormControl fullWidth>
                       <InputLabel>Warehouse</InputLabel>
                       <Select
                         value={selectedWarehouse}
-                        onChange={(e) => setSelectedWarehouse(e.target.value)}
+                        onChange={e => setSelectedWarehouse(e.target.value)}
                       >
-                        {warehouses.map((warehouse) => (
+                        {warehouses.map(warehouse =>
                           <MenuItem key={warehouse._id} value={warehouse._id}>
                             {warehouse.name}
                           </MenuItem>
-                        ))}
-                        <MenuItem value="addNew" onClick={handleOpenModalwarehouse} style={{ backgroundColor: 'silver' }}>
+                        )}
+                        <MenuItem
+                          value="addNew"
+                          onClick={handleOpenModalwarehouse}
+                          style={{ backgroundColor: "silver" }}
+                        >
                           Add New WareHouse
                         </MenuItem>
                       </Select>
                     </FormControl>
-                  </Grid>
-                )}
+                  </Grid>}
                 <Grid item xs={12} sm={6}>
                   <FormControl fullWidth>
                     <InputLabel>Payment Method</InputLabel>
                     <Select
                       value={paymentMethod}
-                      onChange={(e) => setPaymentMethod(e.target.value)}
+                      onChange={e => setPaymentMethod(e.target.value)}
                     >
                       <MenuItem value="cash">Cash</MenuItem>
                       <MenuItem value="cheque">Cheque</MenuItem>
@@ -336,25 +346,24 @@ const [selectedImage, setSelectedImage] = useState(null);
                     </Select>
                   </FormControl>
                 </Grid>
-                {paymentMethod === "cheque" && (
+                {paymentMethod === "cheque" &&
                   <Grid item xs={12} sm={6}>
                     <TextField
                       fullWidth
                       label="Cheque Date"
                       type="date"
                       value={chequeDate}
-                      onChange={(e) => setChequeDate(e.target.value)}
+                      onChange={e => setChequeDate(e.target.value)}
                       InputLabelProps={{
-                        shrink: true,
+                        shrink: true
                       }}
                     />
-                  </Grid>
-                )}
-                {paymentMethod === "cheque" && (
+                  </Grid>}
+                {paymentMethod === "cheque" &&
                   <Grid item xs={12}>
                     <input
                       accept="image/*"
-                      style={{ display: 'none' }}
+                      style={{ display: "none" }}
                       id="raised-button-file"
                       type="file"
                       onChange={handleImageChange}
@@ -364,29 +373,41 @@ const [selectedImage, setSelectedImage] = useState(null);
                         Upload Cheque Image
                       </Button>
                     </label>
-                    {imagePreview && (
-                      <img src={imagePreview} alt="Preview" style={{ marginTop: 10, maxWidth: '100%', maxHeight: 200 }} />
-                    )}
-                  </Grid>
-                )}
-                {(paymentMethod === "online" || paymentMethod === "cheque") && (
+                    {imagePreview &&
+                      <img
+                        src={imagePreview}
+                        alt="Preview"
+                        style={{
+                          marginTop: 10,
+                          maxWidth: "100%",
+                          maxHeight: 200
+                        }}
+                      />}
+                  </Grid>}
+                {(paymentMethod === "online" || paymentMethod === "cheque") &&
                   <Grid item xs={12} sm={6}>
                     <FormControl fullWidth>
                       <InputLabel>Bank</InputLabel>
                       <Select
                         value={selectedBank}
-                        onChange={(e) => setSelectedBank(e.target.value)}
+                        onChange={e => setSelectedBank(e.target.value)}
                       >
-                        {banks.map((bank) => (
+                        {banks.map(bank =>
                           <MenuItem key={bank._id} value={bank._id}>
                             {bank.bankName}
                           </MenuItem>
-                        ))}
+                        )}
                       </Select>
                     </FormControl>
-                  </Grid>
-                )}
-                <Grid item xs={12} sm={6} display="flex" flexDirection="row" justifyContent="space-between">
+                  </Grid>}
+                <Grid
+                  item
+                  xs={12}
+                  sm={6}
+                  display="flex"
+                  flexDirection="row"
+                  justifyContent="space-between"
+                >
                   <FormControl fullWidth>
                     <InputLabel>Supplier</InputLabel>
                     <Select
@@ -394,18 +415,21 @@ const [selectedImage, setSelectedImage] = useState(null);
                       onChange={handleSupplierChange}
                       label="Supplier"
                     >
-                      {suppliers.map((s) => (
+                      {suppliers.map(s =>
                         <MenuItem key={s._id} value={s._id}>
                           {s.username}
                         </MenuItem>
-                      ))}
-                      <MenuItem value="addNew" onClick={handleOpenModal} style={{ backgroundColor: 'silver' }}>
+                      )}
+                      <MenuItem
+                        value="addNew"
+                        onClick={handleOpenModal}
+                        style={{ backgroundColor: "silver" }}
+                      >
                         Add New Supplier
                       </MenuItem>
                     </Select>
                   </FormControl>
                 </Grid>
-
               </Grid>
             </CardContent>
           </StyledCard>
@@ -414,77 +438,102 @@ const [selectedImage, setSelectedImage] = useState(null);
         return (
           <StyledCard>
             <CardContent>
-              <Typography variant="h6" gutterBottom>Review your product details</Typography>
-              <Typography>Name: {product.name}</Typography>
-              <Typography>Category: {product.category}</Typography>
-              <Typography>Price: ${product.price}</Typography>
-              <Typography>Description: {product.description}</Typography>
-              <Typography>Quantity: {product.quantity}</Typography>
-              <Typography>Shipping Type: {shippingType}</Typography>
-              <Typography>Payment Method: {paymentMethod}</Typography>
+              <Typography variant="h6" gutterBottom>
+                Review your product details
+              </Typography>
+              <Typography>
+                Name: {product.name}
+              </Typography>
+              <Typography>
+                Category: {product.category}
+              </Typography>
+              <Typography>
+                Price: ${product.price}
+              </Typography>
+              <Typography>
+                Description: {product.description}
+              </Typography>
+              <Typography>
+                Quantity: {product.quantity}
+              </Typography>
+              <Typography>
+                Shipping Type: {shippingType}
+              </Typography>
+              <Typography>
+                Payment Method: {paymentMethod}
+              </Typography>
             </CardContent>
           </StyledCard>
         );
       default:
-        return 'Unknown step';
+        return "Unknown step";
     }
   };
 
   return (
     <Container maxWidth="md">
-
       <StyledPaper elevation={3}>
-        <Button variant="contained" color="primary" onClick={handleAddProductClick}>
+        <Button
+          variant="contained"
+          color="primary"
+          onClick={handleAddProductClick}
+        >
           Add Product
         </Button>
         <Typography variant="h4" gutterBottom align="center">
-          Existing Products        </Typography>
+          Existing Products{" "}
+        </Typography>
         {/* <Typography variant="h6" gutterBottom>
           Existing Products
         </Typography> */}
-       <Table>
-  <TableHead>
-    <TableRow>
-      <TableCell>Name</TableCell>
-      <TableCell>Category</TableCell>
-      <TableCell>Price</TableCell>
-      <TableCell>Description</TableCell>
-      <TableCell>Quantity</TableCell>
-    
-      <TableCell>Created Date</TableCell>  
-    </TableRow>
-  </TableHead>
-  <TableBody>
-    {products.map((product) => (
-      <TableRow key={product._id}>
-        <TableCell>{product.name}</TableCell>
-        <TableCell>{product.category}</TableCell>
-        <TableCell>{product.price}</TableCell>
-        <TableCell>{product.description}</TableCell>
-        <TableCell>{product.quantity}</TableCell>
-       
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>Name</TableCell>
+              <TableCell>Category</TableCell>
+              <TableCell>Price</TableCell>
+              <TableCell>Description</TableCell>
+              <TableCell>Quantity</TableCell>
 
-
-        <TableCell>{new Date(product.createdAt).toLocaleDateString()}</TableCell> {/* Format Date */}
-      </TableRow>
-    ))}
-  </TableBody>
-</Table>
-
+              <TableCell>Created Date</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {products.map(product =>
+              <TableRow key={product._id}>
+                <TableCell>{product.name}</TableCell>
+                <TableCell>{product.category}</TableCell>
+                <TableCell>{product.price}</TableCell>
+                <TableCell>{product.description}</TableCell>
+                <TableCell>{product.quantity}</TableCell>
+                <TableCell>
+                  {new Date(product.createdAt).toLocaleDateString()}
+                </TableCell>{" "}
+                {/* Format Date */}
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
       </StyledPaper>
 
-      <Modal open={openModal} onClose={() => setOpenModal(false)} style={{ width: '50%', margin: 'auto' }}>
+      <Modal
+        open={openModal}
+        onClose={() => setOpenModal(false)}
+        style={{ width: "50%", margin: "auto" }}
+      >
         <StyledPaper elevation={2}>
           <Stepper activeStep={activeStep} alternativeLabel>
-            {steps.map((label) => (
+            {steps.map(label =>
               <Step key={label}>
-                <StepLabel>{label}</StepLabel>
+                <StepLabel>
+                  {label}
+                </StepLabel>
               </Step>
-            ))}
+            )}
           </Stepper>
           <Box mt={4}>
             {getStepContent(activeStep)}
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+            <Box sx={{ display: "flex", justifyContent: "flex-end", mt: 2 }}>
               <Button
                 disabled={activeStep === 0}
                 onClick={handleBack}
@@ -495,14 +544,13 @@ const [selectedImage, setSelectedImage] = useState(null);
               <Button
                 variant="contained"
                 color="primary"
-                onClick={activeStep === steps.length - 1 ? handleSubmit : handleNext}
+                onClick={
+                  activeStep === steps.length - 1 ? handleSubmit : handleNext
+                }
               >
-                {activeStep === steps.length - 1 ? 'Submit' : 'Next'}
+                {activeStep === steps.length - 1 ? "Submit" : "Next"}
               </Button>
-              <Button
-                onClick={() => setOpenModal(false)}
-                sx={{ ml: 1 }}
-              >
+              <Button onClick={() => setOpenModal(false)} sx={{ ml: 1 }}>
                 Close
               </Button>
             </Box>
@@ -554,15 +602,12 @@ const [selectedImage, setSelectedImage] = useState(null);
       <AddSupplierModal
         open={openSupplierModal}
         handleClose={handleCloseModal}
-
       />
       <AddWareHouseModal
         open={openWareHouseModal}
         onClose={handleCloseModalwarehouse}
-
       />
       <ToastContainer />
-
     </Container>
   );
 };

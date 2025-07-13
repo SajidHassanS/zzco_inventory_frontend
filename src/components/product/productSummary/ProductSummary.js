@@ -31,7 +31,7 @@ const cashIcon = <FaMoneyBillWave size={40} color="#fff" />;
 export const formatNumbers = (x) => x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 
 // Clean backend URL
-const API_URL = process.env.REACT_APP_BACKEND_URL?.replace(/\/$/, '');
+const API_URL = process.env.REACT_APP_BACKEND_URL 
 
 const ProductSummary = ({ products, bank, cashs }) => {
   const dispatch = useDispatch();
@@ -67,7 +67,7 @@ const ProductSummary = ({ products, bank, cashs }) => {
   // Simulated fetch logic (you should split these into real routes)
   const fetchCashAndBanks = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/customers/allcustomer`, {
+      const response = await axios.get(`${API_URL}api/customers/allcustomer`, {
         withCredentials: true,
       });
 

@@ -6,7 +6,7 @@ import { useSelector } from "react-redux";
 import { selectCanDelete } from "../../redux/features/auth/authSlice"; // Import privilege selector
 
 const DeleteCustomerModal = ({ open, onClose, customer, onSuccess }) => {
-  // const BACKEND_URL = "https://zzcoinventorymanagmentbackend.up.railway.app";
+  
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
   // Retrieve the user role from localStorage and check delete privilege
   const userRole = localStorage.getItem("userRole");

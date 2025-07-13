@@ -6,9 +6,9 @@ import { useSelector } from "react-redux";
 import { selectCanDelete } from "../../redux/features/auth/authSlice"; // Import the privilege selector
 import AddBalanceModal from "../../components/Models/AddBalanceModal";
 import MinusBalanceModal from "../../components/Models/MinusBalanceModal";
-import DeleteCustomerModal from "../../components/Models/DeleteCustomerModal"; 
+import DeleteCustomerModal from "../../components/Models/DeleteCustomerModal";
 import TransactionHistoryModal from "../../components/Models/TransactionHistoryModal";
- 
+
 const CustomerList = ({ customers, refreshCustomers }) => {
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [isAddModalOpen, setAddModalOpen] = useState(false);
@@ -20,22 +20,24 @@ const CustomerList = ({ customers, refreshCustomers }) => {
   const userRole = localStorage.getItem("userRole");
 
   // Unconditionally retrieve delete permission
-  const hasDeletePermission = useSelector((state) => selectCanDelete(state, "deleteCustomer"));
+  const hasDeletePermission = useSelector(state =>
+    selectCanDelete(state, "deleteCustomer")
+  );
 
   // Determine if the delete action should be enabled
   const canDeleteCustomer = userRole === "Admin" || hasDeletePermission;
 
-  const openAddModal = (customer) => {
+  const openAddModal = customer => {
     setSelectedCustomer(customer);
     setAddModalOpen(true);
   };
 
-  const openMinusModal = (customer) => {
+  const openMinusModal = customer => {
     setSelectedCustomer(customer);
     setMinusModalOpen(true);
   };
 
-  const openDeleteModal = (customer) => {
+  const openDeleteModal = customer => {
     if (!canDeleteCustomer) {
       alert("You do not have permission to delete this customer.");
       return;
@@ -44,7 +46,7 @@ const CustomerList = ({ customers, refreshCustomers }) => {
     setDeleteModalOpen(true);
   };
 
-  const openHistoryModal = (customer) => {
+  const openHistoryModal = customer => {
     setSelectedCustomer(customer);
     setHistoryModalOpen(true);
   };
@@ -62,20 +64,22 @@ const CustomerList = ({ customers, refreshCustomers }) => {
       field: "avatar",
       headerName: "Avatar",
       width: 100,
-      renderCell: (params) => (
-        <Avatar src={params.value || "/default-avatar.png"} alt={params.row.username} />
-      ),
+      renderCell: params =>
+        <Avatar
+          src={params.value || "/default-avatar.png"}
+          alt={params.row.username}
+        />
     },
     { field: "_id", headerName: "ID", width: 220 },
     { field: "username", headerName: "Username", width: 150 },
-    
+
     { field: "phone", headerName: "Phone", width: 120 },
     { field: "balance", headerName: "Balance", width: 120 },
     {
       field: "action",
       headerName: "Action",
       width: 180,
-      renderCell: (params) => (
+      renderCell: params =>
         <Grid container spacing={1}>
           <Grid item>
             <IconButton
@@ -111,8 +115,7 @@ const CustomerList = ({ customers, refreshCustomers }) => {
             </IconButton>
           </Grid>
         </Grid>
-      ),
-    },
+    }
   ];
 
   return (
@@ -122,22 +125,22 @@ const CustomerList = ({ customers, refreshCustomers }) => {
         bgcolor: "white",
         borderRadius: 2,
         padding: 3,
-        width: "auto",
+        width: "auto"
       }}
     >
       <DataGrid
         sx={{
           borderLeft: 0,
           borderRight: 0,
-          borderRadius: 0,
+          borderRadius: 0
         }}
         rows={customers}
         columns={columns}
-        getRowId={(row) => row._id}
+        getRowId={row => row._id}
         initialState={{
           pagination: {
-            paginationModel: { page: 0, pageSize: 10 },
-          },
+            paginationModel: { page: 0, pageSize: 10 }
+          }
         }}
         pageSizeOptions={[15, 20, 30]}
         rowSelection={false}
@@ -148,7 +151,7 @@ const CustomerList = ({ customers, refreshCustomers }) => {
         open={isAddModalOpen}
         onClose={closeModals}
         customer={selectedCustomer}
-        onSuccess={refreshCustomers} 
+        onSuccess={refreshCustomers}
       />
 
       {/* Minus Balance Modal */}
@@ -156,7 +159,7 @@ const CustomerList = ({ customers, refreshCustomers }) => {
         open={isMinusModalOpen}
         onClose={closeModals}
         customer={selectedCustomer}
-        onSuccess={refreshCustomers} 
+        onSuccess={refreshCustomers}
       />
 
       {/* Delete Customer Modal */}

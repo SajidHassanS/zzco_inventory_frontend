@@ -35,7 +35,7 @@
     "react-toastify": "^9.0.8",
     "web-vitals": "^2.1.4"
   },
-  "proxy": "https://3ctz072n3k.execute-api.eu-north-1.amazonaws.com/inventory",
+  "proxy": "https://3ctz072n3k.execute-api.eu-north-1.amazonaws.com",
 
   "scripts": {
     "start": "set PORT=3001 && react-scripts start",

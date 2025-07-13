@@ -16,7 +16,7 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-  // const BACKEND_URL = "https://zzcoinventorymanagmentbackend.up.railway.app";
+ 
   const dispatch = useDispatch();
   const banks = useSelector((state) => state.bank.banks);
 

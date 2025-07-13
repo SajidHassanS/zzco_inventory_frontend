@@ -26,7 +26,7 @@ import axios from "axios"; // ← CHANGED
 
 // ——— NEW: build API base (include your API Gateway stage) ———
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL; // e.g. https://xyz.execute-api...amazonaws.com/
-const API_BASE = `${BACKEND_URL}inventory/api`;         // ← CHANGED
+const API_BASE = `${BACKEND_URL}api`;         // ← CHANGED
 const api = axios.create({                              // ← CHANGED
   baseURL: API_BASE,
   withCredentials: true,

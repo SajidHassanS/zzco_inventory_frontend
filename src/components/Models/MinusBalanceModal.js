@@ -28,7 +28,7 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
   const [imagePreview, setImagePreview] = useState(""); // State for image preview
   const [errors, setErrors] = useState({}); // State for validation errors
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-  // const BACKEND_URL = "https://zzcoinventorymanagmentbackend.up.railway.app";
+ 
   const dispatch = useDispatch();
   const banks = useSelector((state) => state.bank.banks);
 

@@ -5,12 +5,12 @@ import axios from "axios";
 // 1) Build your API base URL (include your stage name)
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 // e.g. "https://3ctz072n3k.execute-api.eu-north-1.amazonaws.com/"
-const API_BASE = `${BACKEND_URL}inventory/api/cheques/`;
+const API_BASE = `${BACKEND_URL}api/cheques/`;
 
 // 2) Create a single axios instance for all cheque calls
 const api = axios.create({
   baseURL: API_BASE,
-  withCredentials: true,    // send cookies if you’re still using them
+  withCredentials: true // send cookies if you’re still using them
 });
 
 // 3) Automatically attach your JWT (which you must save to localStorage on login)
@@ -30,13 +30,13 @@ const getCheques = async () => {
 // PATCH /cheques/:id   → updates status of a single cheque
 const updateChequeStatus = async (chequeId, status) => {
   const response = await api.patch(
-    `${chequeId}`,       // PATCH API_BASE + chequeId
-    { status }           // send { status: "newStatus" }
+    `${chequeId}`, // PATCH API_BASE + chequeId
+    { status } // send { status: "newStatus" }
   );
   return response.data;
 };
 
 export default {
   getCheques,
-  updateChequeStatus,
+  updateChequeStatus
 };

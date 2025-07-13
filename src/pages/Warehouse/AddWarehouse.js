@@ -19,18 +19,18 @@ const AddExpense = () => {
     expenseName: "",
     amount: "",
     description: "",
-    expenseDate: "",
+    expenseDate: ""
   });
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-  // const BACKEND_URL = "https://zzcoinventorymanagmentbackend.up.railway.app";
+
   const API_URL = `${BACKEND_URL}api`;
 
   // Function to handle input changes
-  const handleInputChange = (e) => {
+  const handleInputChange = e => {
     const { name, value } = e.target;
-    setExpense((prevExpense) => ({
+    setExpense(prevExpense => ({
       ...prevExpense,
-      [name]: value,
+      [name]: value
     }));
   };
 
@@ -39,16 +39,16 @@ const AddExpense = () => {
     fetch(`${API_URL}/expenses/`, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type": "application/json"
       },
-      body: JSON.stringify(expense),
+      body: JSON.stringify(expense)
     })
-      .then((response) => response.json())
+      .then(response => response.json())
       .then(() => {
         alert("Expense Added");
         setShowExpenseModal(false); // Close the modal after adding
       })
-      .catch((error) => {
+      .catch(error => {
         console.error("Error:", error);
         alert("Failed to add expense. Please try again.");
       });

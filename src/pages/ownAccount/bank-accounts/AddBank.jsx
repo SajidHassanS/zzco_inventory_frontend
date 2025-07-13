@@ -10,7 +10,7 @@ import "react-toastify/dist/ReactToastify.css";
 
 // Read backend URL and build API base (including your API Gateway stage)
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API_BASE = `${BACKEND_URL}inventory/api`;
+const API_BASE = `${BACKEND_URL}api`;
 
 // Create an axios instance that always sends your JWT and cookies
 const api = axios.create({

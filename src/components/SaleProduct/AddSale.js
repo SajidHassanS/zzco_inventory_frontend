@@ -58,7 +58,7 @@ export default function AddSale({
   const [imagePreview, setImagePreview] = useState("");
   const cancelButtonRef = useRef(null);
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-  // const BACKEND_URL = "https://zzcoinventorymanagmentbackend.up.railway.app";
+ 
   const API_URL = `${BACKEND_URL}api`;
 
   const banks = useSelector((state) => state.bank.banks);

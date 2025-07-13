@@ -2,14 +2,13 @@
 
 import axios from "axios";
 
-// Build your API base URL (include the /inventory/api stage)
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL; // e.g. https://xyz.execute-api.eu-north-1.amazonaws.com/
-const API_BASE = `${BACKEND_URL}/api`;     // ← include your stage name
+const API_BASE = `${BACKEND_URL}api`; // ← include your stage name
 
 // Create a single axios instance for all product calls
 const api = axios.create({
   baseURL: API_BASE,
-  withCredentials: true,   // send cookies if you’re still using them
+  withCredentials: true // send cookies if you’re still using them
 });
 
 // Automatically attach your JWT (which you must save to localStorage on login)
@@ -19,12 +18,10 @@ if (token) {
 }
 
 // Create New Product (multipart form)
-const createProduct = async (formData) => {
-  const response = await api.post(
-    "/products",
-    formData,
-    { headers: { "Content-Type": "multipart/form-data" } }
-  );
+const createProduct = async formData => {
+  const response = await api.post("/products", formData, {
+    headers: { "Content-Type": "multipart/form-data" }
+  });
   return response.data;
 };
 
@@ -35,13 +32,13 @@ const getProducts = async () => {
 };
 
 // Delete a Product
-const deleteProduct = async (id) => {
+const deleteProduct = async id => {
   const response = await api.delete(`/products/${id}`);
   return response.data;
 };
 
 // Get a single Product
-const getProduct = async (id) => {
+const getProduct = async id => {
   const response = await api.get(`/products/${id}`);
   return response.data;
 };
@@ -54,15 +51,15 @@ const updateProduct = async (id, formData) => {
 
 // Update Received Quantity
 const updateReceivedQuantity = async (id, receivedQuantity, warehouse) => {
-  const response = await api.patch(
-    `/products/receive/${id}`,
-    { receivedQuantity, warehouse }
-  );
+  const response = await api.patch(`/products/receive/${id}`, {
+    receivedQuantity,
+    warehouse
+  });
   return response.data;
 };
 
 // Get Product Stock
-const getProductStock = async (id) => {
+const getProductStock = async id => {
   const response = await api.get(`/products/${id}/stock`);
   return response.data;
 };
@@ -74,5 +71,5 @@ export default {
   deleteProduct,
   updateProduct,
   updateReceivedQuantity,
-  getProductStock,
+  getProductStock
 };
