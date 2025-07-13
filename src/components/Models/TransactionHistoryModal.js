@@ -17,7 +17,13 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
     if (open && customer) {
       const fetchTransactions = async () => {
         try {
-          const response = await axios.get(`${API_URL}/transactionHistory/${customer._id}`);
+          const response = await axios.get(
+            `${API_URL}/transactionHistory/${customer._id}`,
+            {
+              withCredentials: true, // Ensures cookies/session info are sent for auth
+            }
+          );
+
           const transactionHistory = response.data.transactionHistory || [];
 
           let balance = 0;
@@ -116,7 +122,7 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
         }}
       >
         <Typography variant="h6">Ledger for {customer?.username}</Typography>
-        
+
         <CustomTable
           columns={columns}
           data={transactions}
@@ -126,8 +132,8 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
 
         {/* Footer section with total balance, download PDF, and close buttons */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2 }}>
-          <Typography 
-            variant="subtitle1" 
+          <Typography
+            variant="subtitle1"
             sx={{ fontWeight: 'bold', color: totalBalance >= 0 ? 'green' : 'red' }}
           >
             Total Balance: {totalBalance.toFixed(2)}

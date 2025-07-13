@@ -6,7 +6,6 @@ import { BsCart4, BsCartX, BsBank2 } from "react-icons/bs";
 import { BiCategory } from "react-icons/bi";
 import { FaMoneyBillWave } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
-
 import InfoBox from "../../infoBox/InfoBox";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -18,7 +17,6 @@ import {
   selectOutOfStockdetail,
   selectTotalStoreValue,
 } from "../../../redux/features/product/productSlice";
-
 import axios from "axios";
 
 // Icons
@@ -30,11 +28,10 @@ const bankIcon = <BsBank2 size={40} color="#fff" />;
 const cashIcon = <FaMoneyBillWave size={40} color="#fff" />;
 
 // Format helper
-const formatNumbers = (x) => x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+export const formatNumbers = (x) => x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 
-// Backend URL
-const API_URL = process.env.REACT_APP_BACKEND_URL;
-const CUSTOMER_ENDPOINT = `${API_URL}api/customers/allcustomer`;
+// Clean backend URL
+const API_URL = process.env.REACT_APP_BACKEND_URL?.replace(/\/$/, '');
 
 const ProductSummary = ({ products, bank, cashs }) => {
   const dispatch = useDispatch();
@@ -47,6 +44,8 @@ const ProductSummary = ({ products, bank, cashs }) => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedProductDetails, setSelectedProductDetails] = useState([]);
+  const [cash, setCash] = useState([]);
+  const [banks, setBanks] = useState([]);
 
   const isManager = useMemo(() => localStorage.getItem("userRole") === "Manager", []);
 
@@ -65,11 +64,18 @@ const ProductSummary = ({ products, bank, cashs }) => {
       : 0;
   }, [bank]);
 
+  // Simulated fetch logic (you should split these into real routes)
   const fetchCashAndBanks = async () => {
     try {
-      const res = await axios.get(CUSTOMER_ENDPOINT);
-      console.log("Fetched customers for ledger:", res.data);
-      // You can process this data as needed
+      const response = await axios.get(`${API_URL}/api/customers/allcustomer`, {
+        withCredentials: true,
+      });
+
+      // TEMPORARY: just using the same response for demo purposes
+      setCash(Array.isArray(response.data) ? response.data : []);
+      setBanks(Array.isArray(response.data) ? response.data : []);
+
+      console.log("Fetched customers (used for cash & bank):", response.data);
     } catch (error) {
       console.error("Error fetching customers:", error.message);
     }
@@ -91,13 +97,10 @@ const ProductSummary = ({ products, bank, cashs }) => {
       <h3 className="--mt">Inventory Stats</h3>
       <div className="info-summary">
         <InfoBox icon={productIcon} title="Total Products" count={products.length} bgColor="card1" />
-
         <div onClick={openModal}>
           <InfoBox icon={outOfStockIcon} title="Out of Stock" count={outOfStock} bgColor="card3" />
         </div>
-
         <InfoBox icon={categoryIcon} title="All Categories" count={category.length} bgColor="card4" />
-
         {!isManager && (
           <>
             <InfoBox

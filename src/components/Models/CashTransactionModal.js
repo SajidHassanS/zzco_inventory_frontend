@@ -24,7 +24,12 @@ const CashTransactionHistoryModal = ({ open, onClose, cashEntry }) => {
       if (!cashEntry?._id) return;
       setLoading(true);
       try {
-        const response = await axios.get(`${BACKEND_URL}api/cash/${cashEntry._id}/transactions`);
+        const response = await axios.get(
+          `${BACKEND_URL}api/cash/${cashEntry._id}/transactions`,
+          {
+            withCredentials: true, // ✅ This ensures cookies like session tokens are sent
+          }
+        );
         setTransactions(response.data);
       } catch (error) {
         console.error("Failed to fetch cash transactions", error);
@@ -32,12 +37,13 @@ const CashTransactionHistoryModal = ({ open, onClose, cashEntry }) => {
         setLoading(false);
       }
     };
-  
+
     if (open) {
       fetchTransactions();
     }
   }, [cashEntry, open, BACKEND_URL]);
-  
+
+
 
   return (
     <Modal open={open} onClose={onClose}>

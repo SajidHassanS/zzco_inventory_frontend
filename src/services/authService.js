@@ -1,7 +1,7 @@
 import axios from "axios";
 import { toast } from "react-toastify";
 export const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
- 
+
 
 
 export const validateEmail = (email) => {
@@ -35,18 +35,20 @@ export const registerUser = async (userData) => {
 // Login User in authService.js
 export const loginUser = async (userData) => {
   try {
-    const response = await axios.post(`${BACKEND_URL}api/users/login`, userData);
+    const response = await axios.post(
+      `${BACKEND_URL}api/users/login`,
+      userData,
+      { withCredentials: true } // 🔥 THIS IS ESSENTIAL
+    );
+
     if (response.statusText === "OK") {
-      const { role, name } = response.data; // Access 'role' here
-      console.log("Role:", role, "Name:", name); // Check values
-      if (role) {
-        localStorage.setItem("userRole", role);
-      }
-      if (name) {
-        localStorage.setItem("name", name);
-      }
+      const { role, name } = response.data;
+      console.log("Role:", role, "Name:", name);
+      if (role) localStorage.setItem("userRole", role);
+      if (name) localStorage.setItem("name", name);
       toast.success("Login Successful...");
     }
+
     return response.data;
   } catch (error) {
     const message =
@@ -56,6 +58,7 @@ export const loginUser = async (userData) => {
     toast.error(message);
   }
 };
+
 
 
 // Login Customer
@@ -159,7 +162,9 @@ export const resetPassword = async (userData, resetToken) => {
 // Get Login Status
 export const getLoginStatus = async () => {
   try {
-    const response = await axios.get(`${BACKEND_URL}api/users/loggedin`);
+    const response = await axios.get(`${BACKEND_URL}api/users/loggedin`, {
+      withCredentials: true // ✅ This is required for cookies
+    });
     return response.data;
   } catch (error) {
     const message =
@@ -169,6 +174,7 @@ export const getLoginStatus = async () => {
     toast.error(message);
   }
 };
+
 
 // Get User Profile
 export const getUser = async () => {

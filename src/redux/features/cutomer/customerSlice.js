@@ -12,7 +12,7 @@ const initialState = {
 
 // Fetch all customers
 export const getCustomers = createAsyncThunk(
-  'customers/getAll',
+  'customers/allcustomer',
   async (_, thunkAPI) => {
     try {
       return await customerService.getCustomers();

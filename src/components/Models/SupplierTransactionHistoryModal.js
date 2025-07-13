@@ -6,10 +6,10 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable"; // ✅ Correct import
 
 const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
-  const [transactions, setTransactions] = useState([]); 
+  const [transactions, setTransactions] = useState([]);
   const [totalBalance, setTotalBalance] = useState(0);
-  const [page, setPage] = useState(0);  
-  const [rowsPerPage, setRowsPerPage] = useState(5); 
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(5);
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
   const API_URL = `${BACKEND_URL}api/suppliers`;
 
@@ -17,9 +17,14 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
     if (open && supplier) {
       const fetchTransactions = async () => {
         try {
-          const response = await axios.get(`${API_URL}/${supplier._id}/transaction-history`);
+          const response = await axios.get(
+            `${API_URL}/${supplier._id}/transaction-history`,
+            {
+              withCredentials: true, // ✅ Ensures cookies (e.g., session tokens) are included
+            }
+          );
           const transactionHistory = response.data.transactionHistory || [];
-          
+
           let balance = 0;
           const ledger = transactionHistory.map(transaction => {
             const isDebit = transaction.type.toLowerCase() === 'debit';
@@ -76,21 +81,21 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
     { field: 'date', headerName: 'Date', renderCell: (row) => new Date(row.date).toLocaleDateString() },
     { field: 'productName', headerName: 'Product Name' },
     { field: 'paymentMethod', headerName: 'Payment Type' },
-    { 
-      field: 'debit', headerName: 'Debit', 
-      renderCell: (row) => <span style={{ color: 'red' }}>{row.debit.toFixed(2)}</span> 
+    {
+      field: 'debit', headerName: 'Debit',
+      renderCell: (row) => <span style={{ color: 'red' }}>{row.debit.toFixed(2)}</span>
     },
-    { 
-      field: 'credit', headerName: 'Credit', 
-      renderCell: (row) => <span style={{ color: 'green' }}>{row.credit.toFixed(2)}</span> 
+    {
+      field: 'credit', headerName: 'Credit',
+      renderCell: (row) => <span style={{ color: 'green' }}>{row.credit.toFixed(2)}</span>
     },
-    { 
-      field: 'chequeDate', headerName: 'Cheque Date', 
-      renderCell: (row) => row.chequeDate ? new Date(row.chequeDate).toLocaleDateString() : '-' 
+    {
+      field: 'chequeDate', headerName: 'Cheque Date',
+      renderCell: (row) => row.chequeDate ? new Date(row.chequeDate).toLocaleDateString() : '-'
     },
-    { 
-      field: 'runningBalance', headerName: 'Running Balance', 
-      renderCell: (row) => <span>{row.runningBalance.toFixed(2)}</span> 
+    {
+      field: 'runningBalance', headerName: 'Running Balance',
+      renderCell: (row) => <span>{row.runningBalance.toFixed(2)}</span>
     },
   ];
 
@@ -109,7 +114,7 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
         }}
       >
         <Typography variant="h6">Ledger for {supplier?.username}</Typography>
-        
+
         <CustomTable
           columns={columns}
           data={transactions}
@@ -119,8 +124,8 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
 
         {/* Footer section with total balance, download PDF, and close buttons */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2 }}>
-          <Typography 
-            variant="subtitle1" 
+          <Typography
+            variant="subtitle1"
             sx={{ fontWeight: 'bold', color: totalBalance >= 0 ? 'green' : 'red' }}
           >
             Total Balance: {totalBalance.toFixed(2)}

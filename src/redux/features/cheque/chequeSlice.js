@@ -8,7 +8,10 @@ export const getPendingCheques = createAsyncThunk(
   'cheque/getPendingCheques',
   async (_, thunkAPI) => {
     try {
-      const response = await axios.get(`${API_URL}/pending`);
+      const response = await axios.get(`${API_URL}/pending`, {
+        withCredentials: true, // ✅ Required to send cookies for auth
+      });
+
       return response.data;
     } catch (error) {
       return thunkAPI.rejectWithValue(error.response.data);
@@ -18,9 +21,9 @@ export const getPendingCheques = createAsyncThunk(
 
 export const updateChequeStatus = createAsyncThunk(
   'cheque/updateStatus',
-  async ({ id, status, type ,amount,bank}, thunkAPI) => {
+  async ({ id, status, type, amount, bank }, thunkAPI) => {
     try {
-      const response = await axios.patch(`${API_URL}/update-status/${id}`, { status, type,amount ,bank});
+      const response = await axios.patch(`${API_URL}/update-status/${id}`, { status, type, amount, bank });
       return response.data;
     } catch (error) {
       return thunkAPI.rejectWithValue(error.response.data);
