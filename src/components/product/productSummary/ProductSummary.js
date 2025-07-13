@@ -1,12 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import "./ProductSummary.scss";
-import OutOfStockModal from '../../Models/OutOfStockModal'; // Add this import
-
+import OutOfStockModal from "../../Models/OutOfStockModal";
 import { AiFillDollarCircle } from "react-icons/ai";
 import { BsCart4, BsCartX, BsBank2 } from "react-icons/bs";
 import { BiCategory } from "react-icons/bi";
 import { FaMoneyBillWave } from "react-icons/fa";
-import { useNavigate } from "react-router-dom"; // Add this import
+import { useNavigate } from "react-router-dom";
 
 import InfoBox from "../../infoBox/InfoBox";
 import { useDispatch, useSelector } from "react-redux";
@@ -19,6 +18,7 @@ import {
   selectOutOfStockdetail,
   selectTotalStoreValue,
 } from "../../../redux/features/product/productSlice";
+
 import axios from "axios";
 
 // Icons
@@ -29,23 +29,25 @@ const outOfStockIcon = <BsCartX size={40} color="#fff" />;
 const bankIcon = <BsBank2 size={40} color="#fff" />;
 const cashIcon = <FaMoneyBillWave size={40} color="#fff" />;
 
-const API_URL  = process.env.REACT_APP_BACKEND_URL;
-  
-  const BACKEND_URL = `${API_URL}api/customers`;
-// Format Amount
-export const formatNumbers = (x) => {
-  return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-};
+// Format helper
+const formatNumbers = (x) => x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+// Backend URL
+const API_URL = process.env.REACT_APP_BACKEND_URL;
+const CUSTOMER_ENDPOINT = `${API_URL}api/customers/allcustomer`;
 
 const ProductSummary = ({ products, bank, cashs }) => {
   const dispatch = useDispatch();
+  const navigate = useNavigate();
+
   const totalStoreValue = useSelector(selectTotalStoreValue);
   const outOfStock = useSelector(selectOutOfStock);
-  const selectOutOfStockdetails = useSelector(selectOutOfStockdetail);
+  const outOfStockDetails = useSelector(selectOutOfStockdetail);
   const category = useSelector(selectCategory);
-  const navigate = useNavigate(); // Initialize useHistory
-  console.log("outOfStock", outOfStock);
-  console.log("selectOutOfStockdetail", selectOutOfStockdetails);
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedProductDetails, setSelectedProductDetails] = useState([]);
+
   const isManager = useMemo(() => localStorage.getItem("userRole") === "Manager", []);
 
   useEffect(() => {
@@ -54,102 +56,76 @@ const ProductSummary = ({ products, bank, cashs }) => {
     dispatch(CALC_CATEGORY(products));
   }, [dispatch, products]);
 
-  const [banks, setBanks] = useState([]);
-  const [cash, setCash] = useState([]);
-
-  const totalCashAmount = useMemo(() => {
-    return cashs.totalBalance || 0;
-  }, [cashs]);
+  // Cash & Bank Amounts
+  const totalCashAmount = useMemo(() => cashs?.totalBalance || 0, [cashs]);
 
   const totalBankAmount = useMemo(() => {
-    return Array.isArray(bank) ? bank.reduce((total, bank) => total + (bank.balance || 0), 0) : 0;
+    return Array.isArray(bank)
+      ? bank.reduce((total, b) => total + (b.balance || 0), 0)
+      : 0;
   }, [bank]);
-
 
   const fetchCashAndBanks = async () => {
     try {
-      const [cashResponse, bankResponse] = await Promise.all([
-        axios.get(`${BACKEND_URL}` ),
-        axios.get(`${BACKEND_URL}`),
-      ]);
-
-      setCash(Array.isArray(cashResponse.data) ? cashResponse.data : []);
-      setBanks(Array.isArray(bankResponse.data) ? bankResponse.data : []);
-      console.log("Fetched cash:", cashResponse.data);
-      console.log("Fetched banks:", bankResponse.data);
+      const res = await axios.get(CUSTOMER_ENDPOINT);
+      console.log("Fetched customers for ledger:", res.data);
+      // You can process this data as needed
     } catch (error) {
-      console.error("There was an error fetching the cash or bank data!", error);
+      console.error("Error fetching customers:", error.message);
     }
   };
-
 
   useEffect(() => {
     fetchCashAndBanks();
   }, []);
 
-
-  const [isModalOpen, setIsModalOpen] = useState(false); // State for modal visibility
-  const [selectedProductDetails, setSelectedProductDetails] = useState([]); // State for selected product details
-
   const openModal = () => {
-    setSelectedProductDetails(selectOutOfStockdetails); // Set the details of out of stock products
-    setIsModalOpen(true); // Open the modal
+    setSelectedProductDetails(outOfStockDetails);
+    setIsModalOpen(true);
   };
 
-  const closeModal = () => {
-    setIsModalOpen(false); // Close the modal
-  };
+  const closeModal = () => setIsModalOpen(false);
+
   return (
     <div className="product-summary">
       <h3 className="--mt">Inventory Stats</h3>
       <div className="info-summary">
-      <InfoBox
-    icon={productIcon}
-    title={"Total Products"}
-    count={products.length}
-    bgColor="card1"
-  />
-  <div onClick={openModal}>
-    <InfoBox
-      icon={outOfStockIcon}
-      title={"Out of Stock"}
-      count={outOfStock}
-      bgColor="card3"
-    />
-  </div>
-  <InfoBox
-    icon={categoryIcon}
-    title={"All Categories"}
-    count={category.length}
-    bgColor="card4"
-  />
+        <InfoBox icon={productIcon} title="Total Products" count={products.length} bgColor="card1" />
+
+        <div onClick={openModal}>
+          <InfoBox icon={outOfStockIcon} title="Out of Stock" count={outOfStock} bgColor="card3" />
+        </div>
+
+        <InfoBox icon={categoryIcon} title="All Categories" count={category.length} bgColor="card4" />
+
         {!isManager && (
           <>
             <InfoBox
               icon={earningIcon}
-              title={"Store Value"}
-              count={`${formatNumbers(totalStoreValue.toFixed(2))}`}
+              title="Store Value"
+              count={formatNumbers(totalStoreValue.toFixed(2))}
               bgColor="card2"
             />
-            <div onClick={() => navigate("/bank-accounts")} className="info-summary">
+            <div onClick={() => navigate("/bank-accounts")}>
               <InfoBox
                 icon={bankIcon}
-                title={"Bank Amount"}
-                count={`${formatNumbers(totalBankAmount.toFixed(2))}`}
+                title="Bank Amount"
+                count={formatNumbers(totalBankAmount.toFixed(2))}
                 bgColor="card4"
               />
             </div>
-            <div onClick={() => navigate("/bank-accounts")} className="info-summary">
+            <div onClick={() => navigate("/bank-accounts")}>
               <InfoBox
                 icon={cashIcon}
-                title={"Cash"}
-                count={`${formatNumbers(totalCashAmount.toFixed(2))}`}
+                title="Cash"
+                count={formatNumbers(totalCashAmount.toFixed(2))}
                 bgColor="card1"
               />
             </div>
           </>
         )}
       </div>
+
       <OutOfStockModal
         isOpen={isModalOpen}
         onRequestClose={closeModal}
