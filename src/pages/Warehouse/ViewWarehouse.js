@@ -41,7 +41,7 @@ const WarehouseManager = () => {
   const [rowsPerPage, setRowsPerPage] = useState(5);
   const [productsModalOpen, setProductsModalOpen] = useState(false);
   const [warehouseProducts, setWarehouseProducts] = useState([]);
-  const [warehouseList, setWarehouseList] = useState([]);
+  
   const [loadingProducts, setLoadingProducts] = useState(false);
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
  
@@ -50,11 +50,8 @@ console.log("warehouseProducts",warehouseProducts);
   useEffect(() => {
     dispatch(getWarehouses());
   }, [dispatch]);
-
-  useEffect(() => {
-    setWarehouseList(warehouses);
-  }, [warehouses]);
-console.log("warehouses",warehouses);
+ 
+ 
   const handleClickOpen = () => setOpen(true);
   const handleClose = () => {
     setOpen(false);
@@ -73,18 +70,19 @@ console.log("warehouses",warehouses);
     setOpen(true);
   };
 
-  const handleDelete = (id) => {
-    console.log("id",id);
-    if (!isAdmin && !canDeleteWarehouse) {
-    
-      toast.error("You do not have permission to delete this warehouse.");
-      return;
-    }
-    if (window.confirm('Are you sure you want to delete this warehouse?')) {
-      dispatch(deleteWarehouse(id));
-      setWarehouseList(prevList => prevList.filter(warehouse => warehouse._id !== id));
-    }
-  };
+const handleDelete = async (id) => {
+  if (!isAdmin && !canDeleteWarehouse) {
+    toast.error("You do not have permission to delete this warehouse.");
+    return;
+  }
+
+  if (window.confirm('Are you sure you want to delete this warehouse?')) {
+    await dispatch(deleteWarehouse(id));
+    await dispatch(getWarehouses()); // ✅ Refreshes list correctly
+  }
+};
+
+
 
   const handleSubmit = () => {
     if (editingWarehouse) {
@@ -252,7 +250,7 @@ console.log("warehouses",warehouses);
 
       <CustomTable
         columns={columns}
-        data={warehouseList}
+        data={warehouses}
         page={page}
         rowsPerPage={rowsPerPage}
         onPageChange={handleChangePage}

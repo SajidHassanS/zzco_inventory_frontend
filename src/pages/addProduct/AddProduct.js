@@ -179,7 +179,15 @@ const AddProduct = () => {
     const formData = new FormData();
     Object.keys(product).forEach(key => formData.append(key, product[key]));
     formData.append("shippingType", shippingType);
-    formData.append("warehouse", selectedWarehouse || "Not Required");
+    if (shippingType === "local") {
+      if (selectedWarehouse && selectedWarehouse !== "addNew") {
+        formData.append("warehouse", selectedWarehouse);
+      } else {
+        toast.error("Please select a valid warehouse or create one.");
+        return; // Stop form submission
+      }
+    }
+
     formData.append("paymentMethod", paymentMethod);
     formData.append("chequeDate", chequeDate);
     formData.append("bank", selectedBank);

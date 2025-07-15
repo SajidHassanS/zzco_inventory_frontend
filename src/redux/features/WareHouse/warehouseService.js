@@ -37,10 +37,10 @@ const updateWarehouse = async (id, formData) => {
 
 // ✅ Delete a warehouse
 const deleteWarehouse = async id => {
-  const response = await axios.delete(API_URL + id, {
+  await axios.delete(API_URL + id, {
     withCredentials: true
   });
-  return response.data;
+  return { id }; // ✅ Return the deleted warehouse ID manually
 };
 
 const warehouseService = {

@@ -78,7 +78,7 @@ export const updateWarehouse = createAsyncThunk(
     }
   }
 );
-
+ 
 // Delete warehouse
 export const deleteWarehouse = createAsyncThunk(
   "warehouses/delete",
