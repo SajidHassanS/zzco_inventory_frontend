@@ -9,7 +9,7 @@ import {
     selectWarehouses,
     selectIsLoading
   } from '../../redux/features/WareHouse/warehouseSlice';
-const AddWarehouseModal = ({ open, onClose,}) => {
+const AddWarehouseModal = ({ open, onClose,onSuccess }) => {
     const dispatch = useDispatch();
     const [newWarehouse, setNewWarehouse] = useState({ name: '', location: '' });
 
@@ -17,12 +17,14 @@ const AddWarehouseModal = ({ open, onClose,}) => {
     const { name, value } = e.target;
     setNewWarehouse(prev => ({ ...prev, [name]: value }));
   };
-  const handleSubmit = () => {
-   
-      dispatch(createWarehouse(newWarehouse));
-      onClose();
-    //   onClose();
-  };
+ const handleSubmit = async () => {
+  const res = await dispatch(createWarehouse(newWarehouse));
+  if (res.payload && !res.error) {
+    onSuccess?.(res.payload); // Pass new warehouse to parent
+    onClose();
+  }
+};
+
   
   return (
     <Modal

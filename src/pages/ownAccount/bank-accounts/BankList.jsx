@@ -7,7 +7,7 @@ import { useSelector } from "react-redux";
 import { selectCanDelete } from "../../../redux/features/auth/authSlice";
 import TransactionHistoryModal from "../../../components/Models/TransactionModal";
 import CashTransactionHistoryModal from "../../../components/Models/CashTransactionModal";
-
+ 
 const BankList = ({ banks, refreshBanks, cash }) => {
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [entryType, setEntryType] = useState("bank");
@@ -93,7 +93,13 @@ const BankList = ({ banks, refreshBanks, cash }) => {
     return filteredCashTransactions.reduce((total, entry) => entry.type === "deduct" ? total + (entry.balance || 0) : total, 0);
   }, [filteredCashTransactions]);
 
+
+
   const netBalance = totalIncome - totalExpenses;
+
+  const totalBankBalance = useMemo(() => {
+  return (banks || []).reduce((total, bank) => total + (bank.balance || 0), 0);
+}, [banks]);
 
   const bankColumns = [
     { field: "bankName", headerName: "Bank Name" },
@@ -168,12 +174,33 @@ const BankList = ({ banks, refreshBanks, cash }) => {
 />
 
 
-      {/* 🔹 Total Income and Expenses */}
-      <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mt: 2 }}>
-        <Typography variant="h5" sx={{ color: "#388E3C", fontWeight: "bold" }}>Total Income: {totalIncome}</Typography>
-        <Typography variant="h5" sx={{ color: "#D32F2F", fontWeight: "bold" }}>Total Expenses: {totalExpenses}</Typography>
-        <Typography variant="h5" sx={{ color: netBalance >= 0 ? "#1976D2" : "#D32F2F", fontWeight: "bold" }}>Net Balance: {netBalance}</Typography>
-      </Box>
+<Box sx={{ mt: 4, display: "flex", justifyContent: "space-between", gap: 4 }}>
+  {/* ✅ Bank Summary (Left) */}
+  <Box>
+    <Typography variant="h5" sx={{ color: "#388E3C", fontWeight: "bold", mb: 1 }}>
+      Available balance in Bank: {totalBankBalance}
+    </Typography>
+    <Typography variant="h6" sx={{ color: "#D32F2F", fontWeight: "bold" }}>
+      Bank Expenses: {banks?.reduce((total, bank) =>
+        (bank.transactions || []).reduce((sum, t) =>
+          t.type === "subtract" ? sum + (t.amount  || 0) : sum, total
+        ), 0)}
+    </Typography>
+  </Box>
+
+  {/* ✅ Cash Summary (Right) */}
+  <Box textAlign="right">
+    <Typography variant="h5" sx={{ color: netBalance >= 0 ? "#1976D2" : "#D32F2F", fontWeight: "bold", mb: 1 }}>
+      Available Cash Balance: {netBalance}
+    </Typography>
+    <Typography variant="h6" sx={{ color: "#D32F2F", fontWeight: "bold" }}>
+      Cash Expenses: {totalExpenses}
+    </Typography>
+  </Box>
+</Box>
+
+
+
 
       {/* Modals */}
       {isEditModalOpen && (

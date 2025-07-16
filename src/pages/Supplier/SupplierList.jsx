@@ -8,7 +8,7 @@ import AddSupplierBalanceModal from "../../components/Models/AddSupplierBalanceM
 import MinusSupplierBalanceModal from "../../components/Models/MinusSupplierBalanceModal";
 import ConfirmDeleteModal from "../../components/Models/ConfirmDeleteModal";
 import SupplierTransactionHistoryModal from "../../components/Models/SupplierTransactionHistoryModal";
- 
+    
 const SupplierList = ({ suppliers, refreshSuppliers }) => {
   const [selectedSupplier, setSelectedSupplier] = useState(null);
   const [isAddModalOpen, setAddModalOpen] = useState(false);

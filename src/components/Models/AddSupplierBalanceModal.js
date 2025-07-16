@@ -94,30 +94,46 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
       if (supplierRes.status === 200 || supplierRes.status === 201) {
         toast.success(supplierRes.data.message || "Transaction added successfully");
   
-        // Step 2: Add cash to cash API
-        const cashRes = await axios.post(
-          `${CASH_API_URL}/add`,
-          {
-            balance: validAmount,
-            type: "add",
-            description: `Added cash for supplier ${supplier.username}`,
-          },
-          { withCredentials: true }
-        );
+let deductionResponse;
+
+if (paymentMethod === "cash") {
+  deductionResponse = await axios.post(
+    `${CASH_API_URL}/add`,
+    {
+      balance: validAmount,
+      type: "deduct",
+      description: `Payment given to supplier ${supplier.username}`,
+    },
+    { withCredentials: true }
+  );
+} else if (paymentMethod === "online") {
+  deductionResponse = await axios.post(
+    `${BACKEND_URL}api/banks/${selectedBank}/transaction`,
+    {
+      amount: validAmount,
+      type: "subtract",
+      description: `Payment given to supplier ${supplier.username}`,
+    },
+    { withCredentials: true }
+  );
+}
+
+
   
-        if (cashRes.status === 200 || cashRes.status === 201) {
-          toast.success("Cash added successfully to Cash API");
-  
-          // Ensure the updated balance is extracted correctly from supplierRes.data
-          const updatedSupplier = { ...supplier, balance: supplierRes.data.supplier.balance };  // Update supplier balance
-          
-          onSuccess(updatedSupplier);  // Pass the updated supplier data to onSuccess callback
-  
-          // Close the modal after success
-          onClose();
-        } else {
-          throw new Error("Failed to add cash");
-        }
+      if (deductionResponse?.status === 200 || deductionResponse?.status === 201) {
+  toast.success("Payment deducted successfully");
+
+  const updatedSupplier = {
+    ...supplier,
+    balance: supplierRes.data.supplier.balance,
+  };
+
+  onSuccess(updatedSupplier);
+  onClose();
+} else {
+  throw new Error("Failed to deduct payment from account");
+}
+
       } else {
         throw new Error("Failed to add transaction to supplier");
       }

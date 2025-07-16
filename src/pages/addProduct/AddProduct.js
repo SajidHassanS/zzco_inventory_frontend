@@ -610,11 +610,21 @@ const AddProduct = () => {
       <AddSupplierModal
         open={openSupplierModal}
         handleClose={handleCloseModal}
+        onSuccess={newSupplier => {
+          dispatch(getSuppliers()); // refresh suppliers
+          setSupplier({ id: newSupplier._id, name: newSupplier.username }); // auto-select new supplier
+        }}
       />
+
       <AddWareHouseModal
         open={openWareHouseModal}
         onClose={handleCloseModalwarehouse}
+        onSuccess={newWarehouse => {
+          dispatch(getWarehouses()); // refresh warehouse list
+          setSelectedWarehouse(newWarehouse._id); // auto-select the new one
+        }}
       />
+
       <ToastContainer />
     </Container>
   );

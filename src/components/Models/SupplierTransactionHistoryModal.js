@@ -50,8 +50,8 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
     }
   }, [open, supplier, API_URL]);
 
-  // ✅ Function to download the PDF
-  const downloadPDF = () => {
+  // ✅ Function to download the PDF 
+  const downloadPDF = () => { 
     const doc = new jsPDF();
     doc.text(`Ledger for ${supplier?.username}`, 14, 10);
 

@@ -14,61 +14,58 @@ const menu = [
   {
     title: "Dashboard",
     icon: <FaTh />,
-    path: "/dashboard",
+    path: "/dashboard"
   },
   {
     title: "Customer Detail",
     icon: <IoPersonAdd />,
-    path: "/add-customer",
+    path: "/add-customer"
   },
   {
     title: "Supplier Detail",
     icon: <IoPersonAdd />,
-    path: "/add-supplier",
+    path: "/add-supplier"
   },
   {
     title: "Buying Product",
     icon: <FaCartPlus />,
-    path: "/add-product",
-  }, 
+    path: "/add-product"
+  },
   {
     title: "Sale Product",
     icon: <BsCartDashFill />,
-    path: "/add-sale",
+    path: "/add-sale"
   },
- 
-  
+
   {
     title: "Cheque Detail",
     icon: <FaMoneyCheckDollar />,
-    path: "/cheque-details",
+    path: "/cheque-details"
   },
 
   {
     title: "Warehouse",
-    icon: <FaWarehouse  />,
-    path: "/view-warehouse",
+    icon: <FaWarehouse />,
+    path: "/view-warehouse"
   },
   {
     title: "Own Account",
-    icon: <MdAccountBalance  />,
+    icon: <MdAccountBalance />,
     childrens: [
-      
       {
-        title: "View Expenses",
-        path: "/view-expenses",
+        title: "Daily Book + Expenses",
+        path: "/view-expenses"
       },
       {
         title: "Bank Accounts",
-        path: "/bank-accounts",
-      },
-    
-    ],
+        path: "/bank-accounts"
+      }
+    ]
   },
   {
     title: "Add Manager",
     icon: <GrUserManager />,
-    path: "/add-manager",
+    path: "/add-manager"
   },
   // {
   //   title: "Order",
@@ -81,12 +78,12 @@ const menu = [
     childrens: [
       {
         title: "Profile",
-        path: "/profile",
+        path: "/profile"
       },
       {
         title: "Edit Profile",
-        path: "/edit-profile",
-      },
+        path: "/edit-profile"
+      }
       // {
       //   title: "Customer Account",
       //   path: "/edit-customer",
@@ -95,9 +92,9 @@ const menu = [
       //   title: "Manager Account",
       //   path: "/edit-manager",
       // },
-    ],
-  },
-  
+    ]
+  }
+
   // {
   //   title: "Report Bug",
   //   icon: <FaCommentAlt />,
