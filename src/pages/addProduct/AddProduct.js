@@ -133,7 +133,7 @@ const AddProduct = () => {
   const handleSupplierChange = event => {
     const selectedSupplier = suppliers.find(s => s._id === event.target.value);
     if (selectedSupplier) {
-      setSupplier({ id: selectedSupplier._id, name: selectedSupplier.name });
+      setSupplier({ id: selectedSupplier._id, name: selectedSupplier.username  });
     }
   };
 
@@ -191,13 +191,15 @@ const recordSupplierTransaction = async () => {
 
     if (res.status === 201) {
       toast.success("Supplier transaction recorded.");
-
+const quantity = product?.quantity || 0;
+const name = product?.name || "Unknown Product";
+const supplierName = supplier?.name || "Unknown Supplier";
       // ✅ Now handle payment method-wise deduction
       if (paymentMethod === "cash") {
         await axios.post(`${BACKEND_URL}api/cash/add`, {
           balance: transactionAmount,
           type: "deduct",
-          description: `Cash payment for ${product.quantity} x ${product.name} to ${supplier.name}`
+          description: `Cash payment for ${quantity} x ${name} to ${supplierName}`
         }, {
           withCredentials: true
         });
