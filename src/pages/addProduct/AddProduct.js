@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import Loader from "../../components/loader/Loader";
 import { getProducts } from "../../redux/features/product/productSlice"; // Import getProducts
+import { getCash } from "../../redux/features/cash/cashSlice";
 
 import ProductForm from "../../components/product/productForm/ProductForm";
 import {
@@ -152,28 +153,87 @@ const AddProduct = () => {
     setActiveStep(prevActiveStep => prevActiveStep - 1);
   };
 
-  const recordSupplierTransaction = async () => {
-    if (!supplier.id || !product.price) return;
+const recordSupplierTransaction = async () => {
+  if (!supplier.id || !product.price || !product.quantity) {
+    toast.error("Supplier, price, or quantity missing.");
+    return;
+  }
 
-    const transactionData = {
-      name: product.name,
-      amount: product.price * product.quantity,
-      paymentMethod: paymentMethod,
-      chequeDate: paymentMethod === "cheque" ? chequeDate : null,
-      type: "debit"
-    };
+  const transactionAmount = product.price * product.quantity;
 
-    try {
-      await axios.post(
-        `${API_URL}/${supplier.id}/transaction`,
-        transactionData
-      );
-      toast.success("Transaction recorded in supplier history.");
-    } catch (error) {
-      console.error("Failed to record transaction:", error);
-      toast.error("Failed to record transaction in supplier history.");
+  const transactionData = new FormData();
+  transactionData.append("name", product.name);
+  transactionData.append("amount", transactionAmount);
+  transactionData.append("paymentMethod", paymentMethod);
+  transactionData.append("type", "debit");
+  transactionData.append("description", `Purchased ${product.quantity} x ${product.name}`);
+
+  if (paymentMethod === "cheque") {
+    transactionData.append("chequeDate", chequeDate);
+  }
+
+  if ((paymentMethod === "online" || paymentMethod === "cheque") && selectedBank) {
+    transactionData.append("bankId", selectedBank);
+  }
+
+  if (productImage && (paymentMethod === "cheque" || paymentMethod === "online")) {
+    transactionData.append("image", productImage);
+  }
+
+  try {
+    const res = await axios.post(
+      `${API_URL}/${supplier.id}/transaction`,
+      transactionData,
+      {
+        headers: { "Content-Type": "multipart/form-data" }
+      }
+    );
+
+    if (res.status === 201) {
+      toast.success("Supplier transaction recorded.");
+
+      // ✅ Now handle payment method-wise deduction
+      if (paymentMethod === "cash") {
+        await axios.post(`${BACKEND_URL}api/cash/add`, {
+          balance: transactionAmount,
+          type: "deduct",
+          description: `Cash payment for ${product.quantity} x ${product.name} to ${supplier.name}`
+        }, {
+          withCredentials: true
+        });
+
+        toast.success("Cash deducted successfully.");
+        dispatch(getCash());
+      } else if (paymentMethod === "online") {
+        await axios.post(`${BACKEND_URL}api/banks/${selectedBank}/transaction`, {
+          amount: transactionAmount,
+          type: "subtract",
+          description: `Online payment for ${product.quantity} x ${product.name} to ${supplier.name}`
+        }, {
+          withCredentials: true
+        });
+
+        toast.success("Bank balance updated (online).");
+      } else if (paymentMethod === "cheque") {
+        await axios.post(`${BACKEND_URL}api/banks/${selectedBank}/transaction`, {
+          amount: transactionAmount,
+          type: "subtract",
+          description: `Cheque payment for ${product.quantity} x ${product.name} to ${supplier.name}`,
+          chequeDate
+        }, {
+          withCredentials: true
+        });
+
+        toast.success("Bank balance updated (cheque).");
+      }
     }
-  };
+  } catch (error) {
+    console.error("Transaction error:", error);
+    toast.error(error.response?.data?.message || "Transaction failed.");
+  }
+};
+
+
 
   const saveProduct = async () => {
     const formData = new FormData();

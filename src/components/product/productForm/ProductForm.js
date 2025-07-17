@@ -30,7 +30,7 @@ const ProductForm = ({
   handlePaymentMethodChange,
   paymentMethod = "",
   chequeDate = "",
-  setChequeDate,
+  setChequeDate, 
   saveProduct,
   warehouses = [],
   selectedWarehouse = "",

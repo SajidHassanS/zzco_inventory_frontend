@@ -9,13 +9,13 @@ import Dashboard from "./pages/dashboard/Dashboard";
 import Sidebar from "./components/sidebar/Sidebar";
 import Layout from "./components/layout/Layout";
 import axios from "axios";
-import { ToastContainer } from "react-toastify";
+// import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { useDispatch } from "react-redux";
 import { getLoginStatus } from "./services/authService";
 import { SET_LOGIN } from "./redux/features/auth/authSlice";
 
-//ADD 
+//ADD
 import AddProduct from "./pages/addProduct/AddProduct";
 import AddCustomer from "./pages/customer/Customer.jsx";
 import AddSupplier from "./pages/Supplier/Supplier.jsx";
@@ -36,30 +36,31 @@ import AddExpenses from "./pages/ownAccount/AddExpenses.js";
 import ViewExpenses from "./pages/ownAccount/ViewExpenses.js";
 import ViewWarehouse from "./pages/Warehouse/ViewWarehouse.js";
 import AddBank from "./pages/ownAccount/bank-accounts/AddBank.jsx";
-import ChequeDetails from './pages/CheuqeDetail/CheuqeDetails.js';
-
+import ChequeDetails from "./pages/CheuqeDetail/CheuqeDetails.js";
 
 axios.defaults.withCredentials = true;
 
 function App() {
   const dispatch = useDispatch();
 
-  useEffect(() => {
-    async function loginStatus() {
-      const status = await getLoginStatus();
-      dispatch(SET_LOGIN(status));
-    }
-    loginStatus();
-  }, [dispatch]);
+  useEffect(
+    () => {
+      async function loginStatus() {
+        const status = await getLoginStatus();
+        dispatch(SET_LOGIN(status));
+      }
+      loginStatus();
+    },
+    [dispatch]
+  );
 
   return (
     <BrowserRouter>
-      <ToastContainer />
+      {/* <ToastContainer /> */}
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-
 
         {/* 
         <Route path="/forgot" element={<Forgot />} />

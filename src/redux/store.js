@@ -7,6 +7,7 @@ import warehouseReducer from "../redux/features/WareHouse/warehouseSlice";
 import ChequeReducer from "../redux/features/cheque/chequeSlice";
 import supplierReducer from "../redux/features/supplier/supplierSlice";
 import customerReducer from "../redux/features/cutomer/customerSlice";
+import cashReducer from "../redux/features/cash/cashSlice";
 export const store = configureStore({
   reducer: {
     auth: authReducer,
@@ -17,5 +18,6 @@ export const store = configureStore({
     cheque: ChequeReducer,
     supplier: supplierReducer,
     customer: customerReducer,
-  },
+    cash: cashReducer
+  }
 });

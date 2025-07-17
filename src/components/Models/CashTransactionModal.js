@@ -26,7 +26,7 @@ const CashTransactionHistoryModal = ({ open, onClose, cashEntry }) => {
       if (!cashEntry?._id) return;
       setLoading(true);
       try {
-        const response = await axios.get(
+        const response = await axios.get( 
           `${BACKEND_URL}api/cash/${cashEntry._id}/transactions`,
           { withCredentials: true }
         );

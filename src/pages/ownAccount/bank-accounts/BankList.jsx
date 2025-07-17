@@ -89,9 +89,11 @@ const BankList = ({ banks, refreshBanks, cash }) => {
     return filteredCashTransactions.reduce((total, entry) => entry.type === "add" ? total + (entry.balance || 0) : total, 0);
   }, [filteredCashTransactions]);
 
-  const totalExpenses = useMemo(() => {
-    return filteredCashTransactions.reduce((total, entry) => entry.type === "deduct" ? total + (entry.balance || 0) : total, 0);
-  }, [filteredCashTransactions]);
+ const totalExpenses = useMemo(() => {
+  return filteredCashTransactions.reduce((total, entry) =>
+    entry.type === "deduct" ? total + Math.abs(entry.balance || 0) : total,
+  0);
+}, [filteredCashTransactions]);
 
 
 
