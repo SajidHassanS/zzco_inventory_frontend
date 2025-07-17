@@ -165,7 +165,10 @@ const ProductDetail = () => {
   if (!product) {
     return <Typography>Product not found or loading...</Typography>;
   }
-
+const inStock =
+  product?.shippingType === "local"
+    ? product.quantity
+    : product.receivedQuantity;
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
   };
@@ -210,10 +213,10 @@ const ProductDetail = () => {
                       Price: {product.price}
                     </Typography>
                     <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                      {stockStatus(product?.receivedQuantity)} {/* Display the stock status */}
-                      <Typography variant="body2" sx={{ ml: 1 }}>
-                        ({product?.receivedQuantity} in stock)
-                      </Typography>
+                     {stockStatus(inStock)}
+<Typography variant="body2" sx={{ ml: 1 }}>
+  ({inStock} in stock)
+</Typography>
                     </Box>
                     <Typography variant="body1" paragraph>
                       Category: {product.category}

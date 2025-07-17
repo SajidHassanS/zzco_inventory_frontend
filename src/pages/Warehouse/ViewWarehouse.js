@@ -169,9 +169,19 @@ const handleDelete = async (id) => {
     { field: 'shippingType', headerName: 'Shipping Type' ,
       renderCell: (params) => params?.shippingType ? params.shippingType : "N/A"
     },
-    { field: 'receivedQuantity', headerName: 'Received Quantity' ,
-      renderCell: (params) => params?.receivedQuantity ? params.receivedQuantity : "N/A"
-    },
+  {
+  field: 'receivedQuantity',
+  headerName: 'Received Quantity',
+  renderCell: (params) => {
+    const product = params; // alias for clarity
+    if (product.shippingType === "local") {
+      return product.quantity ?? "N/A";
+    } else {
+      return product.receivedQuantity ?? "N/A";
+    }
+  }
+},
+
     {
       field: 'createdAt',
       headerName: 'Created At',

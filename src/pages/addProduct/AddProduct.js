@@ -86,8 +86,10 @@ const AddProduct = () => {
     setActiveStep(0); // Reset to the first step
   };
   const [product, setProduct] = useState(initialState);
-  const [productImage, setProductImage] = useState("");
-  const [imagePreview, setImagePreview] = useState(null);
+const [productImage, setProductImage] = useState("");
+const [paymentProofImage, setPaymentProofImage] = useState(null); // <-- NEW
+const [imagePreview, setImagePreview] = useState(null);
+const [paymentImagePreview, setPaymentImagePreview] = useState(null); // <-- NEW
   const [description, setDescription] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [chequeDate, setChequeDate] = useState("");
@@ -120,10 +122,27 @@ const AddProduct = () => {
   const handleOpenSupplierModal = () => setOpenSupplierModal(true); // Function to open the supplier modal
   const handleCloseSupplierModal = () => setOpenSupplierModal(false); // Function to close the supplier modal
 
-  const handleInputChange = e => {
-    const { name, value } = e.target;
-    setProduct({ ...product, [name]: value });
-  };
+  const handleProductImageChange = (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    setProductImage(file);
+    setImagePreview(URL.createObjectURL(file));
+  }
+};
+
+const handlePaymentImageChange = (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    setPaymentProofImage(file);
+    setPaymentImagePreview(URL.createObjectURL(file));
+  }
+};
+
+const handleInputChange = (e) => {
+  const { name, value } = e.target;
+  setProduct({ ...product, [name]: value });
+};
+
 
   const handleImageClick = imageUrl => {
     setSelectedImage(imageUrl);
@@ -176,9 +195,10 @@ const recordSupplierTransaction = async () => {
     transactionData.append("bankId", selectedBank);
   }
 
-  if (productImage && (paymentMethod === "cheque" || paymentMethod === "online")) {
-    transactionData.append("image", productImage);
-  }
+ if (paymentProofImage && (paymentMethod === "cheque" || paymentMethod === "online")) {
+  transactionData.append("image", paymentProofImage);
+}
+
 
   try {
     const res = await axios.post(
@@ -193,7 +213,7 @@ const recordSupplierTransaction = async () => {
       toast.success("Supplier transaction recorded.");
 const quantity = product?.quantity || 0;
 const name = product?.name || "Unknown Product";
-const supplierName = supplier?.name || "Unknown Supplier";
+const supplierName = supplier?.name || supplier?.username|| "Unknown Supplier";
       // ✅ Now handle payment method-wise deduction
       if (paymentMethod === "cash") {
         await axios.post(`${BACKEND_URL}api/cash/add`, {
@@ -205,7 +225,7 @@ const supplierName = supplier?.name || "Unknown Supplier";
         });
 
         toast.success("Cash deducted successfully.");
-        dispatch(getCash());
+        // dispatch(getCash());
       } else if (paymentMethod === "online") {
         await axios.post(`${BACKEND_URL}api/banks/${selectedBank}/transaction`, {
           amount: transactionAmount,
@@ -216,18 +236,22 @@ const supplierName = supplier?.name || "Unknown Supplier";
         });
 
         toast.success("Bank balance updated (online).");
-      } else if (paymentMethod === "cheque") {
-        await axios.post(`${BACKEND_URL}api/banks/${selectedBank}/transaction`, {
-          amount: transactionAmount,
-          type: "subtract",
-          description: `Cheque payment for ${product.quantity} x ${product.name} to ${supplier.name}`,
-          chequeDate
-        }, {
-          withCredentials: true
-        });
+      } 
+      else if (paymentMethod === "cheque") {
+  toast.info("Cheque will be deducted when cashed out.");
+}
+     // else if (paymentMethod === "cheque") {
+      //   await axios.post(`${BACKEND_URL}api/banks/${selectedBank}/transaction`, {
+      //     amount: transactionAmount,
+      //     type: "subtract",
+      //     description: `Cheque payment for ${product.quantity} x ${product.name} to ${supplier.name}`,
+      //      chequeDate
+      //   }, {
+      //     withCredentials: true
+      //   });
 
-        toast.success("Bank balance updated (cheque).");
-      }
+      //   toast.success("Bank balance updated (cheque).");
+      // }
     }
   } catch (error) {
     console.error("Transaction error:", error);
@@ -335,29 +359,26 @@ const supplierName = supplier?.name || "Unknown Supplier";
                 </Grid>
 
                 <Grid item xs={12}>
-                  <input
-                    accept="image/*"
-                    style={{ display: "none" }}
-                    id="raised-button-file"
-                    type="file"
-                    onChange={handleImageChange}
-                  />
-                  <label htmlFor="raised-button-file">
-                    <Button variant="contained" component="span">
-                      Upload Product Image
-                    </Button>
-                  </label>
+              <input
+  accept="image/*"
+  style={{ display: "none" }}
+  id="product-image-file"
+  type="file"
+  onChange={handleProductImageChange}
+/>
+<label htmlFor="product-image-file">
+  <Button variant="contained" component="span">
+    Upload Product Image
+  </Button>
+</label>
+{imagePreview && (
+  <img
+    src={imagePreview}
+    alt="Preview"
+    style={{ marginTop: 10, maxWidth: "100%", maxHeight: 200 }}
+  />
+)}
 
-                  {imagePreview &&
-                    <img
-                      src={imagePreview}
-                      alt="Preview"
-                      style={{
-                        marginTop: 10,
-                        maxWidth: "100%",
-                        maxHeight: 200
-                      }}
-                    />}
                 </Grid>
               </Grid>
             </CardContent>
@@ -413,6 +434,7 @@ const supplierName = supplier?.name || "Unknown Supplier";
                       <MenuItem value="cash">Cash</MenuItem>
                       <MenuItem value="cheque">Cheque</MenuItem>
                       <MenuItem value="online">Online</MenuItem>
+                      <MenuItem value="credit">Credit</MenuItem>
                     </Select>
                   </FormControl>
                 </Grid>
@@ -429,31 +451,35 @@ const supplierName = supplier?.name || "Unknown Supplier";
                       }}
                     />
                   </Grid>}
-                {paymentMethod === "cheque" &&
-                  <Grid item xs={12}>
-                    <input
-                      accept="image/*"
-                      style={{ display: "none" }}
-                      id="raised-button-file"
-                      type="file"
-                      onChange={handleImageChange}
-                    />
-                    <label htmlFor="raised-button-file">
-                      <Button variant="contained" component="span">
-                        Upload Cheque Image
-                      </Button>
-                    </label>
-                    {imagePreview &&
-                      <img
-                        src={imagePreview}
-                        alt="Preview"
-                        style={{
-                          marginTop: 10,
-                          maxWidth: "100%",
-                          maxHeight: 200
-                        }}
-                      />}
-                  </Grid>}
+               {(paymentMethod === "cheque" || paymentMethod === "online") && (
+  <Grid item xs={12}>
+    <input
+  accept="image/*"
+  style={{ display: "none" }}
+  id="payment-image-file"
+  type="file"
+  onChange={handlePaymentImageChange}
+/>
+<label htmlFor="payment-image-file">
+  <Button variant="contained" component="span">
+    Upload {paymentMethod === "cheque" ? "Cheque" : "Payment"} Image
+  </Button>
+</label>
+{paymentImagePreview && (
+  <img
+    src={paymentImagePreview}
+    alt="Preview"
+    style={{
+      marginTop: 10,
+      maxWidth: "100%",
+      maxHeight: 200
+    }}
+  />
+)}
+
+  </Grid>
+)}
+
                 {(paymentMethod === "online" || paymentMethod === "cheque") &&
                   <Grid item xs={12} sm={6}>
                     <FormControl fullWidth>

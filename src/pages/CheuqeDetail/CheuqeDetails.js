@@ -69,15 +69,35 @@ const ChequeDetails = () => {
       setSelectedCheques(prev => prev.filter(id => id !== chequeId));
     }
   };
-  const handleSubmit = () => {
+const handleSubmit = async () => {
+  const updatePromises = selectedCheques.map((chequeId) => {
+    const cheque = cheques.find((c) => c._id === chequeId);
+    return dispatch(
+      updateChequeStatus({
+        id: chequeId,
+        status: true,
+        type: cheque.type,
+        amount: cheque.amount,
+        bank: cheque.bank,
+      description:
+  cheque.type === "Product"
+    ? `Cashed cheque: ${cheque.quantity || 1} x ${cheque.product || cheque.name || 'item'}`
+    : `Cashed cheque for sale to ${cheque.name}`
 
-    selectedCheques.forEach(chequeId => {
-      const cheque = cheques.find(c => c._id === chequeId);
-      dispatch(updateChequeStatus({ id: chequeId, status: true, type: cheque.type ,amount:cheque.amount,bank:cheque.bank}));
-    });
-    setSelectedCheques([]);
-    dispatch(getPendingCheques()); // Fetch updated cheques after submission
-  };
+
+      })
+    );
+  });
+
+  try {
+    await Promise.all(updatePromises); // wait until all status updates complete
+    await dispatch(getPendingCheques()); // now fetch the updated list
+    setSelectedCheques([]); // reset selected
+  } catch (error) {
+    console.error("Failed to update cheques:", error);
+  }
+};
+
   // const handleStatusChange = (chequeId, newStatus, type) => {
   //   dispatch(updateChequeStatus({ id: chequeId, status: newStatus, type }));
   // };
@@ -99,18 +119,24 @@ const ChequeDetails = () => {
         />
       )
     },
-    { 
-      field: 'view', 
-      headerName: 'View', 
-      renderCell: (row) => (
-        <Button 
-          variant="outlined" 
-          onClick={() => setSelectedImage(baseUrl+row.chequeImage.filePath)} // Use filePath for the image
-        >
-          View
-        </Button>
-      )
-    },
+   {
+  field: 'view',
+  headerName: 'View',
+  renderCell: (row) =>
+    row.chequeImage?.filePath ? (
+      <Button
+        variant="outlined"
+        onClick={() => setSelectedImage(baseUrl + row.chequeImage.filePath)}
+      >
+        View
+      </Button>
+    ) : (
+      <Typography variant="body2" color="textSecondary">
+        No Image
+      </Typography>
+    ),
+}
+
   ];
 
   const handleChangePage = (event, newPage) => {
