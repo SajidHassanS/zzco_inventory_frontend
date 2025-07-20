@@ -261,34 +261,36 @@ const supplierName = supplier?.name || supplier?.username|| "Unknown Supplier";
 
 
 
-  const saveProduct = async () => {
-    const formData = new FormData();
-    Object.keys(product).forEach(key => formData.append(key, product[key]));
-    formData.append("shippingType", shippingType);
-    if (shippingType === "local") {
-      if (selectedWarehouse && selectedWarehouse !== "addNew") {
-        formData.append("warehouse", selectedWarehouse);
-      } else {
-        toast.error("Please select a valid warehouse or create one.");
-        return; // Stop form submission
-      }
-    }
+const saveProduct = async () => {
+  const formData = new FormData();
+  Object.keys(product).forEach(key => formData.append(key, product[key]));
+  formData.append("shippingType", shippingType);
 
-    formData.append("paymentMethod", paymentMethod);
-    formData.append("chequeDate", chequeDate);
-    formData.append("bank", selectedBank);
-    formData.append("supplier", supplier.id);
-
-    if (productImage) {
-      formData.append("image", productImage);
+  if (shippingType === "local") {
+    if (selectedWarehouse && selectedWarehouse !== "addNew") {
+      formData.append("warehouse", selectedWarehouse);
+    } else {
+      toast.error("Please select a valid warehouse or create one.");
+      return;
     }
+  }
 
-    const res = await dispatch(createProduct(formData));
-    if (res.payload && !res.error) {
-      toast.success("Product added successfully");
-      navigate("/dashboard");
-    }
-  };
+  formData.append("paymentMethod", paymentMethod);
+  formData.append("chequeDate", chequeDate);
+  formData.append("bank", selectedBank);
+  formData.append("supplier", supplier.id);
+
+  if (productImage) {
+    formData.append("image", productImage); // ✅ IMPORTANT: field name must be 'file'
+  }
+
+  const res = await dispatch(createProduct(formData));
+  if (res.payload && !res.error) {
+    toast.success("Product added successfully");
+    navigate("/dashboard");
+  }
+};
+
 
   const handleSubmit = async () => {
     if (product.quantity <= 0 || product.price <= 0) {

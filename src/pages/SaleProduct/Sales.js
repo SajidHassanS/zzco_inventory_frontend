@@ -88,7 +88,7 @@ function Sales() {
 
   const fetchSalesData = async () => {
     try {
-      const response = await api.get("/sales/allsales"); // ← CHANGED
+      const response = await api.get("/sales"); // ← CHANGED
       setAllSalesData(response.data);
     } catch (error) {
       console.error("Error fetching sales:", error);

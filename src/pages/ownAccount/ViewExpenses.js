@@ -86,7 +86,7 @@ const ViewExpenses = () => {
 
   const fetchSales = async () => {
     try {
-      const response = await axios.get(`${API_URL}/sales/allsales`, { withCredentials: true });
+      const response = await axios.get(`${API_URL}/sales`, { withCredentials: true });
 
       const salesData = response.data.map(sale => ({
         ...sale,

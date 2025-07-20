@@ -184,13 +184,14 @@ const inStock =
           <Grid container>
             <Grid item xs={12} md={6}>
               <ImageWrapper>
-              <StyledCardMedia
+            <StyledCardMedia
   component="img"
-  image={product?.image ? `${BACKEND_URL}${product.image.filePath}` : 'path/to/fallback/image.jpg'}
+  image={product?.image?.filePath || 'path/to/fallback/image.jpg'}
   alt={product.name}
-  sx={{ cursor: "pointer" }}  // ✅ Make it clickable
-  onClick={() => handleImageClick(`${BACKEND_URL}${product.image.filePath}`)} // ✅ Open modal
+  sx={{ cursor: "pointer" }}
+  onClick={() => handleImageClick(product?.image?.filePath)}
 />
+
 
                 <OverlayBox>
                   <Typography variant="h5" gutterBottom>Product Name: {product.name}</Typography>

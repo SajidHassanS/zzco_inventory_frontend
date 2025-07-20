@@ -126,7 +126,8 @@ const handleSubmit = async () => {
     row.chequeImage?.filePath ? (
       <Button
         variant="outlined"
-        onClick={() => setSelectedImage(baseUrl + row.chequeImage.filePath)}
+      onClick={() => setSelectedImage(row.chequeImage.filePath)}
+
       >
         View
       </Button>
