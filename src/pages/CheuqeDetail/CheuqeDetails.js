@@ -15,11 +15,9 @@ import {
   Modal
 } from '@mui/material';
 import { getPendingCheques, updateChequeStatus } from '../../redux/features/cheque/chequeSlice';
-
 import CustomTable from '../../components/CustomTable/CustomTable';
+
 const API_URL  = process.env.REACT_APP_BACKEND_URL;
-  
-const baseUrl = `${API_URL}`; // Base URL for the image path
 
 const ChequeDetails = () => {
   const dispatch = useDispatch();
@@ -30,26 +28,31 @@ const ChequeDetails = () => {
   const [todayCheques, setTodayCheques] = useState([]);
   const [upcomingCheques, setUpcomingCheques] = useState([]);
   const [selectedCheques, setSelectedCheques] = useState([]);
-  const [selectedImage, setSelectedImage] = useState(null); // State to manage the selected image
-  console.log("cheques",cheques);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [allCheques, setAllCheques] = useState([]);  // Add state for all cheques
+  console.log("cheques", cheques);
 
   useEffect(() => {
     dispatch(getPendingCheques());
   }, [dispatch]);
+
   useEffect(() => {
     if (cheques) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      
+
       const chequesToday = [];
       const chequesUpcoming = [];
+      const allChequesList = [];  // Local variable to hold all cheques
 
       cheques.forEach(cheque => {
         const chequeDate = new Date(cheque.chequeDate);
         chequeDate.setHours(0, 0, 0, 0);
-        
+
         const timeDiff = chequeDate.getTime() - today.getTime();
         const dayDiff = timeDiff / (1000 * 3600 * 24);
+
+        allChequesList.push(cheque);  // Add to allChequesList
 
         if (dayDiff === 0) {
           chequesToday.push(cheque);
@@ -58,10 +61,12 @@ const ChequeDetails = () => {
         }
       });
 
+      setAllCheques(allChequesList);  // Update allCheques state
       setTodayCheques(chequesToday);
       setUpcomingCheques(chequesUpcoming);
     }
   }, [cheques]);
+
   const handleStatusChange = (chequeId, isChecked) => {
     if (isChecked) {
       setSelectedCheques(prev => [...prev, chequeId]);
@@ -69,46 +74,42 @@ const ChequeDetails = () => {
       setSelectedCheques(prev => prev.filter(id => id !== chequeId));
     }
   };
-const handleSubmit = async () => {
-  const updatePromises = selectedCheques.map((chequeId) => {
-    const cheque = cheques.find((c) => c._id === chequeId);
-    return dispatch(
-      updateChequeStatus({
-        id: chequeId,
-        status: true,
-        type: cheque.type,
-        amount: cheque.amount,
-        bank: cheque.bank,
-      description:
-  cheque.type === "Product"
-    ? `Cashed cheque: ${cheque.quantity || 1} x ${cheque.product || cheque.name || 'item'}`
-    : `Cashed cheque for sale to ${cheque.name}`
 
+  const handleSubmit = async () => {
+    const updatePromises = selectedCheques.map((chequeId) => {
+      const cheque = cheques.find((c) => c._id === chequeId);
+      return dispatch(
+        updateChequeStatus({
+          id: chequeId,
+          status: true,
+          type: cheque.type,
+          amount: cheque.amount,
+          bank: cheque.bank,
+          description:
+            cheque.type === "Product"
+              ? `Cashed cheque: ${cheque.quantity || 1} x ${cheque.product || cheque.name || 'item'}`
+              : `Cashed cheque for sale to ${cheque.name}`
+        })
+      );
+    });
 
-      })
-    );
-  });
+    try {
+      await Promise.all(updatePromises); // wait until all status updates complete
+      await dispatch(getPendingCheques()); // now fetch the updated list
+      setSelectedCheques([]); // reset selected
+    } catch (error) {
+      console.error("Failed to update cheques:", error);
+    }
+  };
 
-  try {
-    await Promise.all(updatePromises); // wait until all status updates complete
-    await dispatch(getPendingCheques()); // now fetch the updated list
-    setSelectedCheques([]); // reset selected
-  } catch (error) {
-    console.error("Failed to update cheques:", error);
-  }
-};
-
-  // const handleStatusChange = (chequeId, newStatus, type) => {
-  //   dispatch(updateChequeStatus({ id: chequeId, status: newStatus, type }));
-  // };
   const handleCloseModal = () => {
     setSelectedImage(null);
   };
+
   const columns = [
     { field: 'chequeDate', headerName: 'Date', renderCell: (row) => new Date(row.chequeDate).toLocaleDateString() },
     { field: 'name', headerName: 'Name' },
     { field: 'type', headerName: 'Type' },
-    // { field: 'status', headerName: 'Current Status' },
     { 
       field: 'statusChange', 
       headerName: 'Select', 
@@ -119,25 +120,23 @@ const handleSubmit = async () => {
         />
       )
     },
-   {
-  field: 'view',
-  headerName: 'View',
-  renderCell: (row) =>
-    row.chequeImage?.filePath ? (
-      <Button
-        variant="outlined"
-      onClick={() => setSelectedImage(row.chequeImage.filePath)}
-
-      >
-        View
-      </Button>
-    ) : (
-      <Typography variant="body2" color="textSecondary">
-        No Image
-      </Typography>
-    ),
-}
-
+    {
+      field: 'view',
+      headerName: 'View',
+      renderCell: (row) =>
+        row.chequeImage?.filePath ? (
+          <Button
+            variant="outlined"
+            onClick={() => setSelectedImage(row.chequeImage.filePath)}
+          >
+            View
+          </Button>
+        ) : (
+          <Typography variant="body2" color="textSecondary">
+            No Image
+          </Typography>
+        ),
+    },
   ];
 
   const handleChangePage = (event, newPage) => {
@@ -166,10 +165,7 @@ const handleSubmit = async () => {
             <List dense>
               {todayCheques.map((cheque) => (
                 <ListItem key={cheque._id}>
-                  <ListItemText
-                    primary={`${cheque.name} - ${cheque.type}`}
-                    // secondary={`Amount: ${cheque.amount}, Status: ${cheque.status}`}
-                  />
+                  <ListItemText primary={`${cheque.name} - ${cheque.type}`} />
                 </ListItem>
               ))}
             </List>
@@ -185,21 +181,21 @@ const handleSubmit = async () => {
       <Paper>
         <CustomTable
           columns={columns}
-          data={cheques || []}
+          data={allCheques || []} // Use allCheques to display all cheques
           page={page}
           rowsPerPage={rowsPerPage}
           onPageChange={handleChangePage}
           onRowsPerPageChange={handleChangeRowsPerPage}
         />
         <Button
-        variant="contained" 
-        color="primary" 
-        onClick={handleSubmit} 
-        disabled={selectedCheques.length === 0}
-        sx={{ mt: 2 }}
-      >
-        Cash Out Selected Cheques ({selectedCheques.length})
-      </Button>
+          variant="contained"
+          color="primary"
+          onClick={handleSubmit}
+          disabled={selectedCheques.length === 0}
+          sx={{ mt: 2 }}
+        >
+          Cash Out Selected Cheques ({selectedCheques.length})
+        </Button>
       </Paper>
       <Modal
         open={Boolean(selectedImage)}
@@ -208,8 +204,8 @@ const handleSubmit = async () => {
         aria-describedby="modal-description"
       >
         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', position: 'relative' }}>
-          <img src={selectedImage} alt="Cheque" style={{ maxWidth: '90%', maxHeight: '90%',  }} />
-          <Button onClick={handleCloseModal} style={{ position: 'absolute', top: 20, right: 20, zIndex: 1 ,backgroundColor:'black',color:"white"}}>Close</Button>
+          <img src={selectedImage} alt="Cheque" style={{ maxWidth: '90%', maxHeight: '90%' }} />
+          <Button onClick={handleCloseModal} style={{ position: 'absolute', top: 20, right: 20, zIndex: 1, backgroundColor: 'black', color: "white" }}>Close</Button>
         </div>
       </Modal>
     </div>

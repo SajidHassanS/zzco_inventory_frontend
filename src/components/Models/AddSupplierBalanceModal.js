@@ -1,3 +1,4 @@
+// All imports should be at the top of the file
 import React, { useState, useEffect } from "react";
 import { Modal, Box, TextField, Button, Typography, MenuItem, Grid } from "@mui/material";
 import axios from 'axios';
@@ -5,6 +6,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { getBanks } from "../../redux/features/Bank/bankSlice";
 import { toast } from "react-toastify";
 
+// Your component function starts here
 const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
   const [amount, setAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
@@ -50,102 +52,109 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
     return Object.keys(formErrors).length === 0;
   };
 
-  const handleSubmit = async (e) => {
+const handleSubmit = async (e) => {
     e.preventDefault();
-  
+
     if (loading) return;
     setLoading(true);
-  
-    if (!validateForm()) {
-      setLoading(false);
-      return;
+
+    // 🔐 Check supplier validity
+    if (!supplier || !supplier._id) {
+        toast.error("Supplier data is missing or invalid");
+        setLoading(false);
+        return;
     }
-  
+
+    if (!validateForm()) {
+        setLoading(false);
+        return;
+    }
+
     const validAmount = parseFloat(amount);
     if (isNaN(validAmount)) {
-      setErrors({ ...errors, amount: "Invalid amount" });
-      setLoading(false);
-      return;
+        setErrors({ ...errors, amount: "Invalid amount" });
+        setLoading(false);
+        return;
     }
-  
+
     const formData = new FormData();
     formData.append("amount", validAmount);
     formData.append("paymentMethod", paymentMethod);
     formData.append("description", description);
-  
-    if (paymentMethod === "online") {
-      formData.append("bankId", selectedBank);
-      formData.append("image", image);
+
+    if (paymentMethod === "online" || paymentMethod === "cheque") {
+        formData.append("bankId", selectedBank);
+        formData.append("image", image);
     }
-  
+
     if (paymentMethod === "cheque") {
-      formData.append("chequeDate", chequeDate);
-      formData.append("image", image);
+        formData.append("chequeDate", chequeDate);
+        formData.append("status", "pending");
     }
-  
+
     try {
-      // Step 1: Add transaction to supplier and get updated balance
-      const supplierRes = await axios.post(
-        `${SUPPLIER_API_URL}/${supplier._id}/transaction`,
-        formData,
-        { headers: { "Content-Type": "multipart/form-data" } }
-      );
-  
-      if (supplierRes.status === 200 || supplierRes.status === 201) {
-        toast.success(supplierRes.data.message || "Transaction added successfully");
-  
-let deductionResponse;
+        const supplierRes = await axios.post(
+            `${SUPPLIER_API_URL}/${supplier._id}/transaction`,
+            formData,
+            { headers: { "Content-Type": "multipart/form-data" } }
+        );
 
-if (paymentMethod === "cash") {
-  deductionResponse = await axios.post(
-    `${CASH_API_URL}/add`,
-    {
-      balance: validAmount,
-      type: "deduct",
-      description: `Payment given to supplier ${supplier.username}`,
-    },
-    { withCredentials: true }
-  );
+        if (supplierRes.status === 200 || supplierRes.status === 201) {
+            toast.success(supplierRes.data.message || "Transaction added successfully");
+
+            let deductionResponse;
+
+           if (paymentMethod === "cash") {
+  // Deduct from cash immediately
+  deductionResponse = await axios.post(`${CASH_API_URL}/add`, {
+    balance: validAmount,
+    type: "deduct",
+    description: `Payment given to supplier ${supplier.username}`,
+  }, { withCredentials: true });
 } else if (paymentMethod === "online") {
-  deductionResponse = await axios.post(
-    `${BACKEND_URL}api/banks/${selectedBank}/transaction`,
-    {
-      amount: validAmount,
-      type: "subtract",
-      description: `Payment given to supplier ${supplier.username}`,
-    },
-    { withCredentials: true }
-  );
+  // Deduct from bank immediately
+  deductionResponse = await axios.post(`${BACKEND_URL}api/banks/${selectedBank}/transaction`, {
+    amount: validAmount,
+    type: "subtract",
+    description: `Online payment for supplier ${supplier.username}`,
+  }, { withCredentials: true });
+} else if (paymentMethod === "cheque") {
+  // ✅ For cheques, no deduction yet — just show success
+  toast.info("Cheque added to pending cheques. It will be deducted once cashed.");
 }
 
 
-  
-      if (deductionResponse?.status === 200 || deductionResponse?.status === 201) {
-  toast.success("Payment deducted successfully");
+          if (
+  (paymentMethod === "cheque") || 
+  deductionResponse?.status === 200 || 
+  deductionResponse?.status === 201
+) {
 
-  const updatedSupplier = {
-    ...supplier,
-    balance: supplierRes.data.supplier.balance,
-  };
+                toast.success("Payment deducted successfully");
 
-  onSuccess(updatedSupplier);
-  onClose();
-} else {
-  throw new Error("Failed to deduct payment from account");
-}
+                const updatedSupplier = {
+                    ...supplier,
+                    balance: supplierRes.data.supplier.balance,
+                };
 
-      } else {
-        throw new Error("Failed to add transaction to supplier");
-      }
+                onSuccess(updatedSupplier);
+                onClose();
+            } else {
+                throw new Error("Failed to deduct payment from account");
+            }
+        } else {
+            throw new Error("Failed to add transaction to supplier");
+        }
     } catch (error) {
-      toast.error(error.response?.data?.message || "Failed to add balance or cash");
+        toast.error(error.response?.data?.message || "Failed to add balance or cash");
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
-  };
-  
-  
-  
+};
+
+
+
+
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -209,7 +218,7 @@ if (paymentMethod === "cash") {
           <MenuItem value="cheque">Cheque</MenuItem>
         </TextField>
 
-        {paymentMethod === "online" && (
+        {(paymentMethod === "online" || paymentMethod === "cheque") && (
           <TextField
             label="Select Bank"
             select
