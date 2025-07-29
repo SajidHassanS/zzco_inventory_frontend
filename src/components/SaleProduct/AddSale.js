@@ -45,6 +45,7 @@ export default function AddSale({
   const [openModal, setOpenModal] = useState(false); // State to control modal visibility
   const [customers, setCustomers] = useState([]); // Assuming you have a state for customers
   const [errors, setErrors] = useState({}); // State to hold validation errors
+  const selectedProduct = products.find(product => product._id === sale.productID) || {};
 
   const handleOpenModal = () => {
     setOpenModal(true); // Open the modal
@@ -68,38 +69,53 @@ export default function AddSale({
     dispatch(getBanks());
     dispatch(getWarehouses());
   }, [dispatch]);
+
   // Handling Input Change for input fields
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    
+
+    // Parse numbers only for numeric fields
+    const numericFields = ["stockSold", "totalSaleAmount"];
+    const parsedValue = numericFields.includes(name) ? parseInt(value, 10) || 0 : value;
+
     setSale((prevSale) => ({
       ...prevSale,
-      [name]: value,
+      [name]: parsedValue,
     }));
-  
-    // ✅ Auto-fill saleDate when Cash or Credit is selected
+
+    const selectedProduct = products.find((product) => product._id === (name === "productID" ? value : sale.productID));
+
+    // Validate stockSold
+    if (name === "stockSold" && selectedProduct) {
+      const maxStock = selectedProduct.quantity;
+      if (parsedValue < 0 || parsedValue > maxStock) {
+        setErrors((prevErrors) => ({
+          ...prevErrors,
+          stockSold: `Stock Sold must be between 0 and ${maxStock}.`,
+        }));
+      } else {
+        setErrors((prevErrors) => ({ ...prevErrors, stockSold: "" }));
+      }
+    }
+
+    // Validate totalSaleAmount
+    if (name === "totalSaleAmount" && parsedValue <= 0) {
+      setErrors((prevErrors) => ({
+        ...prevErrors,
+        totalSaleAmount: "Total Sale Amount must be greater than 0.",
+      }));
+    } else if (name === "totalSaleAmount") {
+      setErrors((prevErrors) => ({ ...prevErrors, totalSaleAmount: "" }));
+    }
+
+    // Auto-fill saleDate when Cash or Credit is selected
     if (name === "paymentMethod" && (value === "cash" || value === "credit")) {
       setSale((prevSale) => ({
         ...prevSale,
         saleDate: new Date().toISOString().split("T")[0], // Get current date
       }));
     }
-  
-    // ✅ Validate stockSold
-    if (name === "stockSold" && (value <= 0 || value > 999)) {
-      setErrors((prevErrors) => ({ ...prevErrors, stockSold: "Stock Sold must be between 1 and 999." }));
-    } else {
-      setErrors((prevErrors) => ({ ...prevErrors, stockSold: "" }));
-    }
-  
-    // ✅ Validate totalSaleAmount
-    if (name === "totalSaleAmount" && value <= 0) {
-      setErrors((prevErrors) => ({ ...prevErrors, totalSaleAmount: "Total Sale Amount must be greater than 0." }));
-    } else {
-      setErrors((prevErrors) => ({ ...prevErrors, totalSaleAmount: "" }));
-    }
   };
-  
 
   // Handle Image Change
   const handleImageChange = (e) => {
@@ -113,7 +129,7 @@ export default function AddSale({
   // POST Data
   const addSale = () => {
     const formData = new FormData();
-    const totalAmount = sale.totalSaleAmount*sale.stockSold;
+    const totalAmount = sale.totalSaleAmount * sale.stockSold;
     formData.append("productID", sale.productID);
     formData.append("customerID", sale.customerID);
     formData.append("stockSold", sale.stockSold);
@@ -129,7 +145,6 @@ export default function AddSale({
     if (sale.paymentMethod === "cheque") {
       formData.append("chequeDate", sale.chequeDate);
       formData.append("bankID", sale.bankID);
-
     }
     if (sale.paymentMethod === "online") {
       formData.append("bankID", sale.bankID);
@@ -138,10 +153,11 @@ export default function AddSale({
       formData.append("image", image);
     }
 
-    axios.post(`${API_URL}/sales/`, formData, {
-      withCredentials: true,
-      headers: { 'Content-Type': 'multipart/form-data' }
-    })
+    axios
+      .post(`${API_URL}/sales/`, formData, {
+        withCredentials: true,
+        headers: { "Content-Type": "multipart/form-data" },
+      })
       .then((response) => {
         toast.success(response.data.message);
         handlePageUpdate();
@@ -150,9 +166,12 @@ export default function AddSale({
       })
       .catch((error) => {
         console.error("Error:", error);
-        toast.error(error.response?.data?.message || "Failed to add sale. Please try again.");
+        toast.error(
+          error.response?.data?.message || "Failed to add sale. Please try again."
+        );
       });
   };
+
   const refreshCustomers = () => {
     fetchCustomerData();
   };
@@ -208,14 +227,14 @@ export default function AddSale({
                   name="stockSold"
                   value={sale.stockSold}
                   onChange={handleInputChange}
-                  placeholder="0 - 999"
+                  placeholder={`0 - ${selectedProduct ? selectedProduct.quantity : 0}`}
                   margin="normal"
                   InputLabelProps={{ shrink: true }}
-                  error={!!errors.stockSold} // Show error state
-                  helperText={errors.stockSold} // Show error message
-                
+                  error={!!errors.stockSold} // Show error state for stockSold
+                  helperText={errors.stockSold} // Show error message for stockSold
                 />
               </Grid>
+
               {/* Store Selection */}
               <Grid item xs={12} sm={6}>
                 <FormControl fullWidth margin="normal">
@@ -229,8 +248,8 @@ export default function AddSale({
                     label="Customer"
                   >
                     <MenuItem value="addNew" onClick={handleOpenModal} style={{ backgroundColor: 'silver' }}>
-                        Add New Customer
-                      </MenuItem>
+                      Add New Customer
+                    </MenuItem>
                     {customer.map((store) => (
                       <MenuItem key={store._id} value={store._id}>
                         {store.username}
@@ -251,9 +270,8 @@ export default function AddSale({
                   placeholder="299"
                   margin="normal"
                   InputLabelProps={{ shrink: true }}
-                  error={!!errors.stockSold} // Show error state
-                  helperText={errors.stockSold} // Show error message
-                
+                  error={!!errors.totalSaleAmount} // Show error state for totalSaleAmount
+                  helperText={errors.totalSaleAmount} // Show error message for totalSaleAmount
                 />
               </Grid>
               {/* Payment Method Selection */}
@@ -319,33 +337,32 @@ export default function AddSale({
                 </Grid>
               )}
               {/* Image Upload */}
-              {(sale.paymentMethod === "cheque" ||
-                // sale.paymentMethod === "credit" ||
-                sale.paymentMethod === "online") && (
-                  <Grid item xs={12}>
-                    <TextField
-                      type="file"
-                      label="Upload Image"
-                      name="image"
-                      onChange={handleImageChange}
-                      fullWidth
-                      margin="normal"
-                      InputLabelProps={{ shrink: true }}
+              {(sale.paymentMethod === "cheque" || sale.paymentMethod === "online") && (
+                <Grid item xs={12}>
+                  <TextField
+                    type="file"
+                    label="Upload Image"
+                    name="image"
+                    onChange={handleImageChange}
+                    fullWidth
+                    margin="normal"
+                    InputLabelProps={{ shrink: true }}
+                  />
+                  {imagePreview && (
+                    <img
+                      src={imagePreview}
+                      alt="Preview"
+                      style={{
+                        width: "100%",
+                        maxHeight: "300px",
+                        marginTop: "16px",
+                        objectFit: "cover",
+                      }}
                     />
-                    {imagePreview && (
-                      <img
-                        src={imagePreview}
-                        alt="Preview"
-                        style={{
-                          width: "100%",
-                          maxHeight: "300px",
-                          marginTop: "16px",
-                          objectFit: "cover",
-                        }}
-                      />
-                    )}
-                  </Grid>
-                )}
+                  )}
+                </Grid>
+              )}
+              {/* Warehouse Selection */}
               <Grid item xs={12} sm={6}>
                 <FormControl fullWidth margin="normal">
                   <InputLabel id="warehouseID-label">Warehouse</InputLabel>
@@ -370,19 +387,18 @@ export default function AddSale({
               </Grid>
               {/* Sales Date */}
               <Grid item xs={12}>
-              <TextField
-  fullWidth
-  label="Sales Date"
-  type="date"
-  id="saleDate"
-  name="saleDate"
-  value={sale.saleDate}
-  onChange={handleInputChange}
-  InputLabelProps={{ shrink: true }}
-  margin="normal"
-  disabled={sale.paymentMethod === "cash" || sale.paymentMethod === "credit"} // ✅ Disable when cash or credit
-/>
-
+                <TextField
+                  fullWidth
+                  label="Sales Date"
+                  type="date"
+                  id="saleDate"
+                  name="saleDate"
+                  value={sale.saleDate}
+                  onChange={handleInputChange}
+                  InputLabelProps={{ shrink: true }}
+                  margin="normal"
+                  disabled={sale.paymentMethod === "cash" || sale.paymentMethod === "credit"} // Disable when cash or credit
+                />
               </Grid>
             </Grid>
           </form>
