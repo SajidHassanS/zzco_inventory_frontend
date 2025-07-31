@@ -172,9 +172,29 @@ export default function AddSale({
       });
   };
 
-  const refreshCustomers = () => {
-    fetchCustomerData();
-  };
+const refreshCustomers = (newCustomer) => {
+  // Add the new customer to the list
+  setCustomers((prevCustomers) => [...prevCustomers, newCustomer]);
+
+  // Automatically select the newly created customer
+  setSale((prevSale) => ({
+    ...prevSale,
+    customerID: newCustomer._id, // Set the new customer as selected
+  }));
+};
+
+
+const handleAddNewCustomer = (newCustomer) => {
+  // Assuming the newCustomer object has _id property
+  setSale((prevSale) => ({
+    ...prevSale,
+    customerID: newCustomer._id, // Automatically select the newly added customer
+  }));
+  
+  // Optionally, refresh the customer list if needed (if you're maintaining a customer list state)
+  fetchCustomerData(); // Make sure this function fetches the latest customer list
+};
+
 
   return (
     <Fragment>
@@ -420,11 +440,13 @@ export default function AddSale({
           </Button>
         </DialogActions>
       </Dialog>
-      <AddCustomerModal // Use the new component
-        open={openModal}
-        handleClose={handleCloseModal}
-        refreshCustomers={refreshCustomers}
-      />
+<AddCustomerModal
+  open={openModal}
+  handleClose={handleCloseModal}
+  refreshCustomers={refreshCustomers} // Ensure this is passed
+  handleAddNewCustomer={handleAddNewCustomer}  // Add this line
+/>
+
     </Fragment>
   );
 }

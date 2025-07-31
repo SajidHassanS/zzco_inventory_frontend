@@ -4,13 +4,15 @@ import axios from "axios";
 import { toast } from "react-toastify";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-
 const API_URL = `${BACKEND_URL}api/customers/`;
 
-const AddCustomerModal = ({ open, handleClose, refreshCustomers }) => {
+const AddCustomerModal = ({
+  open,
+  handleClose,
+  refreshCustomers,
+  handleAddNewCustomer
+}) => {
   const [username, setUsername] = useState("");
-  // const [email, setEmail] = useState("");
-  // const [password, setPassword] = useState("");
   const [phone, setPhone] = useState("");
 
   const handleInputChange = event => {
@@ -19,12 +21,6 @@ const AddCustomerModal = ({ open, handleClose, refreshCustomers }) => {
       case "username":
         setUsername(value);
         break;
-      // case "email":
-      //   setEmail(value);
-      //   break;
-      // case "password":
-      //   setPassword(value);
-      //   break;
       case "phone":
         setPhone(value);
         break;
@@ -39,8 +35,6 @@ const AddCustomerModal = ({ open, handleClose, refreshCustomers }) => {
         `${API_URL}customerRegister`,
         {
           username,
-          // email,
-          // password,
           phone
         },
         { withCredentials: true }
@@ -48,7 +42,8 @@ const AddCustomerModal = ({ open, handleClose, refreshCustomers }) => {
 
       if (res) {
         toast.success("Customer Added Successfully!");
-        refreshCustomers(); // Refresh the customer list after adding a new customer
+        // Pass the new customer data to refresh customers in the parent component
+        handleAddNewCustomer(res.data); // Update the customers in the parent component
       }
       handleClose();
     } catch (error) {
@@ -86,24 +81,6 @@ const AddCustomerModal = ({ open, handleClose, refreshCustomers }) => {
           value={username}
           onChange={handleInputChange}
         />
-        {/* <TextField
-          fullWidth
-          margin="normal"
-          label="Email (optional)"
-          name="email"
-          type="email"
-          value={email}
-          onChange={handleInputChange}
-        />
-        <TextField
-          fullWidth
-          margin="normal"
-          label="Password (optional)"
-          name="password"
-          type="password"
-          value={password}
-          onChange={handleInputChange}
-        /> */}
         <TextField
           fullWidth
           margin="normal"
