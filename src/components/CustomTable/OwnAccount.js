@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   Table,
   TableBody,
@@ -8,28 +8,31 @@ import {
   TableRow,
   Paper,
   IconButton,
-  TablePagination,
-} from '@mui/material';
-import EditIcon from '@mui/icons-material/Edit';
-import DeleteIcon from '@mui/icons-material/Delete';
-import { ViewArrayOutlined } from '@mui/icons-material';
-import { BsEyeFill } from 'react-icons/bs';
+  TablePagination
+} from "@mui/material";
+import EditIcon from "@mui/icons-material/Edit";
+import DeleteIcon from "@mui/icons-material/Delete";
+import { BsEyeFill } from "react-icons/bs";
 
-const CustomTable = ({ columns, data, onEdit, onDelete,onView ,cashtrue}) => {
-  console.log("cashtrue",cashtrue);
+const CustomTable = ({
+  columns,
+  data,
+  onEdit,
+  onDelete,
+  onView,
+  cashtrue = false
+}) => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(5);
 
-  const handleChangePage = (event, newPage) => {
-    setPage(newPage);
-  };
-
-  const handleChangeRowsPerPage = (event) => {
+  const handleChangePage = (event, newPage) => setPage(newPage);
+  const handleChangeRowsPerPage = event => {
     setRowsPerPage(parseInt(event.target.value, 10));
     setPage(0);
   };
 
-  const emptyRows = rowsPerPage - Math.min(rowsPerPage, data.length - page * rowsPerPage);
+  const emptyRows =
+    rowsPerPage - Math.min(rowsPerPage, data.length - page * rowsPerPage);
 
   return (
     <Paper>
@@ -37,22 +40,26 @@ const CustomTable = ({ columns, data, onEdit, onDelete,onView ,cashtrue}) => {
         <Table>
           <TableHead>
             <TableRow>
-              {columns.map((column) => (
-                <TableCell key={column.field}>{column.headerName}</TableCell>
-              ))}
+              {columns.map(column =>
+                <TableCell key={column.field}>
+                  {column.headerName}
+                </TableCell>
+              )}
               <TableCell>Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {data
               .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-              .map((row) => (
-                <TableRow key={row._id}>
-                  {columns.map((column) => (
+              .map(row =>
+                <TableRow key={row._id || row.id}>
+                  {columns.map(column =>
                     <TableCell key={column.field}>
-                      {column.renderCell ? column.renderCell(row) : row[column.field]}
+                      {column.renderCell
+                        ? column.renderCell(row)
+                        : row[column.field]}
                     </TableCell>
-                  ))}
+                  )}
                   <TableCell>
                     <IconButton onClick={() => onEdit(row)}>
                       <EditIcon />
@@ -60,23 +67,18 @@ const CustomTable = ({ columns, data, onEdit, onDelete,onView ,cashtrue}) => {
                     <IconButton onClick={() => onDelete(row)}>
                       <DeleteIcon />
                     </IconButton>
-                    {cashtrue !== "true" && (
-  <IconButton onClick={() => onView(row)}>
-    <BsEyeFill />
-  </IconButton>
-)}
-
-
-                    {/* {renderRowActions && renderRowActions(row)} // New line for rendering row actions */}
-
+                    {/* 👇 now respects boolean */}
+                    {!cashtrue &&
+                      <IconButton onClick={() => onView(row)}>
+                        <BsEyeFill />
+                      </IconButton>}
                   </TableCell>
                 </TableRow>
-              ))}
-            {emptyRows > 0 && (
+              )}
+            {emptyRows > 0 &&
               <TableRow style={{ height: 53 * emptyRows }}>
                 <TableCell colSpan={columns.length + 1} />
-              </TableRow>
-            )}
+              </TableRow>}
           </TableBody>
         </Table>
       </TableContainer>

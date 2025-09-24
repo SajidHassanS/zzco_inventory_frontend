@@ -14,19 +14,20 @@ import {
   Grid,
   Container,
 } from "@mui/material";
+import axios from "axios";
 import { getBanks } from "../../redux/features/Bank/bankSlice";
 import { toast, ToastContainer } from "react-toastify";
 
 const AddExpense = () => {
   const dispatch = useDispatch();
 
-  // ✅ Fetch Banks from Redux
-  const banks = useSelector((state) => state.bank.banks);
+  // Banks from Redux
+  const banks = useSelector((state) => state.bank.banks || []);
 
-  // ✅ State to control the dialog visibility
+  // Dialog visibility
   const [showExpenseModal, setShowExpenseModal] = useState(false);
 
-  // ✅ State to handle form input values
+  // Form state
   const [expense, setExpense] = useState({
     expenseName: "",
     amount: "",
@@ -37,62 +38,156 @@ const AddExpense = () => {
     bankID: "",
   });
 
-  const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-  const API_URL = `${BACKEND_URL}api`;
+  // Safe API base (fix missing slash issues)
+  const RAW = process.env.REACT_APP_BACKEND_URL || "";
+  const BASE = RAW.endsWith("/") ? RAW : `${RAW}/`;
+  const API_URL = `${BASE}api`;
 
-  // ✅ Fetch Banks when the component loads
   useEffect(() => {
     dispatch(getBanks());
   }, [dispatch]);
 
-  // ✅ Handle Input Change
+  // Input handler
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setExpense((prevExpense) => ({
-      ...prevExpense,
-      [name]: value,
+
+    setExpense((prev) => ({
+      ...prev,
+      [name]: name === "bankID" ? String(value) : value,
     }));
 
-    // ✅ Auto-fill expenseDate when Cash or Credit is selected
-    if (name === "paymentMethod" && (value === "cash" || value === "credit")) {
-      setExpense((prevExpense) => ({
-        ...prevExpense,
-        expenseDate: new Date().toISOString().split("T")[0], // Get current date
-      }));
+    if (name === "paymentMethod") {
+      if (value === "cash" || value === "credit") {
+        setExpense((prev) => ({
+          ...prev,
+          expenseDate: new Date().toISOString().split("T")[0],
+          chequeDate: "",
+          bankID: "",
+        }));
+      }
     }
   };
 
-  // ✅ Handle Form Submission
-  const addExpense = () => {
+  // ---- Helper: try multiple bank transaction endpoints ----
+  const postBankSubtract = async ({ bankId, amount, description }) => {
+    const amt = Number(amount);
+
+    // If you know the exact route, you can replace this array with a single string.
+    const candidates = [
+      // path variants
+      { url: `${API_URL}/banks/${bankId}/transactions`, body: {} },
+      { url: `${API_URL}/banks/${bankId}/transaction`, body: {} },
+      { url: `${API_URL}/bank/${bankId}/transactions`, body: {} },
+      { url: `${API_URL}/banks/${bankId}/transactions/add`, body: {} },
+      // body-based variant (no :id in path)
+      { url: `${API_URL}/banks/transactions`, body: { bankID: String(bankId) } },
+    ];
+
+    let lastErr = null;
+
+    for (const c of candidates) {
+      try {
+        const res = await axios.post(
+          c.url,
+          {
+            // ⚠️ Change keys here if your backend expects different names (e.g. txnType/value/note)
+            type: "subtract",
+            amount: amt,
+            description,
+            ...c.body,
+          },
+          { withCredentials: true }
+        );
+        // success
+        return res;
+      } catch (e) {
+        lastErr = e;
+        const status = e?.response?.status;
+        // If not 404, probably a real error (validation, auth, CORS...). Stop trying others.
+        if (status && status !== 404) break;
+      }
+    }
+
+    // Surface the best available message
+    const msg =
+      lastErr?.response?.data?.message ||
+      lastErr?.message ||
+      "Bank deduction failed (endpoint not found).";
+    throw new Error(msg);
+  };
+
+  // Submit
+  const addExpense = async () => {
     if (!expense.expenseName || !expense.amount || !expense.paymentMethod) {
       toast.error("Please fill all required fields!");
       return;
     }
 
-    const expenseData = {
-      ...expense,
-      amount: parseFloat(expense.amount), // Ensure amount is a number
+    const amt = Number(expense.amount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      toast.error("Enter a valid positive amount.");
+      return;
+    }
+
+    const method = (expense.paymentMethod || "").toLowerCase();
+    const isBankMethod = method === "online" || method === "cheque";
+
+    if (isBankMethod && !expense.bankID) {
+      toast.error("Select a bank for Online/Cheque payments.");
+      return;
+    }
+
+    const payload = {
+      expenseName: expense.expenseName,
+      amount: amt,
+      description: expense.description || "",
+      expenseDate:
+        expense.expenseDate || new Date().toISOString().split("T")[0],
+      paymentMethod: method,
+      bankID: isBankMethod ? String(expense.bankID) : undefined,
+      chequeDate: method === "cheque" ? expense.chequeDate : undefined,
     };
 
-    fetch(`${API_URL}/expenses/`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(expenseData),
-    })
-      .then((response) => response.json())
-      .then(() => {
-        toast.success("Expense Added Successfully!");
-        setShowExpenseModal(false); // Close modal
-      })
-      .catch((error) => {
-        console.error("Error:", error);
-        toast.error("Failed to add expense. Please try again.");
+    try {
+      // 1) Create expense
+      await axios.post(`${API_URL}/expenses/add`, payload, {
+        withCredentials: true,
       });
+
+      // 2) If paid via bank, subtract from that bank (with fallback routes)
+      if (isBankMethod) {
+        await postBankSubtract({
+          bankId: String(expense.bankID),
+          amount: amt,
+          description: `Expense: ${expense.expenseName}`,
+        });
+      }
+
+      // 3) Refresh banks in UI
+      dispatch(getBanks());
+
+      toast.success("Expense added successfully!");
+      setShowExpenseModal(false);
+
+      // 4) Reset form
+      setExpense({
+        expenseName: "",
+        amount: "",
+        description: "",
+        expenseDate: "",
+        paymentMethod: "",
+        chequeDate: "",
+        bankID: "",
+      });
+    } catch (e) {
+      console.error("Expense/Bank update failed:", e?.message);
+      toast.error(e?.message || "Failed to add expense or update bank.");
+    }
   };
 
-  // ✅ Toggle Modal
+  // Toggle Modal
   const toggleExpenseModal = () => {
-    setShowExpenseModal(!showExpenseModal);
+    setShowExpenseModal((s) => !s);
   };
 
   return (
@@ -107,7 +202,6 @@ const AddExpense = () => {
         Add Expense
       </Button>
 
-      {/* ✅ Expense Modal */}
       <Dialog
         open={showExpenseModal}
         onClose={toggleExpenseModal}
@@ -118,7 +212,7 @@ const AddExpense = () => {
         <DialogContent>
           <form>
             <Grid container spacing={2}>
-              {/* ✅ Expense Name */}
+              {/* Expense Name */}
               <Grid item xs={12}>
                 <TextField
                   fullWidth
@@ -130,7 +224,7 @@ const AddExpense = () => {
                 />
               </Grid>
 
-              {/* ✅ Amount */}
+              {/* Amount */}
               <Grid item xs={12}>
                 <TextField
                   fullWidth
@@ -143,7 +237,7 @@ const AddExpense = () => {
                 />
               </Grid>
 
-              {/* ✅ Description */}
+              {/* Description */}
               <Grid item xs={12}>
                 <TextField
                   fullWidth
@@ -157,7 +251,7 @@ const AddExpense = () => {
                 />
               </Grid>
 
-              {/* ✅ Payment Method Selection */}
+              {/* Payment Method */}
               <Grid item xs={12}>
                 <FormControl fullWidth margin="normal">
                   <InputLabel>Payment Method</InputLabel>
@@ -165,6 +259,7 @@ const AddExpense = () => {
                     name="paymentMethod"
                     value={expense.paymentMethod}
                     onChange={handleInputChange}
+                    label="Payment Method"
                   >
                     <MenuItem value="cash">Cash</MenuItem>
                     <MenuItem value="cheque">Cheque</MenuItem>
@@ -174,7 +269,7 @@ const AddExpense = () => {
                 </FormControl>
               </Grid>
 
-              {/* ✅ Bank Selection for Online/Cheque */}
+              {/* Bank (for Online/Cheque) */}
               {(expense.paymentMethod === "cheque" ||
                 expense.paymentMethod === "online") && (
                 <Grid item xs={12}>
@@ -182,11 +277,12 @@ const AddExpense = () => {
                     <InputLabel>Bank Name</InputLabel>
                     <Select
                       name="bankID"
-                      value={expense.bankID}
+                      value={String(expense.bankID || "")}
                       onChange={handleInputChange}
+                      label="Bank Name"
                     >
                       {banks.map((bank) => (
-                        <MenuItem key={bank._id} value={bank._id}>
+                        <MenuItem key={bank._id} value={String(bank._id)}>
                           {bank.bankName}
                         </MenuItem>
                       ))}
@@ -195,7 +291,7 @@ const AddExpense = () => {
                 </Grid>
               )}
 
-              {/* ✅ Cheque Date for Cheque Payment */}
+              {/* Cheque Date */}
               {expense.paymentMethod === "cheque" && (
                 <Grid item xs={12}>
                   <TextField
@@ -211,7 +307,7 @@ const AddExpense = () => {
                 </Grid>
               )}
 
-              {/* ✅ Expense Date (Auto-filled when Cash/Credit is selected) */}
+              {/* Expense Date */}
               <Grid item xs={12}>
                 <TextField
                   fullWidth

@@ -614,47 +614,64 @@ const saveProduct = async () => {
         </Table>
       </StyledPaper>
 
-      <Modal
-        open={openModal}
-        onClose={() => setOpenModal(false)}
-        style={{ width: "50%", margin: "auto" }}
+    <Modal
+  open={openModal}
+  onClose={() => setOpenModal(false)}
+  style={{
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  }}
+>
+  <StyledPaper
+    elevation={2}
+    sx={{
+      width: "80%",
+      maxHeight: "90vh",
+      display: "flex",
+      flexDirection: "column",
+    }}
+  >
+    {/* Scrollable Section */}
+    <Box sx={{ flex: 1, overflowY: "auto", p: 2 }}>
+      <Stepper activeStep={activeStep} alternativeLabel>
+        {steps.map((label) => (
+          <Step key={label}>
+            <StepLabel>{label}</StepLabel>
+          </Step>
+        ))}
+      </Stepper>
+
+      <Box mt={4}>{getStepContent(activeStep)}</Box>
+    </Box>
+
+    {/* Fixed Footer (Always Visible) */}
+    <Box
+      sx={{
+        display: "flex",
+        justifyContent: "flex-end",
+        p: 2,
+        borderTop: "1px solid #ddd",
+        backgroundColor: "white",
+      }}
+    >
+      <Button disabled={activeStep === 0} onClick={handleBack} sx={{ mr: 1 }}>
+        Back
+      </Button>
+      <Button
+        variant="contained"
+        color="primary"
+        onClick={activeStep === steps.length - 1 ? handleSubmit : handleNext}
       >
-        <StyledPaper elevation={2}>
-          <Stepper activeStep={activeStep} alternativeLabel>
-            {steps.map(label =>
-              <Step key={label}>
-                <StepLabel>
-                  {label}
-                </StepLabel>
-              </Step>
-            )}
-          </Stepper>
-          <Box mt={4}>
-            {getStepContent(activeStep)}
-            <Box sx={{ display: "flex", justifyContent: "flex-end", mt: 2 }}>
-              <Button
-                disabled={activeStep === 0}
-                onClick={handleBack}
-                sx={{ mr: 1 }}
-              >
-                Back
-              </Button>
-              <Button
-                variant="contained"
-                color="primary"
-                onClick={
-                  activeStep === steps.length - 1 ? handleSubmit : handleNext
-                }
-              >
-                {activeStep === steps.length - 1 ? "Submit" : "Next"}
-              </Button>
-              <Button onClick={() => setOpenModal(false)} sx={{ ml: 1 }}>
-                Close
-              </Button>
-            </Box>
-          </Box>
-        </StyledPaper>
-      </Modal>
+        {activeStep === steps.length - 1 ? "Submit" : "Next"}
+      </Button>
+      <Button onClick={() => setOpenModal(false)} sx={{ ml: 1 }}>
+        Close
+      </Button>
+    </Box>
+  </StyledPaper>
+</Modal>
+
       {/* {showStepper && (
           
           <Stepper activeStep={activeStep} alternativeLabel>

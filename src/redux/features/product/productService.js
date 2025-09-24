@@ -46,7 +46,13 @@ const getProduct = async id => {
 
 // Update Product (partial update)
 const updateProduct = async (id, formData) => {
-  const response = await api.patch(`/products/${id}`, formData);
+  console.log("Sending update to backend:", [...formData.entries()]);
+
+  const response = await api.patch(`/products/${id}`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+    withCredentials: true
+  });
+
   return response.data;
 };
 

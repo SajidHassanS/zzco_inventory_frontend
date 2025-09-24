@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import {
-
   Typography,
   Container,
   Card,
@@ -22,11 +21,10 @@ import { useDispatch, useSelector } from "react-redux";
 import { getProducts } from "../../redux/features/product/productSlice";
 import { getBanks } from "../../redux/features/Bank/bankSlice";
 import axios from "axios";
-import CustomTable from "../../components/CustomTable/CustomTable"; // Import the CustomTable component
-// import { getProducts } from "../../redux/features/product/productSlice";
+import CustomTable from "../../components/CustomTable/CustomTable";
 import { getCustomers } from "../../redux/features/cutomer/customerSlice";
 import { getSuppliers } from "../../redux/features/supplier/supplierSlice";
-// import { getWarehouses } from "../../redux/features/warehouse/warehouseSlice";
+
 const ITEMS_PER_PAGE = 10;
 
 const ViewExpenses = () => {
@@ -34,9 +32,11 @@ const ViewExpenses = () => {
   const [ledgerEntries, setLedgerEntries] = useState([]);
   const { customers } = useSelector((state) => state.customer);
   const { suppliers } = useSelector((state) => state.supplier);
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [sales, setSales] = useState([]); // Add state to hold sales data
-  const banks = useSelector((state) => state.bank.banks); // ✅ Get banks from Redux store
+  const [selectedDate, setSelectedDate] = useState(
+    new Date().toISOString().split("T")[0]
+  );
+  const [sales, setSales] = useState([]);
+  const banks = useSelector((state) => state.bank.banks);
   const [filteredEntries, setFilteredEntries] = useState([]);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [expense, setExpense] = useState({
@@ -46,12 +46,74 @@ const ViewExpenses = () => {
     expenseDate: new Date().toISOString().split("T")[0],
     paymentMethod: "",
     bankID: "",
-    chequeDate: "", // ✅ Added cheque date field
-    image: null, // ✅ Added image field
+    chequeDate: "",
+    image: null,
   });
   const [imagePreview, setImagePreview] = useState("");
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(ITEMS_PER_PAGE);
+  const [totalPages, setTotalPages] = useState(0);
+  const [runningBalance, setRunningBalance] = useState(0);
+
+  // ---- SAFE API BASE URL (fixes missing slash bugs) ----
+  const RAW = process.env.REACT_APP_BACKEND_URL || "";
+  const BASE = RAW.endsWith("/") ? RAW : `${RAW}/`;
+  const API_URL = `${BASE}api`;
+
+  // cache resolved bank transaction endpoint (after we probe once)
+  const [bankTxnPathTemplate, setBankTxnPathTemplate] = useState(null);
+  // common variants your backend might use; we will probe them once
+  const bankTxnCandidates = [
+    // banks/:id/transactions (what you originally called)
+    (id) => `${API_URL}/banks/${id}/transactions`,
+    // banks/:id/transaction
+    (id) => `${API_URL}/banks/${id}/transaction`,
+    // bank/:id/transactions
+    (id) => `${API_URL}/bank/${id}/transactions`,
+    // banks/transactions/:id
+    (id) => `${API_URL}/banks/transactions/${id}`,
+    // banks/:id/transactions/add
+    (id) => `${API_URL}/banks/${id}/transactions/add`,
+  ];
+
+  // try to find which candidate path actually exists (2xx/3xx on OPTIONS/HEAD/GET)
+  const resolveBankTxnEndpoint = async (bankId) => {
+    if (!bankId) return null;
+    if (bankTxnPathTemplate) return bankTxnPathTemplate;
+
+    for (const build of bankTxnCandidates) {
+      const url = build(bankId);
+      try {
+        // Some servers don't allow OPTIONS/HEAD; fall back to GET with harmless params
+        const res =
+          (await axios.options(url, { withCredentials: true })).status ||
+          (await axios.head(url, { withCredentials: true })).status;
+        if (res >= 200 && res < 400) {
+          setBankTxnPathTemplate(build);
+          return build;
+        }
+      } catch (_) {
+        // ignore and try next
+      }
+
+      try {
+        // Last-ditch: try GET (many routes will 405 here; we only accept 2xx/3xx)
+        const res = await axios.get(url, {
+          withCredentials: true,
+          params: { _probe: 1 },
+        });
+        if (res.status >= 200 && res.status < 400) {
+          setBankTxnPathTemplate(build);
+          return build;
+        }
+      } catch (_) {
+        // ignore and continue
+      }
+    }
+    console.error("❌ Could not resolve bank transactions endpoint. Tried:", bankTxnCandidates.map((b) => b("<id>")));
+    return null;
+  };
+
   const handlePageChange = (event, newPage) => {
     setPage(newPage + 1);
   };
@@ -61,15 +123,7 @@ const ViewExpenses = () => {
     setPage(1);
   };
 
-  const [totalPages, setTotalPages] = useState(0);
-  const [runningBalance, setRunningBalance] = useState(0);
-  const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
- 
-  const API_URL = `${BACKEND_URL}api`;
-
-
   const { products } = useSelector((state) => state.product);
-
 
   useEffect(() => {
     dispatch(getProducts());
@@ -86,50 +140,49 @@ const ViewExpenses = () => {
 
   const fetchSales = async () => {
     try {
-      const response = await axios.get(`${API_URL}/sales`, { withCredentials: true });
-
-      const salesData = response.data.map(sale => ({
+      const { data } = await axios.get(`${API_URL}/sales`, {
+        withCredentials: true,
+      });
+      const salesData = data.map((sale) => ({
         ...sale,
-        id: sale._id, // Added id for identifier
-        type: 'Sale',
-        amount: sale.totalSaleAmount, // Positive amount for sales (debit)
+        id: sale._id,
+        type: "Sale",
+        name: sale.productID ? sale.productID.name : "Unknown Product",
+        amount: Math.abs(Number(sale.totalSaleAmount) || 0),
         date: new Date(sale.saleDate),
-        description: `Sale of ${sale.stockSold} units of product ${sale.productID ? sale.productID.name : 'Unknown'} to customer ${sale.customerID ? sale.customerID.username : 'Unknown'}`,
+        description: `Sale of ${sale.stockSold} unit(s) of ${
+          sale.productID ? sale.productID.name : "Unknown"
+        } to ${sale.customerID ? sale.customerID.username : "Unknown"}`,
+        paymentMethod: sale.paymentMethod || "N/A",
       }));
-      // setSales(salesData); // Store sales data in state
-      // console.log("Sale", salesData);
-
       updateLedger(salesData);
     } catch (err) {
       console.error("Error fetching sales:", err);
     }
   };
+
   const fetchExpenses = async () => {
     try {
-      const response = await axios.get(`${API_URL}/expenses/all`, {
-        withCredentials: true, // ✅ Enables cookies for auth/session
+      const { data } = await axios.get(`${API_URL}/expenses/all`, {
+        withCredentials: true,
       });
 
-      console.log("🔍 API Response (Expenses):", response.data); // ✅ Debugging log
-
-      const expensesData = response.data.map((expense) => ({
-        ...expense,
-        id: expense._id,
+      const expensesData = data.map((exp) => ({
+        ...exp,
+        id: exp._id,
         type: "Expense",
-        amount: -Math.abs(expense.amount), // ✅ Ensure negative amount for expenses
-        date: new Date(expense.createdAt),
-        description: expense.description || expense.expenseName,
-        paymentMethod: expense.paymentMethod || "N/A",
+        name: exp.expenseName || "Expense",
+        amount: -Math.abs(Number(exp.amount) || 0),
+        date: new Date(exp.expenseDate || exp.createdAt),
+        description: exp.description || exp.expenseName || "",
+        paymentMethod: exp.paymentMethod || "N/A",
       }));
 
-      console.log("🛠 Final Expense Data:", expensesData); // ✅ Debugging log
       updateLedger(expensesData);
     } catch (err) {
       console.error("❌ Error fetching expenses:", err);
     }
   };
-
-
 
   const updateLedger = (newEntries) => {
     setLedgerEntries((prevEntries) => {
@@ -140,44 +193,41 @@ const ViewExpenses = () => {
         if (!exists) {
           updatedEntries.push({
             ...newEntry,
-            paymentMethod: newEntry.paymentMethod || "N/A", // ✅ Ensure payment method is set
+            paymentMethod: newEntry.paymentMethod || "N/A",
           });
         }
       });
 
-      return updatedEntries.sort((a, b) => new Date(b.date) - new Date(a.date));
+      return updatedEntries.sort(
+        (a, b) => new Date(b.date) - new Date(a.date)
+      );
     });
   };
 
   useEffect(() => {
     if (products.length > 0) {
-      const purchaseEntries = products.map(product => ({
-        type: 'Purchase',
-        id: product._id, // Added id for identifier
-        amount: -product.price * product.quantity, // Negative amount for purchases (credit)
-        date: new Date(product.createdAt),
-        description: `Purchase of ${product.quantity} ${product.name} from supplier ${product.supplier ? product.supplier.username : 'Unknown'} at ${product.price} each`,
-        paymentMethod: product.paymentMethod,
-        category: product.category,
+      const purchaseEntries = products.map((p) => ({
+        id: p._id,
+        type: "Purchase",
+        name: p.name,
+        amount: -Math.abs(Number(p.price) * Number(p.quantity) || 0),
+        date: new Date(p.createdAt),
+        description: `Purchase of ${p.quantity} ${p.name} from ${
+          p.supplier ? p.supplier.username : "Unknown"
+        } at ${p.price} each`,
+        paymentMethod: p.paymentMethod || "N/A",
+        category: p.category,
       }));
       updateLedger(purchaseEntries);
     }
-    // if (sales.length > 0) {
-    //   updateLedger(sales); // Update ledger with sales data
-    // }
   }, [products]);
-
-
-
-
-
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
 
     setExpense((prevExpense) => ({
       ...prevExpense,
-      [name]: name === "amount" ? parseFloat(value) || "" : value, // ✅ Remove `trim()`
+      [name]: name === "amount" ? parseFloat(value) || "" : value,
     }));
 
     if (name === "paymentMethod" && (value === "cash" || value === "credit")) {
@@ -192,8 +242,6 @@ const ViewExpenses = () => {
     }
   };
 
-
-
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -205,62 +253,109 @@ const ViewExpenses = () => {
     }
   };
 
-  const addExpense = async () => {
-    console.log("🚀 Expense Data Before Sending:", expense);
+  // helper to post bank transaction; tries resolved endpoint or probes once
+  const postBankSubtract = async (bankId, amount, description) => {
+    if (!bankId) throw new Error("No bankId provided");
+    const builder =
+      bankTxnPathTemplate || (await resolveBankTxnEndpoint(String(bankId)));
 
+    // If we still couldn't resolve, fallback to the original path you used
+    const url = builder
+      ? builder(String(bankId))
+      : `${API_URL}/banks/${String(bankId)}/transactions`;
+
+    // NOTE: if your backend expects different keys, rename below.
+    return axios.post(
+      url,
+      {
+        type: "subtract",
+        amount: Number(amount),
+        description,
+      },
+      { withCredentials: true }
+    );
+  };
+
+  const addExpense = async () => {
     if (!expense.expenseName || !expense.amount || !expense.description) {
-      console.error("⚠️ Missing Fields:", expense);
       alert("Please fill all required fields.");
       return;
     }
 
-    const formData = new FormData();
+    const isBankMethod =
+      expense.paymentMethod === "online" ||
+      expense.paymentMethod === "cheque";
 
-    // ✅ Ensure values are properly set with encoding
+    if (isBankMethod && !expense.bankID) {
+      alert("Please select a bank for online/cheque payments.");
+      return;
+    }
+
+    const formData = new FormData();
     formData.append("expenseName", expense.expenseName);
-    formData.append("amount", String(expense.amount)); // Convert to string
+    formData.append("amount", String(expense.amount));
     formData.append("description", expense.description);
     formData.append("expenseDate", expense.expenseDate);
     formData.append("paymentMethod", expense.paymentMethod);
-
-    if (expense.paymentMethod === "cheque" || expense.paymentMethod === "online") {
-      formData.append("bankID", expense.bankID);
+    if (isBankMethod) {
+      formData.append("bankID", String(expense.bankID));
     }
-    if (expense.paymentMethod === "cheque") {
+    if (expense.paymentMethod === "cheque" && expense.chequeDate) {
       formData.append("chequeDate", expense.chequeDate);
     }
-    if (expense.image) {
-      formData.append("image", expense.image);
-    }
-
-    console.log("🛠️ FormData Before Sending:", [...formData.entries()]); // Debugging log
+    if (expense.image) formData.append("image", expense.image);
 
     try {
-      const response = await axios.post(`${API_URL}/expenses/add`, formData, {
+      // 1) Create the expense
+      await axios.post(`${API_URL}/expenses/add`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
+        withCredentials: true,
       });
 
-      console.log("✅ API Response:", response.data);
+      // 2) If paid from a bank, subtract from that bank too (with endpoint resolution)
+      if (isBankMethod) {
+        try {
+          await postBankSubtract(
+            expense.bankID,
+            Number(expense.amount),
+            `Expense: ${expense.expenseName}`
+          );
+        } catch (e) {
+          console.error("❌ Bank subtraction failed:", e?.response?.data || e.message);
+          alert(
+            e?.response?.data?.message ||
+              "Bank deduction failed (endpoint not found). Check route path on backend."
+          );
+        }
+        // Refresh bank balances in UI either way
+        dispatch(getBanks());
+      }
+
       alert("Expense Added Successfully");
       setShowExpenseModal(false);
+      // Refresh ledger list
       fetchExpenses();
 
-      // Reset Form
+      // Reset form
       setExpense({
         expenseName: "",
         amount: "",
         description: "",
+        expenseDate: new Date().toISOString().split("T")[0],
         paymentMethod: "",
         bankID: "",
         chequeDate: "",
-        image: null
+        image: null,
       });
+      setImagePreview("");
     } catch (error) {
-      console.error("❌ Error Details:", error.response?.data || error.message);
-      alert(error.response?.data?.message || "Failed to add expense. Please try again.");
+      console.error("Failed to add expense:", error.response?.data || error.message);
+      alert(
+        error.response?.data?.message ||
+          "Failed to add expense. Please try again."
+      );
     }
   };
-
 
   const toggleExpenseModal = () => {
     setShowExpenseModal(!showExpenseModal);
@@ -270,20 +365,17 @@ const ViewExpenses = () => {
     (page - 1) * ITEMS_PER_PAGE,
     page * ITEMS_PER_PAGE
   );
+
   const calculateRunningBalance = (entries) => {
     let balance = 0;
-    // Reverse the entries to calculate balance from oldest to newest
     const reversedEntries = [...entries].reverse();
-    const entriesWithBalance = reversedEntries.map(entry => {
+    const entriesWithBalance = reversedEntries.map((entry) => {
       balance += entry.amount;
       return { ...entry, balance };
     });
     setRunningBalance(balance);
-    // Reverse back to newest first
     return entriesWithBalance.reverse();
   };
-
-
 
   useEffect(() => {
     filterEntriesByDate();
@@ -293,13 +385,12 @@ const ViewExpenses = () => {
     const selectedDateObj = new Date(selectedDate);
     selectedDateObj.setHours(0, 0, 0, 0);
 
-    let filtered = ledgerEntries.filter(entry => {
+    let filtered = ledgerEntries.filter((entry) => {
       const entryDate = new Date(entry.date);
       entryDate.setHours(0, 0, 0, 0);
       return entryDate.getTime() === selectedDateObj.getTime();
     });
 
-    // Sort filtered entries to show newest first
     filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
     const entriesWithBalance = calculateRunningBalance(filtered);
     setFilteredEntries(entriesWithBalance);
@@ -309,63 +400,67 @@ const ViewExpenses = () => {
 
   const columns = [
     {
-      field: 'date',
-      headerName: 'Date',
-      renderCell: (row) => new Date(row.date).toLocaleDateString()
+      field: "date",
+      headerName: "Date",
+      renderCell: (row) => new Date(row.date).toLocaleDateString(),
     },
     {
-      field: 'expenseName',
-      headerName: 'Expense Name',
+      field: "name",
+      headerName: "Name",
+      renderCell: (row) =>
+        row.name ||
+        row.expenseName ||
+        (row.productID && row.productID.name) ||
+        "-",
+    },
+    { field: "type", headerName: "Type" },
+    { field: "description", headerName: "Description" },
+    {
+      field: "debit",
+      headerName: "Debit",
+      renderCell: (row) =>
+        row.amount < 0 ? (
+          <span style={{ color: "red" }}>
+            {Math.abs(row.amount).toFixed(2)}
+          </span>
+        ) : (
+          ""
+        ),
     },
     {
-      field: 'type',
-      headerName: 'Type'
+      field: "credit",
+      headerName: "Credit",
+      renderCell: (row) =>
+        row.amount > 0 ? (
+          <span style={{ color: "green" }}>{row.amount.toFixed(2)}</span>
+        ) : (
+          ""
+        ),
     },
+    { field: "paymentMethod", headerName: "Payment Method" },
     {
-      field: 'description',
-      headerName: 'Description'
+      field: "balance",
+      headerName: "Total Amount",
+      renderCell: (row) => row.balance.toFixed(2),
     },
-    {
-      field: 'debit',
-      headerName: 'Debit',
-      renderCell: (row) => (
-        <span style={{ color: row.amount < 0 ? 'red' : 'inherit' }}>
-          {row.amount < 0 ? Math.abs(row.amount).toFixed(2) : ''} {/* ✅ Ensure expenses show as debits */}
-        </span>
-      )
-    },
-    {
-      field: 'credit',
-      headerName: 'Credit',
-      renderCell: (row) => (
-        <span style={{ color: row.amount > 0 ? 'green' : 'inherit' }}>
-          {row.amount > 0 ? row.amount.toFixed(2) : ''} {/* ✅ Only positive values should appear in credit */}
-        </span>
-      )
-    },
-    {
-      field: 'paymentMethod',
-      headerName: 'Payment Method'
-    },
-    {
-      field: 'balance',
-      headerName: 'Total Amount',
-      renderCell: (row) => row.balance.toFixed(2)
-    }
   ];
 
-
-
-  const rows = paginatedEntries.map(entry => ({
+  const rows = paginatedEntries.map((entry) => ({
     ...entry,
     debit: entry.amount,
     credit: entry.amount,
-    key: `${entry.date}-${entry.description}` // Ensure this key is unique
-
+    key: `${entry.date}-${entry.description}`,
   }));
+
   return (
     <Container>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mt={2} mb={2}>
+      <Box
+        display="flex"
+        justifyContent="space-between"
+        alignItems="center"
+        mt={2}
+        mb={2}
+      >
         <TextField
           label="Select Date"
           type="date"
@@ -375,11 +470,7 @@ const ViewExpenses = () => {
             shrink: true,
           }}
         />
-        <Button
-          variant="contained"
-          color="primary"
-          onClick={toggleExpenseModal}
-        >
+        <Button variant="contained" color="primary" onClick={toggleExpenseModal}>
           Add Expense
         </Button>
       </Box>
@@ -394,7 +485,9 @@ const ViewExpenses = () => {
           </Typography>
 
           {filteredEntries.length === 0 ? (
-            <Typography variant="body1">No entries found for the selected date.</Typography>
+            <Typography variant="body1">
+              No entries found for the selected date.
+            </Typography>
           ) : (
             <>
               <CustomTable
@@ -404,8 +497,6 @@ const ViewExpenses = () => {
                 rowsPerPage={rowsPerPage}
                 onPageChange={handlePageChange}
                 onRowsPerPageChange={handleRowsPerPageChange}
-              // rowKey={(row) => `${row.date}-${row.description}`} // Pass the unique key
-
               />
             </>
           )}
@@ -458,8 +549,14 @@ const ViewExpenses = () => {
               <Grid item xs={12} sm={6}>
                 <FormControl fullWidth margin="normal">
                   <InputLabel>Payment Method</InputLabel>
-                  <Select name="paymentMethod" value={expense.paymentMethod} onChange={handleInputChange}>
-                    <MenuItem value=""><em>Select Payment Method</em></MenuItem>
+                  <Select
+                    name="paymentMethod"
+                    value={expense.paymentMethod}
+                    onChange={handleInputChange}
+                  >
+                    <MenuItem value="">
+                      <em>Select Payment Method</em>
+                    </MenuItem>
                     <MenuItem value="cash">Cash</MenuItem>
                     <MenuItem value="online">Online</MenuItem>
                     <MenuItem value="cheque">Cheque</MenuItem>
@@ -468,12 +565,16 @@ const ViewExpenses = () => {
                 </FormControl>
               </Grid>
 
-              {/* ✅ Bank Selection for Online & Cheque */}
-              {(expense.paymentMethod === "online" || expense.paymentMethod === "cheque") && (
+              {(expense.paymentMethod === "online" ||
+                expense.paymentMethod === "cheque") && (
                 <Grid item xs={12} sm={6}>
                   <FormControl fullWidth margin="normal">
                     <InputLabel>Bank Name</InputLabel>
-                    <Select name="bankID" value={expense.bankID} onChange={handleInputChange}>
+                    <Select
+                      name="bankID"
+                      value={expense.bankID}
+                      onChange={handleInputChange}
+                    >
                       {banks.map((bank) => (
                         <MenuItem key={bank._id} value={bank._id}>
                           {bank.bankName}
@@ -484,23 +585,44 @@ const ViewExpenses = () => {
                 </Grid>
               )}
 
-              {/* ✅ Cheque Date for Cheque Payment */}
               {expense.paymentMethod === "cheque" && (
                 <Grid item xs={12} sm={6}>
-                  <TextField fullWidth label="Cheque Date" type="date" name="chequeDate" value={expense.chequeDate} onChange={handleInputChange} InputLabelProps={{ shrink: true }} margin="normal" />
+                  <TextField
+                    fullWidth
+                    label="Cheque Date"
+                    type="date"
+                    name="chequeDate"
+                    value={expense.chequeDate}
+                    onChange={handleInputChange}
+                    InputLabelProps={{ shrink: true }}
+                    margin="normal"
+                  />
                 </Grid>
               )}
 
-              {/* ✅ Image Upload */}
-              {(expense.paymentMethod === "online" || expense.paymentMethod === "cheque") && (
+              {(expense.paymentMethod === "online" ||
+                expense.paymentMethod === "cheque") && (
                 <Grid item xs={12}>
-                  <TextField type="file" fullWidth onChange={handleImageChange} margin="normal" />
-                  {imagePreview && <img src={imagePreview} alt="Preview" style={{ width: "100%", maxHeight: "200px", marginTop: "10px" }} />}
+                  <TextField
+                    type="file"
+                    fullWidth
+                    onChange={handleImageChange}
+                    margin="normal"
+                  />
+                  {imagePreview && (
+                    <img
+                      src={imagePreview}
+                      alt="Preview"
+                      style={{
+                        width: "100%",
+                        maxHeight: "200px",
+                        marginTop: "10px",
+                      }}
+                    />
+                  )}
                 </Grid>
               )}
             </Grid>
-
-
           </form>
         </DialogContent>
         <DialogActions>
@@ -521,4 +643,3 @@ const ViewExpenses = () => {
 };
 
 export default ViewExpenses;
-

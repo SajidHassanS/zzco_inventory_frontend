@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import CustomerList from "./CustomerList";
 import { Box, Button, Grid } from "@mui/material";
 import axios from "axios";
-import { toast, ToastContainer } from "react-toastify";
+import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import AddCustomerModal from "../../components/Models/AddCustomer";
 
@@ -11,26 +11,17 @@ const API_URL = `${BACKEND_URL}api/customers/`;
 
 const Customer = () => {
   const [openModal, setOpenModal] = useState(false);
-  const [username, setUsername] = useState("");
-  const [phone, setPhone] = useState("");
   const [customers, setCustomers] = useState([]);
 
   const handleOpenModal = () => setOpenModal(true);
   const handleCloseModal = () => setOpenModal(false);
 
-  const handleInputChange = event => {
-    const { name, value } = event.target;
-    if (name === "username") setUsername(value);
-    if (name === "phone") setPhone(value);
-  };
-
   const fetchCustomers = async () => {
     try {
-      const response = await axios.get(`${API_URL}allcustomer`, {
+      const { data } = await axios.get(`${API_URL}allcustomer`, {
         withCredentials: true
       });
-      setCustomers(response.data);
-      console.log("Fetched customers:", response.data);
+      setCustomers(data || []);
     } catch (error) {
       console.error("Error fetching customer data:", error);
     }
@@ -40,32 +31,10 @@ const Customer = () => {
     fetchCustomers();
   }, []);
 
-  const refreshCustomers = () => {
-    fetchCustomers();
-  };
-
-  const handleSubmit = async () => {
-    try {
-      const res = await axios.post(
-        `${API_URL}customerRegister`,
-        {
-          username,
-          phone
-        },
-        { withCredentials: true }
-      );
-
-      if (res) {
-        toast.success("Customer Added Successfully!");
-        refreshCustomers();
-        setUsername("");
-        setPhone("");
-        handleCloseModal();
-      }
-    } catch (error) {
-      console.error("Error creating customer:", error);
-      toast.error("Failed to add customer!");
-    }
+  // Optional helper the modal can call after a successful add
+  const handleAddNewCustomer = newCustomer => {
+    if (!newCustomer) return;
+    setCustomers(prev => [newCustomer, ...prev]);
   };
 
   return (
@@ -80,16 +49,13 @@ const Customer = () => {
         </Button>
       </Grid>
 
-      <CustomerList customers={customers} refreshCustomers={refreshCustomers} />
+      <CustomerList customers={customers} refreshCustomers={fetchCustomers} />
 
       <AddCustomerModal
         open={openModal}
         handleClose={handleCloseModal}
-        refreshCustomers={refreshCustomers}
-        handleInputChange={handleInputChange}
-        handleSubmit={handleSubmit}
-        username={username}
-        phone={phone}
+        refreshCustomers={fetchCustomers} // optional re-fetch
+        handleAddNewCustomer={handleAddNewCustomer} // optional local prepend
       />
 
       <ToastContainer />

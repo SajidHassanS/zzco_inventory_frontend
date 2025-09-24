@@ -6,7 +6,7 @@ import {
   Button,
   Select,
   MenuItem,
-  FormControl, 
+  FormControl,
   InputLabel,
   Grid,
 } from "@mui/material";
@@ -30,7 +30,7 @@ const ProductForm = ({
   handlePaymentMethodChange,
   paymentMethod = "",
   chequeDate = "",
-  setChequeDate, 
+  setChequeDate,
   saveProduct,
   warehouses = [],
   selectedWarehouse = "",
@@ -41,7 +41,6 @@ const ProductForm = ({
   selectedSupplier = "",
   handleSupplierChange,
 }) => {
-
   const handleFormSubmit = (event) => {
     event.preventDefault();
     saveProduct();
@@ -70,23 +69,26 @@ const ProductForm = ({
               margin="normal"
             />
 
+            {/* Supplier */}
             <FormControl fullWidth margin="normal">
-              <InputLabel>Select Supplier</InputLabel>
+              <InputLabel id="supplier-label">Select Supplier</InputLabel>
               <Select
-                value={selectedSupplier || ""}
+                labelId="supplier-label"
+                label="Select Supplier"
+                value={String(selectedSupplier || "")}    
                 onChange={handleSupplierChange}
               >
                 <MenuItem value="">
                   <em>Select Supplier</em>
                 </MenuItem>
                 {suppliers.length > 0 ? (
-                  suppliers.map((supplier) => (
+                  suppliers.map((supplier) =>
                     supplier ? (
                       <MenuItem key={supplier._id} value={supplier._id}>
                         {supplier.username}
                       </MenuItem>
                     ) : null
-                  ))
+                  )
                 ) : (
                   <MenuItem value="">
                     <em>No suppliers available</em>
@@ -95,19 +97,28 @@ const ProductForm = ({
               </Select>
             </FormControl>
 
+            {/* Shipping Type */}
             <FormControl fullWidth margin="normal">
-              <InputLabel>Shipping Type</InputLabel>
-              <Select value={shippingType} onChange={handleShippingTypeChange}>
+              <InputLabel id="shipping-type-label">Shipping Type</InputLabel>
+              <Select
+                labelId="shipping-type-label"
+                label="Shipping Type"
+                value={shippingType}
+                onChange={handleShippingTypeChange}
+              >
                 <MenuItem value="local">Local</MenuItem>
                 <MenuItem value="international">International</MenuItem>
               </Select>
             </FormControl>
 
+            {/* Warehouse (only for local) */}
             {shippingType === "local" && (
               <FormControl fullWidth margin="normal" required>
-                <InputLabel>Select Warehouse</InputLabel>
+                <InputLabel id="warehouse-label">Select Warehouse</InputLabel>
                 <Select
-                  value={selectedWarehouse || ""}
+                  labelId="warehouse-label"
+                  label="Select Warehouse"
+                  value={String(selectedWarehouse || "")}   
                   onChange={handleWarehouseChange}
                 >
                   <MenuItem value="">
@@ -122,12 +133,14 @@ const ProductForm = ({
               </FormControl>
             )}
 
+            {/* Payment Method */}
             <FormControl fullWidth margin="normal">
-              <InputLabel>Payment Method</InputLabel>
+              <InputLabel id="payment-method-label">Payment Method</InputLabel>
               <Select
+                labelId="payment-method-label"
+                label="Payment Method"
                 value={paymentMethod}
                 onChange={handlePaymentMethodChange}
-                label="Payment Method"
               >
                 <MenuItem value="cash">Cash</MenuItem>
                 <MenuItem value="online">Online</MenuItem>
@@ -136,15 +149,15 @@ const ProductForm = ({
               </Select>
             </FormControl>
 
+            {/* Bank (only for online) */}
             {paymentMethod === "online" && (
               <FormControl fullWidth margin="normal">
                 <InputLabel id="bankID-label">Select Bank</InputLabel>
                 <Select
                   labelId="bankID-label"
-                  id="bankID"
-                  value={selectedBank}
+                  label="Select Bank"
+                  value={String(selectedBank || "")}   
                   onChange={handleBankChange}
-                  label="Bank Name"
                 >
                   <MenuItem value="">
                     <em>Select Bank</em>
@@ -158,6 +171,7 @@ const ProductForm = ({
               </FormControl>
             )}
 
+            {/* Cheque Date */}
             {paymentMethod === "cheque" && (
               <TextField
                 fullWidth
@@ -170,6 +184,7 @@ const ProductForm = ({
               />
             )}
 
+            {/* Image (for cheque/online) */}
             {(paymentMethod === "cheque" || paymentMethod === "online") && (
               <Grid item xs={12}>
                 <TextField
@@ -181,7 +196,9 @@ const ProductForm = ({
                   margin="normal"
                   InputLabelProps={{ shrink: true }}
                 />
-                {imagePreview && <ImagePreview src={imagePreview} alt="Preview" />}
+                {imagePreview && (
+                  <ImagePreview src={imagePreview} alt="Preview" />
+                )}
               </Grid>
             )}
 
@@ -205,8 +222,9 @@ const ProductForm = ({
               margin="normal"
             />
 
+            {/* Submit button — let the form submit handler run */}
             <Button
-              type="submit"
+              type="submit"                   
               variant="contained"
               color="primary"
               fullWidth

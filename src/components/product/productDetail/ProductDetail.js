@@ -3,6 +3,8 @@ import { useDispatch, useSelector } from "react-redux";
 import { useParams, useNavigate } from "react-router-dom"; // Add useNavigate here
 import useRedirectLoggedOutUser from "../../../customHook/useRedirectLoggedOutUser";
 import { selectIsLoggedIn } from "../../../redux/features/auth/authSlice";
+import AddWareHouseModal from "../../../components/Models/AddWareHouse";
+
 import { getProduct, updateReceivedQuantity } from "../../../redux/features/product/productSlice";
 import DOMPurify from "dompurify";
 import {
@@ -64,7 +66,11 @@ const ProductDetail = () => {
   const [receivedQuantity, setReceivedQuantity] = useState(0); // For user input
   const [openImageModal, setOpenImageModal] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
-  
+  const [openWareHouseModal, setOpenWareHouseModal] = useState(false);
+
+const handleOpenModalwarehouse = () => setOpenWareHouseModal(true);
+const handleCloseModalwarehouse = () => setOpenWareHouseModal(false);
+
   const isLoggedIn = useSelector(selectIsLoggedIn);
   const { product, isLoading, isError, message } = useSelector(
     (state) => state.product
@@ -165,10 +171,9 @@ const ProductDetail = () => {
   if (!product) {
     return <Typography>Product not found or loading...</Typography>;
   }
-const inStock =
-  product?.shippingType === "local"
-    ? product.quantity
-    : product.receivedQuantity;
+// AFTER — one source of truth
+const inStock = product?.quantity ?? 0;
+
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
   };
@@ -262,25 +267,32 @@ const inStock =
                       fullWidth
                       sx={{ mt: 2 }}
                     />
-                    {receivedQuantity > 0 && (
-                      <TextField
-                        select
-                        label="Select Warehouse"
-                        value={selectedWarehouse}
-                        onChange={handleWarehouseChange}
-                        fullWidth
-                        sx={{ mt: 2 }}
-                      >
-                        {warehouses.map((warehouse) => (
-                          <MenuItem
-                            key={warehouse._id}
-                            value={warehouse._id}
-                          >
-                            {warehouse.name}
-                          </MenuItem>
-                        ))}
-                      </TextField>
-                    )}
+                {receivedQuantity > 0 && (
+  <TextField
+    select
+    label="Select Warehouse"
+    value={selectedWarehouse}
+    onChange={handleWarehouseChange}
+    fullWidth
+    sx={{ mt: 2 }}
+  >
+    {warehouses.map((warehouse) => (
+      <MenuItem key={warehouse._id} value={warehouse._id}>
+        {warehouse.name}
+      </MenuItem>
+    ))}
+
+    {/* Add this new option */}
+    <MenuItem
+      value="addNew"
+      onClick={handleOpenModalwarehouse}
+      style={{ backgroundColor: "silver" }}
+    >
+      ➕ Add New Warehouse
+    </MenuItem>
+  </TextField>
+)}
+
                     <Button
                       variant="contained"
                       color="primary"
@@ -348,6 +360,14 @@ const inStock =
     </Button>
   </Box>
 </Modal>
+<AddWareHouseModal
+  open={openWareHouseModal}
+  onClose={handleCloseModalwarehouse}
+  onSuccess={(newWarehouse) => {
+    dispatch(getWarehouses()); // refresh warehouse list
+    setSelectedWarehouse(newWarehouse._id); // auto-select new one
+  }}
+/>
 
     </>
     

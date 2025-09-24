@@ -11,7 +11,7 @@ const initialState = {
   message: "",
   totalStoreValue: 0,
   outOfStock: 0,
-  category: [],
+  category: []
 };
 
 // Create New Product
@@ -26,7 +26,9 @@ export const createProduct = createAsyncThunk(
     } catch (error) {
       // Handle error
       const message =
-        (error.response && error.response.data && error.response.data.message) ||
+        (error.response &&
+          error.response.data &&
+          error.response.data.message) ||
         error.message ||
         error.toString();
       console.log(message);
@@ -49,7 +51,7 @@ export const getProductStock = createAsyncThunk(
 export const getProducts = createAsyncThunk(
   "products/getAll",
   async (_, thunkAPI) => {
-    try { 
+    try {
       return await productService.getProducts();
     } catch (error) {
       const message =
@@ -122,9 +124,13 @@ export const updateProduct = createAsyncThunk(
 
 export const updateReceivedQuantity = createAsyncThunk(
   "products/updateReceivedQuantity",
-  async ({ id, receivedQuantity,warehouse }, thunkAPI) => {
+  async ({ id, receivedQuantity, warehouse }, thunkAPI) => {
     try {
-      return await productService.updateReceivedQuantity(id, receivedQuantity,warehouse);
+      return await productService.updateReceivedQuantity(
+        id,
+        receivedQuantity,
+        warehouse
+      );
     } catch (error) {
       const message =
         (error.response &&
@@ -137,8 +143,6 @@ export const updateReceivedQuantity = createAsyncThunk(
   }
 );
 
-
-
 const productSlice = createSlice({
   name: "product",
   initialState,
@@ -146,7 +150,7 @@ const productSlice = createSlice({
     CALC_STORE_VALUE(state, action) {
       const products = action.payload;
       const array = [];
-      products.map((item) => {
+      products.map(item => {
         const { price, quantity } = item;
         const productValue = price * quantity;
         return array.push(productValue);
@@ -161,7 +165,7 @@ const productSlice = createSlice({
       const outOfStockDetails = []; // Array to hold details of out-of-stock products
       let count = 0;
 
-      products.forEach((item) => {
+      products.forEach(item => {
         const { quantity, ...details } = item; // Destructure to get other details
         if (quantity === 0 || quantity === "0") {
           count += 1;
@@ -175,18 +179,18 @@ const productSlice = createSlice({
     CALC_CATEGORY(state, action) {
       const products = action.payload;
       const array = [];
-      products.map((item) => {
+      products.map(item => {
         const { category } = item;
 
         return array.push(category);
       });
       const uniqueCategory = [...new Set(array)];
       state.category = uniqueCategory;
-    },
+    }
   },
-  extraReducers: (builder) => {
+  extraReducers: builder => {
     builder
-      .addCase(createProduct.pending, (state) => {
+      .addCase(createProduct.pending, state => {
         state.isLoading = true;
       })
       .addCase(createProduct.fulfilled, (state, action) => {
@@ -203,7 +207,7 @@ const productSlice = createSlice({
         state.message = action.payload;
         toast.error(action.payload);
       })
-      .addCase(getProducts.pending, (state) => {
+      .addCase(getProducts.pending, state => {
         state.isLoading = true;
       })
       .addCase(getProducts.fulfilled, (state, action) => {
@@ -219,7 +223,7 @@ const productSlice = createSlice({
         state.message = action.payload;
         toast.error(action.payload);
       })
-      .addCase(deleteProduct.pending, (state) => {
+      .addCase(deleteProduct.pending, state => {
         state.isLoading = true;
       })
       .addCase(deleteProduct.fulfilled, (state, action) => {
@@ -234,7 +238,7 @@ const productSlice = createSlice({
         state.message = action.payload;
         toast.error(action.payload);
       })
-      .addCase(getProduct.pending, (state) => {
+      .addCase(getProduct.pending, state => {
         state.isLoading = true;
       })
       .addCase(getProduct.fulfilled, (state, action) => {
@@ -249,23 +253,35 @@ const productSlice = createSlice({
         state.message = action.payload;
         toast.error(action.payload);
       })
-      .addCase(updateProduct.pending, (state) => {
+      .addCase(updateProduct.pending, state => {
         state.isLoading = true;
       })
       .addCase(updateProduct.fulfilled, (state, action) => {
         state.isLoading = false;
         state.isSuccess = true;
         state.isError = false;
+
+        // ✅ Update product in state
+        state.product = action.payload;
+
+        // ✅ Optionally update products array too (if you have it loaded)
+        const index = state.products.findIndex(
+          p => p._id === action.payload._id
+        );
+        if (index !== -1) {
+          state.products[index] = action.payload;
+        }
+
         toast.success("Product updated successfully");
       })
       .addCase(updateProduct.rejected, (state, action) => {
         state.isLoading = false;
         state.isError = true;
         state.message = action.payload;
-        toast.error(action.payload);
+        console.error("Update product failed:", action.payload, action.error);
+        toast.error(action.payload || "Product update failed");
       })
-      
-      .addCase(updateReceivedQuantity.pending, (state) => {
+      .addCase(updateReceivedQuantity.pending, state => {
         state.isLoading = true;
       })
       .addCase(updateReceivedQuantity.fulfilled, (state, action) => {
@@ -274,7 +290,7 @@ const productSlice = createSlice({
         state.product = action.payload; // The updated product with accumulated received quantity
         toast.success("Received quantity updated successfully");
       })
-      .addCase(getProductStock.pending, (state) => {
+      .addCase(getProductStock.pending, state => {
         state.isLoading = true;
       })
       .addCase(getProductStock.fulfilled, (state, action) => {
@@ -289,24 +305,26 @@ const productSlice = createSlice({
         state.message = action.payload;
         toast.error(action.payload);
       })
-      
       .addCase(updateReceivedQuantity.rejected, (state, action) => {
         state.isLoading = false;
         state.isError = true;
         state.message = action.payload;
         toast.error(action.payload);
       });
-  },
+  }
 });
 
-export const { CALC_STORE_VALUE, CALC_OUTOFSTOCK, CALC_CATEGORY } =
-  productSlice.actions;
+export const {
+  CALC_STORE_VALUE,
+  CALC_OUTOFSTOCK,
+  CALC_CATEGORY
+} = productSlice.actions;
 
-export const selectIsLoading = (state) => state.product.isLoading;
-export const selectProduct = (state) => state.product.product;
-export const selectTotalStoreValue = (state) => state.product.totalStoreValue;
-export const selectOutOfStock = (state) => state.product.outOfStock;
-export const selectOutOfStockdetail = (state) => state.product.outOfStockDetails;
-export const selectCategory = (state) => state.product.category;
+export const selectIsLoading = state => state.product.isLoading;
+export const selectProduct = state => state.product.product;
+export const selectTotalStoreValue = state => state.product.totalStoreValue;
+export const selectOutOfStock = state => state.product.outOfStock;
+export const selectOutOfStockdetail = state => state.product.outOfStockDetails;
+export const selectCategory = state => state.product.category;
 
 export default productSlice.reducer;
