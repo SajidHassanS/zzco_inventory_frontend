@@ -9,7 +9,7 @@ const initialState = {
   isLoading: false,
   isSuccess: false,
   isError: false,
-  message: "",
+  message: ""
 };
 
 // Create a new bank
@@ -22,7 +22,9 @@ export const createBank = createAsyncThunk(
       return response.data; // Return the data from the API response
     } catch (error) {
       const message =
-        (error.response && error.response.data && error.response.data.message) ||
+        (error.response &&
+          error.response.data &&
+          error.response.data.message) ||
         error.message ||
         error.toString();
       toast.error(message);
@@ -32,22 +34,19 @@ export const createBank = createAsyncThunk(
 );
 
 /// Get all banks
-export const getBanks = createAsyncThunk(
-  "bank/getAll",
-  async (_, thunkAPI) => {
-    try {
-      const response = await bankService.getAllBanks(); // Changed from getbanks to getAllBanks
-      return response; // Return the response directly, not response.data
-    } catch (error) {
-      const message =
-        (error.response && error.response.data && error.response.data.message) ||
-        error.message ||
-        error.toString();
-      toast.error(message);
-      return thunkAPI.rejectWithValue(message);
-    }
+export const getBanks = createAsyncThunk("bank/getAll", async (_, thunkAPI) => {
+  try {
+    const response = await bankService.getAllBanks(); // Changed from getbanks to getAllBanks
+    return response; // Return the response directly, not response.data
+  } catch (error) {
+    const message =
+      (error.response && error.response.data && error.response.data.message) ||
+      error.message ||
+      error.toString();
+    toast.error(message);
+    return thunkAPI.rejectWithValue(message);
   }
-);
+});
 
 // Delete a bank
 export const deleteBank = createAsyncThunk(
@@ -59,7 +58,9 @@ export const deleteBank = createAsyncThunk(
       return id; // Return the ID of the deleted bank
     } catch (error) {
       const message =
-        (error.response && error.response.data && error.response.data.message) ||
+        (error.response &&
+          error.response.data &&
+          error.response.data.message) ||
         error.message ||
         error.toString();
       toast.error(message);
@@ -77,7 +78,9 @@ export const getBank = createAsyncThunk(
       return response.data; // Return the bank data
     } catch (error) {
       const message =
-        (error.response && error.response.data && error.response.data.message) ||
+        (error.response &&
+          error.response.data &&
+          error.response.data.message) ||
         error.message ||
         error.toString();
       toast.error(message);
@@ -96,7 +99,34 @@ export const updateBank = createAsyncThunk(
       return response.data; // Return the updated bank data
     } catch (error) {
       const message =
-        (error.response && error.response.data && error.response.data.message) ||
+        (error.response &&
+          error.response.data &&
+          error.response.data.message) ||
+        error.message ||
+        error.toString();
+      toast.error(message);
+      return thunkAPI.rejectWithValue(message);
+    }
+  }
+);
+
+// Subtract from a bank (transaction)
+export const subtractFromBank = createAsyncThunk(
+  "bank/subtract",
+  async ({ bankId, amount, description }, thunkAPI) => {
+    try {
+      const response = await bankService.subtractFromBank(
+        bankId,
+        amount,
+        description
+      );
+      toast.success("Amount subtracted successfully");
+      return response; // backend returns updated bank object
+    } catch (error) {
+      const message =
+        (error.response &&
+          error.response.data &&
+          error.response.data.message) ||
         error.message ||
         error.toString();
       toast.error(message);
@@ -110,16 +140,16 @@ const bankSlice = createSlice({
   name: "bank",
   initialState,
   reducers: {
-    resetState: (state) => {
+    resetState: state => {
       state.isLoading = false;
       state.isSuccess = false;
       state.isError = false;
       state.message = "";
-    },
+    }
   },
-  extraReducers: (builder) => {
+  extraReducers: builder => {
     builder
-      .addCase(createBank.pending, (state) => {
+      .addCase(createBank.pending, state => {
         state.isLoading = true;
       })
       .addCase(createBank.fulfilled, (state, action) => {
@@ -132,7 +162,7 @@ const bankSlice = createSlice({
         state.isError = true;
         state.message = action.payload;
       })
-      .addCase(getBanks.pending, (state) => {
+      .addCase(getBanks.pending, state => {
         state.isLoading = true;
       })
       .addCase(getBanks.fulfilled, (state, action) => {
@@ -145,20 +175,20 @@ const bankSlice = createSlice({
         state.isError = true;
         state.message = action.payload;
       })
-      .addCase(deleteBank.pending, (state) => {
+      .addCase(deleteBank.pending, state => {
         state.isLoading = true;
       })
       .addCase(deleteBank.fulfilled, (state, action) => {
         state.isLoading = false;
         state.isSuccess = true;
-        state.banks = state.banks.filter((bank) => bank._id !== action.payload); // Remove the deleted bank from the state
+        state.banks = state.banks.filter(bank => bank._id !== action.payload); // Remove the deleted bank from the state
       })
       .addCase(deleteBank.rejected, (state, action) => {
         state.isLoading = false;
         state.isError = true;
         state.message = action.payload;
       })
-      .addCase(getBank.pending, (state) => {
+      .addCase(getBank.pending, state => {
         state.isLoading = true;
       })
       .addCase(getBank.fulfilled, (state, action) => {
@@ -171,28 +201,45 @@ const bankSlice = createSlice({
         state.isError = true;
         state.message = action.payload;
       })
-      .addCase(updateBank.pending, (state) => {
+      .addCase(updateBank.pending, state => {
         state.isLoading = true;
       })
       .addCase(updateBank.fulfilled, (state, action) => {
         state.isLoading = false;
         state.isSuccess = true;
-        state.banks = state.banks.map((bank) =>
-          bank._id === action.payload._id ? action.payload : bank
+        state.banks = state.banks.map(
+          bank => (bank._id === action.payload._id ? action.payload : bank)
         ); // Update the bank in the state
       })
       .addCase(updateBank.rejected, (state, action) => {
         state.isLoading = false;
         state.isError = true;
         state.message = action.payload;
+      })
+      .addCase(subtractFromBank.pending, state => {
+        state.isLoading = true;
+      })
+      .addCase(subtractFromBank.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.isSuccess = true;
+        // Update the correct bank in state with new balance
+        state.banks = state.banks.map(
+          bank =>
+            bank._id === action.payload.bank._id ? action.payload.bank : bank
+        );
+      })
+      .addCase(subtractFromBank.rejected, (state, action) => {
+        state.isLoading = false;
+        state.isError = true;
+        state.message = action.payload;
       });
-  },
+  }
 });
 
 export const { resetState } = bankSlice.actions;
 
-export const selectIsLoading = (state) => state.bank.isLoading;
-export const selectBanks = (state) => state.bank.banks;
-export const selectBank = (state) => state.bank.bank;
+export const selectIsLoading = state => state.bank.isLoading;
+export const selectBanks = state => state.bank.banks;
+export const selectBank = state => state.bank.bank;
 
 export default bankSlice.reducer;

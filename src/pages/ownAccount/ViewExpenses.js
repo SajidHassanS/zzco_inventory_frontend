@@ -161,28 +161,50 @@ const ViewExpenses = () => {
     }
   };
 
-  const fetchExpenses = async () => {
-    try {
-      const { data } = await axios.get(`${API_URL}/expenses/all`, {
-        withCredentials: true,
-      });
+const fetchExpenses = async () => {
+  try {
+    const { data } = await axios.get(`${API_URL}/expenses/all`, { withCredentials: true });
 
-      const expensesData = data.map((exp) => ({
-        ...exp,
-        id: exp._id,
-        type: "Expense",
-        name: exp.expenseName || "Expense",
-        amount: -Math.abs(Number(exp.amount) || 0),
-        date: new Date(exp.expenseDate || exp.createdAt),
-        description: exp.description || exp.expenseName || "",
-        paymentMethod: exp.paymentMethod || "N/A",
-      }));
+    // Normal expenses
+    const expensesData = data.map((exp) => ({
+      id: exp._id,
+      type: "Expense",
+      name: exp.expenseName,
+      amount: -Math.abs(exp.amount),
+      date: new Date(exp.expenseDate || exp.createdAt),
+      description: exp.description,
+      paymentMethod: exp.paymentMethod,
+    }));
 
-      updateLedger(expensesData);
-    } catch (err) {
-      console.error("❌ Error fetching expenses:", err);
+    // 👇 Now also pull bank transactions
+    const bankTransactions = [];
+    for (const bank of banks) {
+      try {
+        const res = await axios.get(`${API_URL}/banks/${bank._id}/transactions`, { withCredentials: true });
+        res.data.forEach((tx) => {
+          bankTransactions.push({
+            id: tx._id,
+            type: "Expense",
+            name: `Bank Expense (${bank.bankName})`,
+            amount: tx.type === "subtract" ? -Math.abs(tx.amount) : Math.abs(tx.amount),
+            date: new Date(tx.createdAt),
+            description: tx.description,
+            paymentMethod: "bank",
+          });
+        });
+      } catch (err) {
+        console.error("Error fetching bank transactions for", bank.bankName, err);
+      }
     }
-  };
+
+    updateLedger([...expensesData, ...bankTransactions]);
+  } catch (err) {
+    console.error("❌ Error fetching expenses:", err);
+  }
+};
+
+
+
 
   const updateLedger = (newEntries) => {
     setLedgerEntries((prevEntries) => {

@@ -15,10 +15,10 @@ import {
   Container,
 } from "@mui/material";
 import axios from "axios";
-import { getBanks } from "../../redux/features/Bank/bankSlice";
+import { getBanks, subtractFromBank } from "../../redux/features/Bank/bankSlice";
 import { toast, ToastContainer } from "react-toastify";
 
-const AddExpense = () => {
+const AddExpense = ({ onExpenseAdded }) => {
   const dispatch = useDispatch();
 
   // Banks from Redux
@@ -38,7 +38,7 @@ const AddExpense = () => {
     bankID: "",
   });
 
-  // Safe API base (fix missing slash issues)
+  // Safe API base
   const RAW = process.env.REACT_APP_BACKEND_URL || "";
   const BASE = RAW.endsWith("/") ? RAW : `${RAW}/`;
   const API_URL = `${BASE}api`;
@@ -68,54 +68,6 @@ const AddExpense = () => {
     }
   };
 
-  // ---- Helper: try multiple bank transaction endpoints ----
-  const postBankSubtract = async ({ bankId, amount, description }) => {
-    const amt = Number(amount);
-
-    // If you know the exact route, you can replace this array with a single string.
-    const candidates = [
-      // path variants
-      { url: `${API_URL}/banks/${bankId}/transactions`, body: {} },
-      { url: `${API_URL}/banks/${bankId}/transaction`, body: {} },
-      { url: `${API_URL}/bank/${bankId}/transactions`, body: {} },
-      { url: `${API_URL}/banks/${bankId}/transactions/add`, body: {} },
-      // body-based variant (no :id in path)
-      { url: `${API_URL}/banks/transactions`, body: { bankID: String(bankId) } },
-    ];
-
-    let lastErr = null;
-
-    for (const c of candidates) {
-      try {
-        const res = await axios.post(
-          c.url,
-          {
-            // ⚠️ Change keys here if your backend expects different names (e.g. txnType/value/note)
-            type: "subtract",
-            amount: amt,
-            description,
-            ...c.body,
-          },
-          { withCredentials: true }
-        );
-        // success
-        return res;
-      } catch (e) {
-        lastErr = e;
-        const status = e?.response?.status;
-        // If not 404, probably a real error (validation, auth, CORS...). Stop trying others.
-        if (status && status !== 404) break;
-      }
-    }
-
-    // Surface the best available message
-    const msg =
-      lastErr?.response?.data?.message ||
-      lastErr?.message ||
-      "Bank deduction failed (endpoint not found).";
-    throw new Error(msg);
-  };
-
   // Submit
   const addExpense = async () => {
     if (!expense.expenseName || !expense.amount || !expense.paymentMethod) {
@@ -141,35 +93,43 @@ const AddExpense = () => {
       expenseName: expense.expenseName,
       amount: amt,
       description: expense.description || "",
-      expenseDate:
-        expense.expenseDate || new Date().toISOString().split("T")[0],
+      expenseDate: expense.expenseDate || new Date().toISOString().split("T")[0],
       paymentMethod: method,
       bankID: isBankMethod ? String(expense.bankID) : undefined,
       chequeDate: method === "cheque" ? expense.chequeDate : undefined,
     };
 
     try {
-      // 1) Create expense
-      await axios.post(`${API_URL}/expenses/add`, payload, {
-        withCredentials: true,
-      });
+      // 1) Create expense and capture returned doc
+      const { data: newExpense } = await axios.post(
+        `${API_URL}/expenses/add`,
+        payload,
+        { withCredentials: true }
+      );
 
-      // 2) If paid via bank, subtract from that bank (with fallback routes)
+      // 2) If paid via bank → subtract balance
       if (isBankMethod) {
-        await postBankSubtract({
-          bankId: String(expense.bankID),
-          amount: amt,
-          description: `Expense: ${expense.expenseName}`,
-        });
+        await dispatch(
+          subtractFromBank({
+            bankId: String(expense.bankID),
+            amount: amt,
+            description: `Expense: ${expense.expenseName}`,
+          })
+        ).unwrap();
       }
 
       // 3) Refresh banks in UI
       dispatch(getBanks());
 
+      // 4) Update ledger immediately if parent passed callback
+      if (onExpenseAdded) {
+        onExpenseAdded(newExpense);
+      }
+
       toast.success("Expense added successfully!");
       setShowExpenseModal(false);
 
-      // 4) Reset form
+      // 5) Reset form
       setExpense({
         expenseName: "",
         amount: "",
