@@ -36,7 +36,29 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
 
   // NEW: pull all expenses and cache here
   const [expenses, setExpenses] = useState([]);
+const [bankTransactions, setBankTransactions] = useState([]);
+useEffect(() => {
+  const fetchBankTransactions = async () => {
+    try {
+      let allTx = [];
+      for (const bank of banks) {
+        const res = await axios.get(`${API_BASE}/banks/${bank._id}/transactions`, {
+          withCredentials: true,
+        });
+        const txns = res.data || [];
+        // tag with bank id
+        allTx = [...allTx, ...txns.map(t => ({ ...t, bankID: bank._id }))];
+      }
+      setBankTransactions(allTx);
+    } catch (err) {
+      console.error("❌ Failed to fetch bank transactions:", err);
+      setBankTransactions([]);
+    }
+  };
 
+  if (banks.length) fetchBankTransactions();
+}, [banks]);
+ 
   useEffect(() => {
     const fetchExpenses = async () => {
       try {
@@ -100,10 +122,27 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     return map;
   }, [expenses, reportType, selectedMonth, selectedYear]);
 
-  const totalBankExpenses = useMemo(
-    () => Array.from(bankExpenseMap.values()).reduce((s, v) => s + v, 0),
-    [bankExpenseMap]
-  );
+  const totalBankExpenses = useMemo(() => {
+  // from expenses/all
+  const expFromExpenses = expenses
+    .filter(
+      e =>
+        ["online", "cheque"].includes((e.paymentMethod || "").toLowerCase()) &&
+        isInSelectedPeriod(e.expenseDate || e.createdAt)
+    )
+    .reduce((sum, e) => sum + Math.abs(Number(e.amount) || 0), 0);
+
+  // from transactions
+  const expFromTransactions = bankTransactions
+    .filter(
+      tx =>
+        tx.type?.toLowerCase() === "subtract" &&
+        isInSelectedPeriod(tx.createdAt)
+    )
+    .reduce((sum, tx) => sum + Math.abs(Number(tx.amount) || 0), 0);
+
+  return expFromExpenses + expFromTransactions;
+}, [expenses, bankTransactions, reportType, selectedMonth, selectedYear]);
 
   // -------- EXISTING CASH TOTALS (then subtract expenses) --------
   const totalCashIncomeFromModule = useMemo(() => {
