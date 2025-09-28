@@ -7,6 +7,17 @@ import { getProducts } from "../../redux/features/product/productSlice";
 import useRedirectLoggedOutUser from "../../customHook/useRedirectLoggedOutUser";
 import { selectIsLoggedIn } from "../../redux/features/auth/authSlice";
 import DeleteIcon from "@mui/icons-material/Delete";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
+import {
+  IconButton,
+  Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
+} from "@mui/material";
+
 import {
   Button,
   Card,
@@ -175,6 +186,54 @@ function Sales() {
     }
   };
 
+  const [viewOpen, setViewOpen] = useState(false);
+const [selectedSale, setSelectedSale] = useState(null);
+
+// Safely extract names even if refs aren’t populated
+const getProductName = (sale) =>
+  sale?.productID?.name ||
+  products.find(p => p._id === (sale?.productID?._id || sale?.productID))?.name ||
+  "Unknown Product";
+
+const getCustomerName = (sale) =>
+  sale?.customerID?.username || customer.find(c => c._id === sale?.customerID)?.username || "Unknown Customer";
+
+const getBankName = (sale) => {
+  const id = sale?.bankID?._id || sale?.bankID; // supports populated or plain id
+  if (!id) return null;
+  return sale?.bankID?.bankName || banks.find(b => b._id === id)?.bankName || "Selected Bank";
+};
+
+const formatDate = (d) => {
+  try {
+    return new Date(d).toLocaleDateString();
+  } catch {
+    return "-";
+  }
+};
+
+// Builds the sentence shown in the dialog
+const buildDescription = (sale) => {
+  const prod = getProductName(sale);
+  const cust = getCustomerName(sale);
+  const method = (sale?.paymentMethod || "cash").toLowerCase();
+  const bank = getBankName(sale);
+  const chequeDate = sale?.chequeDate ? formatDate(sale.chequeDate) : null;
+  const when = sale?.saleDate ? formatDate(sale.saleDate) : "-";
+  const qty = sale?.stockSold ?? "-";
+  const amount = sale?.totalSaleAmount ?? "-"; // this is total amount in your current API
+
+  // Payment method specific tail
+  let via = "via cash";
+  if (method === "online") via = bank ? `via online (Bank: ${bank})` : "via online";
+  if (method === "cheque") via = bank ? `via cheque (Bank: ${bank}${chequeDate ? `, Cheque Date: ${chequeDate}` : ""})` : "via cheque";
+  if (method === "credit") via = "on credit";
+
+  // Final sentence
+  return `${prod} was sold to ${cust} (Qty: ${qty}) for Rs ${amount} ${via} on ${when}.`;
+};
+
+
   return (
     <Container>
       <Card sx={{ mt: 3 }}>
@@ -244,13 +303,48 @@ function Sales() {
                           <TableCell>
                             {element.totalSaleAmount}
                           </TableCell>
-                          <TableCell>
-                            {/* Delete Icon */}
-                            <DeleteIcon
-                              sx={{ cursor: "pointer", color: "red" }}
-                              onClick={() => handleDeleteSale(element._id)} // Pass sale id
-                            />
-                          </TableCell>
+                         <TableCell>
+  {/* View / description icon */}
+  <Tooltip title="View details">
+    <IconButton
+      aria-label="view"
+      onClick={() => {
+        setSelectedSale(element);
+        setViewOpen(true);
+      }}
+      size="small"
+    >
+      <VisibilityIcon />
+    </IconButton>
+  </Tooltip>
+
+  {/* Optional: small helper icon */}
+  <Tooltip title="What is this?">
+    <IconButton
+      aria-label="info"
+      onClick={() => {
+        setSelectedSale(element);
+        setViewOpen(true);
+      }}
+      size="small"
+    >
+      <InfoOutlinedIcon fontSize="small" />
+    </IconButton>
+  </Tooltip>
+
+  {/* Delete icon */}
+  <Tooltip title="Delete sale">
+    <IconButton
+      aria-label="delete"
+      onClick={() => handleDeleteSale(element._id)}
+      size="small"
+      sx={{ color: "red", ml: 1 }}
+    >
+      <DeleteIcon />
+    </IconButton>
+  </Tooltip>
+</TableCell>
+
                         </TableRow>
                       )}
                   </TableBody>
@@ -266,6 +360,54 @@ function Sales() {
             onPageChange={handleChangePage}
             onRowsPerPageChange={handleChangeRowsPerPage}
           />
+
+          <Dialog open={viewOpen} onClose={() => setViewOpen(false)} maxWidth="sm" fullWidth>
+  <DialogTitle>Sale Description</DialogTitle>
+  <DialogContent dividers>
+    <Typography variant="body1">
+      {selectedSale ? buildDescription(selectedSale) : ""}
+    </Typography>
+
+    {/* (Optional) quick facts list */}
+    {selectedSale && (
+      <Paper sx={{ mt: 2, p: 2 }} variant="outlined">
+        <Typography variant="subtitle2" gutterBottom>Quick facts</Typography>
+        <Typography variant="body2">
+          Product: {getProductName(selectedSale)}
+        </Typography>
+        <Typography variant="body2">
+          Customer: {getCustomerName(selectedSale)}
+        </Typography>
+        <Typography variant="body2">
+          Quantity: {selectedSale.stockSold ?? "-"}
+        </Typography>
+        <Typography variant="body2">
+          Total Amount (Rs): {selectedSale.totalSaleAmount ?? "-"}
+        </Typography>
+        <Typography variant="body2">
+          Payment Method: {selectedSale.paymentMethod ?? "cash"}
+        </Typography>
+        {(selectedSale.paymentMethod === "online" || selectedSale.paymentMethod === "cheque") && (
+          <Typography variant="body2">
+            Bank: {getBankName(selectedSale) ?? "-"}
+          </Typography>
+        )}
+        {selectedSale.paymentMethod === "cheque" && (
+          <Typography variant="body2">
+            Cheque Date: {selectedSale.chequeDate ? formatDate(selectedSale.chequeDate) : "-"}
+          </Typography>
+        )}
+        <Typography variant="body2">
+          Sale Date: {selectedSale.saleDate ? formatDate(selectedSale.saleDate) : "-"}
+        </Typography>
+      </Paper>
+    )}
+  </DialogContent>
+  <DialogActions>
+    <Button onClick={() => setViewOpen(false)} variant="contained">Close</Button>
+  </DialogActions>
+</Dialog>
+
         </CardContent>
       </Card>
     </Container>

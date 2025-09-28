@@ -16,7 +16,7 @@ import { useSelector } from "react-redux";
 import { selectCanDelete } from "../../../redux/features/auth/authSlice";
 import TransactionHistoryModal from "../../../components/Models/TransactionModal";
 import CashTransactionHistoryModal from "../../../components/Models/CashTransactionModal";
-
+ 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://13.60.223.186:5000/";
 const API_BASE = `${BACKEND_URL}api`;
 
@@ -148,7 +148,7 @@ useEffect(() => {
   const totalCashIncomeFromModule = useMemo(() => {
     return filteredCashTransactions.reduce(
       (total, entry) =>
-        (entry.type || "").toLowerCase() === "add"
+        (entry.type || "").toLowerCase() === "add" 
           ? total + (Number(entry.balance) || 0)
           : total,
       0
@@ -298,7 +298,7 @@ useEffect(() => {
         onView={(bank) => handleOpenTransactionModal(bank, "bank")}
         cashtrue={false}
       />
-
+ 
       {/* Cash list */}
       <Typography variant="h3" align="center" mt={3}>
         Cash List

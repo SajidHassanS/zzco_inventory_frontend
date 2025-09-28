@@ -8,25 +8,26 @@ import {
   TableRow,
   Paper,
   IconButton,
-  TablePagination
+  TablePagination,
+  Tooltip
 } from "@mui/material";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
-import { BsEyeFill } from "react-icons/bs";
+import VisibilityIcon from "@mui/icons-material/Visibility";
 
 const CustomTable = ({
-  columns,
-  data,
+  columns = [],
+  data = [],
   onEdit,
   onDelete,
-  onView,
-  cashtrue = false
+  onView,        // 👈 show eye if provided (works for bank & cash)
+  cashtrue = false, // kept for compatibility; no longer gates the eye
 }) => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(5);
 
   const handleChangePage = (event, newPage) => setPage(newPage);
-  const handleChangeRowsPerPage = event => {
+  const handleChangeRowsPerPage = (event) => {
     setRowsPerPage(parseInt(event.target.value, 10));
     setPage(0);
   };
@@ -34,54 +35,77 @@ const CustomTable = ({
   const emptyRows =
     rowsPerPage - Math.min(rowsPerPage, data.length - page * rowsPerPage);
 
+  const showActions = Boolean(onEdit || onDelete || onView);
+
   return (
     <Paper>
       <TableContainer>
-        <Table>
+        <Table size="small">
           <TableHead>
             <TableRow>
-              {columns.map(column =>
+              {columns.map((column) => (
                 <TableCell key={column.field}>
                   {column.headerName}
                 </TableCell>
-              )}
-              <TableCell>Actions</TableCell>
+              ))}
+              {showActions && <TableCell align="center">Actions</TableCell>}
             </TableRow>
           </TableHead>
+
           <TableBody>
             {data
               .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-              .map(row =>
+              .map((row) => (
                 <TableRow key={row._id || row.id}>
-                  {columns.map(column =>
+                  {columns.map((column) => (
                     <TableCell key={column.field}>
                       {column.renderCell
                         ? column.renderCell(row)
                         : row[column.field]}
                     </TableCell>
+                  ))}
+
+                  {showActions && (
+                    <TableCell align="center">
+                      {onView && (
+                        <Tooltip title="View">
+                          <IconButton size="small" onClick={() => onView(row)}>
+                            <VisibilityIcon />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      {onEdit && (
+                        <Tooltip title="Edit">
+                          <IconButton size="small" onClick={() => onEdit(row)}>
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      {onDelete && (
+                        <Tooltip title="Delete">
+                          <IconButton
+                            size="small"
+                            onClick={() => onDelete(row)}
+                            sx={{ color: "red" }}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                    </TableCell>
                   )}
-                  <TableCell>
-                    <IconButton onClick={() => onEdit(row)}>
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton onClick={() => onDelete(row)}>
-                      <DeleteIcon />
-                    </IconButton>
-                    {/* 👇 now respects boolean */}
-                    {!cashtrue &&
-                      <IconButton onClick={() => onView(row)}>
-                        <BsEyeFill />
-                      </IconButton>}
-                  </TableCell>
                 </TableRow>
-              )}
-            {emptyRows > 0 &&
+              ))}
+
+            {emptyRows > 0 && (
               <TableRow style={{ height: 53 * emptyRows }}>
-                <TableCell colSpan={columns.length + 1} />
-              </TableRow>}
+                <TableCell colSpan={(columns?.length || 0) + (showActions ? 1 : 0)} />
+              </TableRow>
+            )}
           </TableBody>
         </Table>
       </TableContainer>
+
       <TablePagination
         rowsPerPageOptions={[5, 10, 25]}
         component="div"

@@ -1,6 +1,7 @@
+// src/components/SaleProduct/AddSale.jsx
 import React, { useState, useRef, useEffect, Fragment } from "react";
 import { useSelector, useDispatch } from "react-redux";
-import AddCustomerModal from "../Models/AddCustomer"; // Import the new component
+import AddCustomerModal from "../Models/AddCustomer";
 
 import {
   Dialog,
@@ -17,7 +18,7 @@ import {
   Box,
 } from "@mui/material";
 import { getBanks } from "../../redux/features/Bank/bankSlice";
-import { getWarehouses } from "../../redux/features/WareHouse/warehouseSlice"; // Add this import
+import { getWarehouses } from "../../redux/features/WareHouse/warehouseSlice";
 import { toast, ToastContainer } from "react-toastify";
 import axios from "axios";
 
@@ -38,28 +39,19 @@ export default function AddSale({
     totalSaleAmount: "",
     paymentMethod: "",
     chequeDate: "",
-    bankID: "", // Track selected bank
+    bankID: "",
     warehouseID: "",
-    status: false
+    status: false,
   });
-  const [openModal, setOpenModal] = useState(false); // State to control modal visibility
-  const [customers, setCustomers] = useState([]); // Assuming you have a state for customers
-  const [errors, setErrors] = useState({}); // State to hold validation errors
-  const selectedProduct = products.find(product => product._id === sale.productID) || {};
 
-  const handleOpenModal = () => {
-    setOpenModal(true); // Open the modal
-  };
-
-  const handleCloseModal = () => {
-    setOpenModal(false); // Close the modal
-  };
+  const [openModal, setOpenModal] = useState(false);
+  const [errors, setErrors] = useState({});
   const [open, setOpen] = useState(true);
   const [image, setImage] = useState(null);
   const [imagePreview, setImagePreview] = useState("");
   const cancelButtonRef = useRef(null);
+
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
- 
   const API_URL = `${BACKEND_URL}api`;
 
   const banks = useSelector((state) => state.bank.banks);
@@ -70,28 +62,37 @@ export default function AddSale({
     dispatch(getWarehouses());
   }, [dispatch]);
 
-  // Handling Input Change for input fields
+  const selectedProduct =
+    products.find((p) => p._id === sale.productID) || null;
+
+  // ---------- Input handlers ----------
   const handleInputChange = (e) => {
     const { name, value } = e.target;
 
-    // Parse numbers only for numeric fields
+    // Make numeric fields stay "" when empty, otherwise be numbers
     const numericFields = ["stockSold", "totalSaleAmount"];
-    const parsedValue = numericFields.includes(name) ? parseInt(value, 10) || 0 : value;
+    const parsedValue = numericFields.includes(name)
+      ? value === "" // keep empty
+        ? ""
+        : Number(value)
+      : value;
 
     setSale((prevSale) => ({
       ...prevSale,
       [name]: parsedValue,
     }));
 
-    const selectedProduct = products.find((product) => product._id === (name === "productID" ? value : sale.productID));
+    const selectedProd =
+      products.find((product) => product._id === (name === "productID" ? value : sale.productID)) ||
+      null;
 
-    // Validate stockSold
-    if (name === "stockSold" && selectedProduct) {
-      const maxStock = selectedProduct.quantity;
-      if (parsedValue < 0 || parsedValue > maxStock) {
+    // Validate stockSold against available quantity
+    if (name === "stockSold" && selectedProd) {
+      const maxStock = Number(selectedProd.quantity ?? 0);
+      if (parsedValue === "" || parsedValue <= 0 || parsedValue > maxStock) {
         setErrors((prevErrors) => ({
           ...prevErrors,
-          stockSold: `Stock Sold must be between 0 and ${maxStock}.`,
+          stockSold: `Stock Sold must be between 1 and ${maxStock}.`,
         }));
       } else {
         setErrors((prevErrors) => ({ ...prevErrors, stockSold: "" }));
@@ -99,49 +100,96 @@ export default function AddSale({
     }
 
     // Validate totalSaleAmount
-    if (name === "totalSaleAmount" && parsedValue <= 0) {
-      setErrors((prevErrors) => ({
-        ...prevErrors,
-        totalSaleAmount: "Total Sale Amount must be greater than 0.",
-      }));
-    } else if (name === "totalSaleAmount") {
-      setErrors((prevErrors) => ({ ...prevErrors, totalSaleAmount: "" }));
+    if (name === "totalSaleAmount") {
+      if (parsedValue === "" || Number(parsedValue) <= 0) {
+        setErrors((prevErrors) => ({
+          ...prevErrors,
+          totalSaleAmount: "Total Sale Amount must be greater than 0.",
+        }));
+      } else {
+        setErrors((prevErrors) => ({ ...prevErrors, totalSaleAmount: "" }));
+      }
     }
 
     // Auto-fill saleDate when Cash or Credit is selected
     if (name === "paymentMethod" && (value === "cash" || value === "credit")) {
       setSale((prevSale) => ({
         ...prevSale,
-        saleDate: new Date().toISOString().split("T")[0], // Get current date
+        saleDate: new Date().toISOString().split("T")[0],
       }));
     }
   };
 
-  // Handle Image Change
   const handleImageChange = (e) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (file) {
       setImage(file);
       setImagePreview(URL.createObjectURL(file));
     }
   };
 
-  // POST Data
+  // ---------- Validation ----------
+  const validateRequired = () => {
+    const errs = {};
+
+    if (!sale.productID) errs.productID = "Select a product";
+    if (!sale.customerID) errs.customerID = "Select a customer";
+
+    if (sale.stockSold === "" || Number(sale.stockSold) <= 0) {
+      errs.stockSold = "Enter quantity > 0";
+    } else if (selectedProduct && Number(sale.stockSold) > Number(selectedProduct.quantity ?? 0)) {
+      errs.stockSold = `Cannot exceed available stock (${selectedProduct.quantity}).`;
+    }
+
+    if (sale.totalSaleAmount === "" || Number(sale.totalSaleAmount) <= 0) {
+      errs.totalSaleAmount = "Enter amount > 0";
+    }
+
+    if (!sale.paymentMethod) errs.paymentMethod = "Select payment method";
+
+    // saleDate: required for online/cheque; for cash/credit we auto-set, but keep a fallback below
+    if ((sale.paymentMethod === "online" || sale.paymentMethod === "cheque") && !sale.saleDate) {
+      errs.saleDate = "Select sale date";
+    }
+
+    if ((sale.paymentMethod === "online" || sale.paymentMethod === "cheque") && !sale.bankID) {
+      errs.bankID = "Select bank";
+    }
+
+    if (sale.paymentMethod === "cheque" && !sale.chequeDate) {
+      errs.chequeDate = "Select cheque date";
+    }
+
+    if (!sale.warehouseID) errs.warehouseID = "Select warehouse";
+
+    setErrors((prev) => ({ ...prev, ...errs }));
+    return Object.keys(errs).length === 0;
+  };
+
+  // ---------- Submit ----------
   const addSale = () => {
-    const formData = new FormData();
-    const totalAmount = sale.totalSaleAmount * sale.stockSold;
-    formData.append("productID", sale.productID);
-    formData.append("customerID", sale.customerID);
-    formData.append("stockSold", sale.stockSold);
-    formData.append("saleDate", sale.saleDate);
-    formData.append("totalSaleAmount", totalAmount);
-    formData.append("paymentMethod", sale.paymentMethod);
-    formData.append("warehouseID", sale.warehouseID);
-    formData.append("status", sale.status);
-    if (errors.stockSold || errors.totalSaleAmount) {
-      toast.error("Please fix the validation errors before submitting.");
+    if (!validateRequired()) {
+      toast.error("Please fill in all required fields.");
       return;
     }
+
+    const formData = new FormData();
+
+    // totalSaleAmount in your table is currently TOTAL (unitPrice * qty)
+    const totalAmount = Number(sale.totalSaleAmount) * Number(sale.stockSold);
+
+    // Ensure saleDate exists (fallback for cash/credit)
+    const saleDate = sale.saleDate || new Date().toISOString().split("T")[0];
+
+    formData.append("productID", sale.productID);
+    formData.append("customerID", sale.customerID);
+    formData.append("stockSold", String(sale.stockSold));
+    formData.append("saleDate", saleDate);
+    formData.append("totalSaleAmount", String(totalAmount));
+    formData.append("paymentMethod", sale.paymentMethod);
+    formData.append("warehouseID", sale.warehouseID);
+    formData.append("status", String(sale.status));
+
     if (sale.paymentMethod === "cheque") {
       formData.append("chequeDate", sale.chequeDate);
       formData.append("bankID", sale.bankID);
@@ -159,42 +207,42 @@ export default function AddSale({
         headers: { "Content-Type": "multipart/form-data" },
       })
       .then((response) => {
-        toast.success(response.data.message);
-        handlePageUpdate();
-        addSaleModalSetting();
+        toast.success(response.data?.message || "Sale added!");
+        handlePageUpdate?.();
+        addSaleModalSetting?.();
         setOpen(false);
       })
       .catch((error) => {
         console.error("Error:", error);
-        toast.error(
-          error.response?.data?.message || "Failed to add sale. Please try again."
-        );
+        toast.error(error.response?.data?.message || "Failed to add sale. Please try again.");
       });
   };
 
-const refreshCustomers = (newCustomer) => {
-  // Add the new customer to the list
-  setCustomers((prevCustomers) => [...prevCustomers, newCustomer]);
+  // ---------- Customer modal helpers ----------
+  const normalizeCustomer = (payload) => {
+    // Accept direct object, {data}, or {customer}
+    return payload?.data ?? payload?.customer ?? payload ?? null;
+  };
 
-  // Automatically select the newly created customer
-  setSale((prevSale) => ({
-    ...prevSale,
-    customerID: newCustomer._id, // Set the new customer as selected
-  }));
-};
+  const refreshCustomers = (maybeCustomer) => {
+    const newCustomer = normalizeCustomer(maybeCustomer);
+    if (!newCustomer || !newCustomer._id) return;
 
+    setSale((prev) => ({ ...prev, customerID: newCustomer._id }));
+    // refresh the list so it appears in the select options
+    fetchCustomerData?.();
+  };
 
-const handleAddNewCustomer = (newCustomer) => {
-  // Assuming the newCustomer object has _id property
-  setSale((prevSale) => ({
-    ...prevSale,
-    customerID: newCustomer._id, // Automatically select the newly added customer
-  }));
-  
-  // Optionally, refresh the customer list if needed (if you're maintaining a customer list state)
-  fetchCustomerData(); // Make sure this function fetches the latest customer list
-};
-
+  const handleAddNewCustomer = (maybeCustomer) => {
+    const newCustomer = normalizeCustomer(maybeCustomer);
+    if (!newCustomer || !newCustomer._id) {
+      toast.error("Couldn't get the new customer from the modal.");
+      return;
+    }
+    setSale((prev) => ({ ...prev, customerID: newCustomer._id }));
+    fetchCustomerData?.();
+    setOpenModal(false);
+  };
 
   return (
     <Fragment>
@@ -212,12 +260,13 @@ const handleAddNewCustomer = (newCustomer) => {
             <Box ml={1}>Add Sale</Box>
           </Box>
         </DialogTitle>
+
         <DialogContent>
           <form>
             <Grid container spacing={2}>
               {/* Product Selection */}
               <Grid item xs={12} sm={6}>
-                <FormControl fullWidth margin="normal">
+                <FormControl fullWidth margin="normal" error={!!errors.productID}>
                   <InputLabel id="productID-label">Product Name</InputLabel>
                   <Select
                     labelId="productID-label"
@@ -238,6 +287,7 @@ const handleAddNewCustomer = (newCustomer) => {
                   </Select>
                 </FormControl>
               </Grid>
+
               {/* Stock Sold */}
               <Grid item xs={12} sm={6}>
                 <TextField
@@ -247,27 +297,34 @@ const handleAddNewCustomer = (newCustomer) => {
                   name="stockSold"
                   value={sale.stockSold}
                   onChange={handleInputChange}
-                  placeholder={`0 - ${selectedProduct ? selectedProduct.quantity : 0}`}
+                  placeholder={`1 - ${selectedProduct ? selectedProduct.quantity : 0}`}
                   margin="normal"
                   InputLabelProps={{ shrink: true }}
-                  error={!!errors.stockSold} // Show error state for stockSold
-                  helperText={errors.stockSold} // Show error message for stockSold
+                  error={!!errors.stockSold}
+                  helperText={errors.stockSold}
                 />
               </Grid>
 
-              {/* Store Selection */}
+              {/* Customer Selection */}
               <Grid item xs={12} sm={6}>
-                <FormControl fullWidth margin="normal">
+                <FormControl fullWidth margin="normal" error={!!errors.customerID}>
                   <InputLabel id="storeID-label">Customer Name</InputLabel>
                   <Select
                     labelId="storeID-label"
                     id="storeID"
                     name="customerID"
                     value={sale.customerID}
-                    onChange={handleInputChange}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === "addNew") {
+                        setOpenModal(true);
+                        return;
+                      }
+                      handleInputChange(e);
+                    }}
                     label="Customer"
                   >
-                    <MenuItem value="addNew" onClick={handleOpenModal} style={{ backgroundColor: 'silver' }}>
+                    <MenuItem value="addNew" style={{ backgroundColor: "silver" }}>
                       Add New Customer
                     </MenuItem>
                     {customer.map((store) => (
@@ -278,25 +335,27 @@ const handleAddNewCustomer = (newCustomer) => {
                   </Select>
                 </FormControl>
               </Grid>
-              {/* Total Sale Amount */}
+
+              {/* Total Sale Amount (unit price) */}
               <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
-                  label="Total Sale Amount"
+                  label="Unit Price (Rs)"
                   type="number"
                   name="totalSaleAmount"
                   value={sale.totalSaleAmount}
                   onChange={handleInputChange}
-                  placeholder="299"
+                  placeholder="e.g., 299"
                   margin="normal"
                   InputLabelProps={{ shrink: true }}
-                  error={!!errors.totalSaleAmount} // Show error state for totalSaleAmount
-                  helperText={errors.totalSaleAmount} // Show error message for totalSaleAmount
+                  error={!!errors.totalSaleAmount}
+                  helperText={errors.totalSaleAmount}
                 />
               </Grid>
-              {/* Payment Method Selection */}
+
+              {/* Payment Method */}
               <Grid item xs={12} sm={6}>
-                <FormControl fullWidth margin="normal">
+                <FormControl fullWidth margin="normal" error={!!errors.paymentMethod}>
                   <InputLabel id="paymentMethod-label">Payment Method</InputLabel>
                   <Select
                     labelId="paymentMethod-label"
@@ -316,10 +375,11 @@ const handleAddNewCustomer = (newCustomer) => {
                   </Select>
                 </FormControl>
               </Grid>
-              {/* Bank Selection for Cash Payment */}
+
+              {/* Bank (for online/cheque) */}
               {(sale.paymentMethod === "online" || sale.paymentMethod === "cheque") && (
                 <Grid item xs={12} sm={6}>
-                  <FormControl fullWidth margin="normal">
+                  <FormControl fullWidth margin="normal" error={!!errors.bankID}>
                     <InputLabel id="bankID-label">Bank Name</InputLabel>
                     <Select
                       labelId="bankID-label"
@@ -341,7 +401,8 @@ const handleAddNewCustomer = (newCustomer) => {
                   </FormControl>
                 </Grid>
               )}
-              {/* Cheque Date */}
+
+              {/* Cheque Date (for cheque) */}
               {sale.paymentMethod === "cheque" && (
                 <Grid item xs={12} sm={6}>
                   <TextField
@@ -353,10 +414,13 @@ const handleAddNewCustomer = (newCustomer) => {
                     onChange={handleInputChange}
                     InputLabelProps={{ shrink: true }}
                     margin="normal"
+                    error={!!errors.chequeDate}
+                    helperText={errors.chequeDate}
                   />
                 </Grid>
               )}
-              {/* Image Upload */}
+
+              {/* Image Upload (for online/cheque) */}
               {(sale.paymentMethod === "cheque" || sale.paymentMethod === "online") && (
                 <Grid item xs={12}>
                   <TextField
@@ -382,9 +446,10 @@ const handleAddNewCustomer = (newCustomer) => {
                   )}
                 </Grid>
               )}
-              {/* Warehouse Selection */}
+
+              {/* Warehouse */}
               <Grid item xs={12} sm={6}>
-                <FormControl fullWidth margin="normal">
+                <FormControl fullWidth margin="normal" error={!!errors.warehouseID}>
                   <InputLabel id="warehouseID-label">Warehouse</InputLabel>
                   <Select
                     labelId="warehouseID-label"
@@ -405,6 +470,7 @@ const handleAddNewCustomer = (newCustomer) => {
                   </Select>
                 </FormControl>
               </Grid>
+
               {/* Sales Date */}
               <Grid item xs={12}>
                 <TextField
@@ -417,12 +483,15 @@ const handleAddNewCustomer = (newCustomer) => {
                   onChange={handleInputChange}
                   InputLabelProps={{ shrink: true }}
                   margin="normal"
-                  disabled={sale.paymentMethod === "cash" || sale.paymentMethod === "credit"} // Disable when cash or credit
+                  disabled={sale.paymentMethod === "cash" || sale.paymentMethod === "credit"}
+                  error={!!errors.saleDate}
+                  helperText={errors.saleDate}
                 />
               </Grid>
             </Grid>
           </form>
         </DialogContent>
+
         <DialogActions>
           <Button variant="contained" color="primary" onClick={addSale}>
             Add Sale
@@ -431,7 +500,7 @@ const handleAddNewCustomer = (newCustomer) => {
             variant="outlined"
             color="secondary"
             onClick={() => {
-              addSaleModalSetting();
+              addSaleModalSetting?.();
               setOpen(false);
             }}
             ref={cancelButtonRef}
@@ -440,13 +509,13 @@ const handleAddNewCustomer = (newCustomer) => {
           </Button>
         </DialogActions>
       </Dialog>
-<AddCustomerModal
-  open={openModal}
-  handleClose={handleCloseModal}
-  refreshCustomers={refreshCustomers} // Ensure this is passed
-  handleAddNewCustomer={handleAddNewCustomer}  // Add this line
-/>
 
+      <AddCustomerModal
+        open={openModal}
+        handleClose={() => setOpenModal(false)}
+        refreshCustomers={refreshCustomers}
+        handleAddNewCustomer={handleAddNewCustomer}
+      />
     </Fragment>
   );
 }
