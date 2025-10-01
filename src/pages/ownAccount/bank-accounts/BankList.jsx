@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useEffect } from "react";
 import {
   Box,
-  Button,
   Typography,
   FormControl,
   InputLabel,
@@ -16,7 +15,7 @@ import { useSelector } from "react-redux";
 import { selectCanDelete } from "../../../redux/features/auth/authSlice";
 import TransactionHistoryModal from "../../../components/Models/TransactionModal";
 import CashTransactionHistoryModal from "../../../components/Models/CashTransactionModal";
- 
+
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://13.60.223.186:5000/";
 const API_BASE = `${BACKEND_URL}api`;
 
@@ -34,31 +33,33 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
 
   const canDelete = useSelector(selectCanDelete);
 
-  // NEW: pull all expenses and cache here
+  // We still fetch expenses (used only for display fallback for cash)
   const [expenses, setExpenses] = useState([]);
-const [bankTransactions, setBankTransactions] = useState([]);
-useEffect(() => {
-  const fetchBankTransactions = async () => {
-    try {
-      let allTx = [];
-      for (const bank of banks) {
-        const res = await axios.get(`${API_BASE}/banks/${bank._id}/transactions`, {
-          withCredentials: true,
-        });
-        const txns = res.data || [];
-        // tag with bank id
-        allTx = [...allTx, ...txns.map(t => ({ ...t, bankID: bank._id }))];
-      }
-      setBankTransactions(allTx);
-    } catch (err) {
-      console.error("❌ Failed to fetch bank transactions:", err);
-      setBankTransactions([]);
-    }
-  };
 
-  if (banks.length) fetchBankTransactions();
-}, [banks]);
- 
+  // Bank transactions cache (source of truth for bank expenses)
+  const [bankTransactions, setBankTransactions] = useState([]);
+
+  useEffect(() => {
+    const fetchBankTransactions = async () => {
+      try {
+        let allTx = [];
+        for (const bank of banks) {
+          const res = await axios.get(`${API_BASE}/banks/${bank._id}/transactions`, {
+            withCredentials: true,
+          });
+          const txns = res.data || [];
+          allTx = [...allTx, ...txns.map(t => ({ ...t, bankID: bank._id }))];
+        }
+        setBankTransactions(allTx);
+      } catch (err) {
+        console.error("❌ Failed to fetch bank transactions:", err);
+        setBankTransactions([]);
+      }
+    };
+
+    if (banks.length) fetchBankTransactions();
+  }, [banks]);
+
   useEffect(() => {
     const fetchExpenses = async () => {
       try {
@@ -74,7 +75,7 @@ useEffect(() => {
     fetchExpenses();
   }, []);
 
-  // helpers
+  // ===== helpers for date filters =====
   const isInSelectedPeriod = (isoDate) => {
     const d = new Date(isoDate);
     const y = d.getFullYear();
@@ -84,98 +85,86 @@ useEffect(() => {
     return true;
   };
 
-  const filterTransactionsByDate = (transactions) =>
-    (transactions || []).filter((t) => isInSelectedPeriod(t.createdAt || t.date));
+  const isCashOutType = (type) => {
+    const t = (type || "").toLowerCase();
+    return t === "deduct" || t === "subtract" || t === "withdraw" || t === "expense";
+  };
 
-  // cash transactions (existing cash module)
+  // ===== CASH (source of truth = your cash module) =====
   const filteredCashTransactions = useMemo(() => {
-    return filterTransactionsByDate(cash?.allEntries || []);
+    return (cash?.allEntries || []).filter(t =>
+      isInSelectedPeriod(t.createdAt || t.date)
+    );
   }, [cash, reportType, selectedYear, selectedMonth]);
 
-  // -------- EXPENSES SPLIT (core fix) --------
-  const cashExpenses = useMemo(() => {
-    return expenses
+  const totalCashAdds = useMemo(() => {
+    return filteredCashTransactions.reduce((sum, t) =>
+      (t.type || "").toLowerCase() === "add"
+        ? sum + (Number(t.balance) || 0)
+        : sum, 0);
+  }, [filteredCashTransactions]);
+
+  const totalCashDeductsFromModule = useMemo(() => {
+    // Count any “cash out” types your module might use
+    return filteredCashTransactions.reduce((sum, t) =>
+      isCashOutType(t.type)
+        ? sum + Math.abs(Number(t.balance) || 0)
+        : sum, 0);
+  }, [filteredCashTransactions]);
+
+  // ✅ Available cash = module adds − module deducts (no /expenses subtraction)
+  const availableCashBalance = useMemo(() => {
+    return totalCashAdds - totalCashDeductsFromModule;
+  }, [totalCashAdds, totalCashDeductsFromModule]);
+
+  // ---- DISPLAY “Cash Expenses” ----
+  // 1) Prefer the module's cash-out total
+  // 2) If it’s zero (i.e., module didn’t create deduction rows),
+  //    FALLBACK to /expenses of paymentMethod==='cash' for display ONLY
+  const cashExpensesFromExpensesApi = useMemo(() => {
+    return (expenses || [])
       .filter(
         (e) =>
           (e.paymentMethod || "").toLowerCase() === "cash" &&
           isInSelectedPeriod(e.expenseDate || e.createdAt)
       )
-      .map((e) => Math.abs(Number(e.amount) || 0));
-  }, [expenses, reportType, selectedMonth, selectedYear]);
+      .reduce((sum, e) => sum + Math.abs(Number(e.amount) || 0), 0);
+  }, [expenses, reportType, selectedYear, selectedMonth]);
 
-  const totalCashExpenses = useMemo(
-    () => cashExpenses.reduce((sum, a) => sum + a, 0),
-    [cashExpenses]
-  );
+  const cashExpensesDisplay = useMemo(() => {
+    return totalCashDeductsFromModule > 0
+      ? totalCashDeductsFromModule
+      : cashExpensesFromExpensesApi;
+  }, [totalCashDeductsFromModule, cashExpensesFromExpensesApi]);
 
-  // group bank expenses by bankID (online/cheque)
+  // ===== BANK (source of truth = bank transactions) =====
+  const filteredBankTx = useMemo(() => {
+    return (bankTransactions || [])
+      .filter(tx => isInSelectedPeriod(tx.createdAt || tx.date))
+      .filter(tx => (tx.type || "").toLowerCase() === "subtract");
+  }, [bankTransactions, reportType, selectedYear, selectedMonth]);
+
+  // Per-bank expense map from bank transactions ONLY
   const bankExpenseMap = useMemo(() => {
     const map = new Map();
-    (expenses || []).forEach((e) => {
-      const pm = (e.paymentMethod || "").toLowerCase();
-      if ((pm === "online" || pm === "cheque") && isInSelectedPeriod(e.expenseDate || e.createdAt)) {
-        const bid = e.bankID && (e.bankID._id || e.bankID); // supports populated or raw id
-        const amt = Math.abs(Number(e.amount) || 0);
-        if (bid) map.set(bid, (map.get(bid) || 0) + amt);
-      }
+    filteredBankTx.forEach(tx => {
+      const bid = tx.bankID?._id || tx.bankID;
+      const amt = Math.abs(Number(tx.amount) || 0);
+      if (bid) map.set(bid, (map.get(bid) || 0) + amt);
     });
     return map;
-  }, [expenses, reportType, selectedMonth, selectedYear]);
+  }, [filteredBankTx]);
 
   const totalBankExpenses = useMemo(() => {
-  // from expenses/all
-  const expFromExpenses = expenses
-    .filter(
-      e =>
-        ["online", "cheque"].includes((e.paymentMethod || "").toLowerCase()) &&
-        isInSelectedPeriod(e.expenseDate || e.createdAt)
-    )
-    .reduce((sum, e) => sum + Math.abs(Number(e.amount) || 0), 0);
+    return filteredBankTx.reduce((sum, tx) => sum + Math.abs(Number(tx.amount) || 0), 0);
+  }, [filteredBankTx]);
 
-  // from transactions
-  const expFromTransactions = bankTransactions
-    .filter(
-      tx =>
-        tx.type?.toLowerCase() === "subtract" &&
-        isInSelectedPeriod(tx.createdAt)
-    )
-    .reduce((sum, tx) => sum + Math.abs(Number(tx.amount) || 0), 0);
-
-  return expFromExpenses + expFromTransactions;
-}, [expenses, bankTransactions, reportType, selectedMonth, selectedYear]);
-
-  // -------- EXISTING CASH TOTALS (then subtract expenses) --------
-  const totalCashIncomeFromModule = useMemo(() => {
-    return filteredCashTransactions.reduce(
-      (total, entry) =>
-        (entry.type || "").toLowerCase() === "add" 
-          ? total + (Number(entry.balance) || 0)
-          : total,
-      0
-    );
-  }, [filteredCashTransactions]);
-
-  const totalCashDeductFromModule = useMemo(() => {
-    return filteredCashTransactions.reduce(
-      (total, entry) =>
-        (entry.type || "").toLowerCase() === "deduct"
-          ? total + Math.abs(Number(entry.balance) || 0)
-          : total,
-      0
-    );
-  }, [filteredCashTransactions]);
-
-  // What we show as "Available Cash Balance" should also subtract cash expenses
-  const availableCashBalance = useMemo(() => {
-    return totalCashIncomeFromModule - totalCashDeductFromModule - totalCashExpenses;
-  }, [totalCashIncomeFromModule, totalCashDeductFromModule, totalCashExpenses]);
-
-  // Bank total balance (kept as you had)
+  // Bank total balance (as stored in bank docs)
   const totalBankBalance = useMemo(() => {
     return (banks || []).reduce((total, bank) => total + (Number(bank.balance) || 0), 0);
   }, [banks]);
 
-  // bank table columns
+  // ===== tables =====
   const bankColumns = [
     { field: "bankName", headerName: "Bank Name" },
     { field: "balance", headerName: "Balance", align: "right" },
@@ -191,7 +180,6 @@ useEffect(() => {
     },
   ];
 
-  // cash table columns
   const cashColumns = [
     {
       field: "createdAt",
@@ -203,7 +191,7 @@ useEffect(() => {
     { field: "type", headerName: "Type" },
   ];
 
-  // modal handlers
+  // ===== modals =====
   const handleOpenEditModal = (entry, type) => {
     setSelectedEntry(entry);
     setEntryType(type);
@@ -298,7 +286,7 @@ useEffect(() => {
         onView={(bank) => handleOpenTransactionModal(bank, "bank")}
         cashtrue={false}
       />
- 
+
       {/* Cash list */}
       <Typography variant="h3" align="center" mt={3}>
         Cash List
@@ -309,7 +297,7 @@ useEffect(() => {
         onEdit={(cashEntry) => handleOpenEditModal(cashEntry, "cash")}
         onDelete={(cashEntry) => handleOpenDeleteModal(cashEntry, "cash")}
         onView={(cashEntry) => handleOpenTransactionModal(cashEntry, "cash")}
-        cashtrue={true} // boolean
+        cashtrue={true}
       />
 
       {/* Summary row */}
@@ -337,7 +325,7 @@ useEffect(() => {
             Available Cash Balance: {availableCashBalance.toFixed(2)}
           </Typography>
           <Typography variant="h6" sx={{ color: "#D32F2F", fontWeight: "bold" }}>
-            Cash Expenses: {totalCashExpenses.toFixed(2)}
+            Cash Expenses: {cashExpensesDisplay.toFixed(2)}
           </Typography>
         </Box>
       </Box>

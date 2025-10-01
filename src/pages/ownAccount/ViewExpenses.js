@@ -1,3 +1,4 @@
+// src/pages/ViewExpenses.jsx
 import React, { useState, useEffect } from "react";
 import {
   Typography,
@@ -16,29 +17,34 @@ import {
   Select,
   InputLabel,
   FormControl,
+  IconButton,
+  Tooltip,
 } from "@mui/material";
+import EditIcon from "@mui/icons-material/Edit";
+import DeleteIcon from "@mui/icons-material/Delete";
 import { useDispatch, useSelector } from "react-redux";
 import { getProducts } from "../../redux/features/product/productSlice";
 import { getBanks } from "../../redux/features/Bank/bankSlice";
-import axios from "axios";
-import CustomTable from "../../components/CustomTable/CustomTable";
 import { getCustomers } from "../../redux/features/cutomer/customerSlice";
 import { getSuppliers } from "../../redux/features/supplier/supplierSlice";
+import axios from "axios";
+import CustomTable from "../../components/CustomTable/CustomTable";
 
 const ITEMS_PER_PAGE = 10;
 
 const ViewExpenses = () => {
   const dispatch = useDispatch();
+  const { products } = useSelector((s) => s.product);
+  const banks = useSelector((s) => s.bank.banks || []);
+
   const [ledgerEntries, setLedgerEntries] = useState([]);
-  const { customers } = useSelector((state) => state.customer);
-  const { suppliers } = useSelector((state) => state.supplier);
   const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().split("T")[0]
   );
-  const [sales, setSales] = useState([]);
-  const banks = useSelector((state) => state.bank.banks);
   const [filteredEntries, setFilteredEntries] = useState([]);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+
   const [expense, setExpense] = useState({
     expenseName: "",
     amount: "",
@@ -55,75 +61,10 @@ const ViewExpenses = () => {
   const [totalPages, setTotalPages] = useState(0);
   const [runningBalance, setRunningBalance] = useState(0);
 
-  // ---- SAFE API BASE URL (fixes missing slash bugs) ----
+  // Safe API base
   const RAW = process.env.REACT_APP_BACKEND_URL || "";
   const BASE = RAW.endsWith("/") ? RAW : `${RAW}/`;
   const API_URL = `${BASE}api`;
-
-  // cache resolved bank transaction endpoint (after we probe once)
-  const [bankTxnPathTemplate, setBankTxnPathTemplate] = useState(null);
-  // common variants your backend might use; we will probe them once
-  const bankTxnCandidates = [
-    // banks/:id/transactions (what you originally called)
-    (id) => `${API_URL}/banks/${id}/transactions`,
-    // banks/:id/transaction
-    (id) => `${API_URL}/banks/${id}/transaction`,
-    // bank/:id/transactions
-    (id) => `${API_URL}/bank/${id}/transactions`,
-    // banks/transactions/:id
-    (id) => `${API_URL}/banks/transactions/${id}`,
-    // banks/:id/transactions/add
-    (id) => `${API_URL}/banks/${id}/transactions/add`,
-  ];
-
-  // try to find which candidate path actually exists (2xx/3xx on OPTIONS/HEAD/GET)
-  const resolveBankTxnEndpoint = async (bankId) => {
-    if (!bankId) return null;
-    if (bankTxnPathTemplate) return bankTxnPathTemplate;
-
-    for (const build of bankTxnCandidates) {
-      const url = build(bankId);
-      try {
-        // Some servers don't allow OPTIONS/HEAD; fall back to GET with harmless params
-        const res =
-          (await axios.options(url, { withCredentials: true })).status ||
-          (await axios.head(url, { withCredentials: true })).status;
-        if (res >= 200 && res < 400) {
-          setBankTxnPathTemplate(build);
-          return build;
-        }
-      } catch (_) {
-        // ignore and try next
-      }
-
-      try {
-        // Last-ditch: try GET (many routes will 405 here; we only accept 2xx/3xx)
-        const res = await axios.get(url, {
-          withCredentials: true,
-          params: { _probe: 1 },
-        });
-        if (res.status >= 200 && res.status < 400) {
-          setBankTxnPathTemplate(build);
-          return build;
-        }
-      } catch (_) {
-        // ignore and continue
-      }
-    }
-    console.error("❌ Could not resolve bank transactions endpoint. Tried:", bankTxnCandidates.map((b) => b("<id>")));
-    return null;
-  };
-
-  const handlePageChange = (event, newPage) => {
-    setPage(newPage + 1);
-  };
-
-  const handleRowsPerPageChange = (event) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(1);
-  };
-
-  const { products } = useSelector((state) => state.product);
 
   useEffect(() => {
     dispatch(getProducts());
@@ -132,23 +73,24 @@ const ViewExpenses = () => {
     dispatch(getBanks());
     fetchSales();
     fetchExpenses();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch]);
 
   useEffect(() => {
     filterEntriesByDate();
   }, [selectedDate, ledgerEntries]);
 
+  // ---------- FETCH DATA ----------
   const fetchSales = async () => {
     try {
       const { data } = await axios.get(`${API_URL}/sales`, {
         withCredentials: true,
       });
       const salesData = data.map((sale) => ({
-        ...sale,
-        id: sale._id,
+        id: `sale-${sale._id}`,
         type: "Sale",
         name: sale.productID ? sale.productID.name : "Unknown Product",
-        amount: Math.abs(Number(sale.totalSaleAmount) || 0),
+        amount: Math.abs(Number(sale.totalSaleAmount) || 0), // positive
         date: new Date(sale.saleDate),
         description: `Sale of ${sale.stockSold} unit(s) of ${
           sale.productID ? sale.productID.name : "Unknown"
@@ -161,75 +103,46 @@ const ViewExpenses = () => {
     }
   };
 
-const fetchExpenses = async () => {
-  try {
-    const { data } = await axios.get(`${API_URL}/expenses/all`, { withCredentials: true });
-
-    // Normal expenses
-    const expensesData = data.map((exp) => ({
-      id: exp._id,
-      type: "Expense",
-      name: exp.expenseName,
-      amount: -Math.abs(exp.amount),
-      date: new Date(exp.expenseDate || exp.createdAt),
-      description: exp.description,
-      paymentMethod: exp.paymentMethod,
-    }));
-
-    // 👇 Now also pull bank transactions
-    const bankTransactions = [];
-    for (const bank of banks) {
-      try {
-        const res = await axios.get(`${API_URL}/banks/${bank._id}/transactions`, { withCredentials: true });
-        res.data.forEach((tx) => {
-          bankTransactions.push({
-            id: tx._id,
-            type: "Expense",
-            name: `Bank Expense (${bank.bankName})`,
-            amount: tx.type === "subtract" ? -Math.abs(tx.amount) : Math.abs(tx.amount),
-            date: new Date(tx.createdAt),
-            description: tx.description,
-            paymentMethod: "bank",
-          });
-        });
-      } catch (err) {
-        console.error("Error fetching bank transactions for", bank.bankName, err);
-      }
-    }
-
-    updateLedger([...expensesData, ...bankTransactions]);
-  } catch (err) {
-    console.error("❌ Error fetching expenses:", err);
-  }
-};
-
-
-
-
-  const updateLedger = (newEntries) => {
-    setLedgerEntries((prevEntries) => {
-      const updatedEntries = [...prevEntries];
-
-      newEntries.forEach((newEntry) => {
-        const exists = updatedEntries.some((entry) => entry.id === newEntry.id);
-        if (!exists) {
-          updatedEntries.push({
-            ...newEntry,
-            paymentMethod: newEntry.paymentMethod || "N/A",
-          });
-        }
+  const fetchExpenses = async () => {
+    try {
+      const { data } = await axios.get(`${API_URL}/expenses/all`, {
+        withCredentials: true,
       });
 
-      return updatedEntries.sort(
-        (a, b) => new Date(b.date) - new Date(a.date)
-      );
+      const expensesData = data.map((exp) => ({
+        id: exp._id,
+        type: "Expense",
+        name: exp.expenseName,
+        amount: Number(exp.amount), // backend already stores as negative
+        date: new Date(exp.expenseDate || exp.createdAt),
+        description: exp.description,
+        paymentMethod: exp.paymentMethod,
+        bankID: exp.bankID || null,
+        chequeDate: exp.chequeDate || null,
+        raw: exp,
+      }));
+
+      updateLedger(expensesData);
+    } catch (err) {
+      console.error("❌ Error fetching expenses:", err);
+    }
+  };
+
+  const updateLedger = (newEntries) => {
+    setLedgerEntries((prev) => {
+      const merged = [...prev];
+      newEntries.forEach((e) => {
+        if (!merged.some((x) => x.id === e.id)) merged.push(e);
+      });
+      return merged.sort((a, b) => new Date(b.date) - new Date(a.date));
     });
   };
 
+  // purchases
   useEffect(() => {
     if (products.length > 0) {
       const purchaseEntries = products.map((p) => ({
-        id: p._id,
+        id: `purchase-${p._id}`,
         type: "Purchase",
         name: p.name,
         amount: -Math.abs(Number(p.price) * Number(p.quantity) || 0),
@@ -244,17 +157,17 @@ const fetchExpenses = async () => {
     }
   }, [products]);
 
+  // ---------- FORM ----------
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-
-    setExpense((prevExpense) => ({
-      ...prevExpense,
-      [name]: name === "amount" ? parseFloat(value) || "" : value,
+    setExpense((prev) => ({
+      ...prev,
+      [name]: name === "amount" ? (value === "" ? "" : Number(value)) : value,
     }));
 
     if (name === "paymentMethod" && (value === "cash" || value === "credit")) {
-      setExpense((prevExpense) => ({
-        ...prevExpense,
+      setExpense((prev) => ({
+        ...prev,
         expenseDate: new Date().toISOString().split("T")[0],
         chequeDate: "",
         bankID: "",
@@ -265,100 +178,168 @@ const fetchExpenses = async () => {
   };
 
   const handleImageChange = (e) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (file) {
-      setExpense((prevExpense) => ({
-        ...prevExpense,
-        image: file,
-      }));
+      setExpense((prev) => ({ ...prev, image: file }));
       setImagePreview(URL.createObjectURL(file));
     }
   };
 
-  // helper to post bank transaction; tries resolved endpoint or probes once
-  const postBankSubtract = async (bankId, amount, description) => {
-    if (!bankId) throw new Error("No bankId provided");
-    const builder =
-      bankTxnPathTemplate || (await resolveBankTxnEndpoint(String(bankId)));
+  const openAdd = () => {
+    setEditingId(null);
+    setExpense({
+      expenseName: "",
+      amount: "",
+      description: "",
+      expenseDate: new Date().toISOString().split("T")[0],
+      paymentMethod: "",
+      bankID: "",
+      chequeDate: "",
+      image: null,
+    });
+    setImagePreview("");
+    setShowExpenseModal(true);
+  };
 
-    // If we still couldn't resolve, fallback to the original path you used
-    const url = builder
-      ? builder(String(bankId))
-      : `${API_URL}/banks/${String(bankId)}/transactions`;
+  const openEdit = (row) => {
+    if (row.type !== "Expense") {
+      alert("Only Expense rows are editable here.");
+      return;
+    }
+    setEditingId(row.id);
+    setExpense({
+      expenseName: row.name,
+      amount: Math.abs(Number(row.amount) || 0),
+      description: row.description || "",
+      expenseDate: new Date(row.date).toISOString().split("T")[0],
+      paymentMethod: row.paymentMethod || "cash",
+      bankID: row.bankID || "",
+      chequeDate: row.chequeDate
+        ? new Date(row.chequeDate).toISOString().slice(0, 10)
+        : "",
+      image: null,
+    });
+    setImagePreview("");
+    setShowExpenseModal(true);
+  };
 
-    // NOTE: if your backend expects different keys, rename below.
+  // helper: create a bank subtract transaction
+  const postBankSubtract = (bankId, amount, description, expenseId) => {
     return axios.post(
-      url,
+      `${API_URL}/banks/${String(bankId)}/transactions`,
       {
         type: "subtract",
-        amount: Number(amount),
+        amount: Number(amount), // positive; backend subtracts
         description,
+        expenseId,
       },
       { withCredentials: true }
     );
   };
 
-  const addExpense = async () => {
-    if (!expense.expenseName || !expense.amount || !expense.description) {
-      alert("Please fill all required fields.");
+  const saveExpense = async () => {
+    const name = String(expense.expenseName || "").trim();
+    const desc = String(expense.description || "").trim();
+    const amt = Number(expense.amount);
+    const method = String(expense.paymentMethod || "").toLowerCase();
+    const isBank = method === "online" || method === "cheque";
+    const bankId = isBank ? String(expense.bankID || "") : "";
+
+    if (!name || !desc || !Number.isFinite(amt) || amt <= 0) {
+      alert("Please fill all required fields (name, description, amount > 0).");
       return;
     }
-
-    const isBankMethod =
-      expense.paymentMethod === "online" ||
-      expense.paymentMethod === "cheque";
-
-    if (isBankMethod && !expense.bankID) {
+    if (isBank && !bankId) {
       alert("Please select a bank for online/cheque payments.");
       return;
     }
 
-    const formData = new FormData();
-    formData.append("expenseName", expense.expenseName);
-    formData.append("amount", String(expense.amount));
-    formData.append("description", expense.description);
-    formData.append("expenseDate", expense.expenseDate);
-    formData.append("paymentMethod", expense.paymentMethod);
-    if (isBankMethod) {
-      formData.append("bankID", String(expense.bankID));
-    }
-    if (expense.paymentMethod === "cheque" && expense.chequeDate) {
-      formData.append("chequeDate", expense.chequeDate);
-    }
-    if (expense.image) formData.append("image", expense.image);
+    const fd = new FormData();
+    fd.append("expenseName", name);
+
+    // send positive amount; backend persists as negative
+    fd.append("amount", String(amt));
+
+    fd.append(
+      "description",
+      desc
+    );
+    fd.append(
+      "expenseDate",
+      expense.expenseDate || new Date().toISOString().slice(0, 10)
+    );
+    fd.append("paymentMethod", method || "cash");
+    if (isBank) fd.append("bankID", bankId);
+    if (method === "cheque" && expense.chequeDate)
+      fd.append("chequeDate", expense.chequeDate);
+    if (expense.image) fd.append("image", expense.image);
 
     try {
-      // 1) Create the expense
-      await axios.post(`${API_URL}/expenses/add`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
+      if (editingId) {
+        await axios.put(`${API_URL}/expenses/${editingId}`, fd, {
+          headers: { "Content-Type": "multipart/form-data" },
+          withCredentials: true,
+        });
+        alert("Expense updated");
+      } else {
+        const created = await axios.post(`${API_URL}/expenses/add`, fd, {
+          headers: { "Content-Type": "multipart/form-data" },
+          withCredentials: true,
+        });
+
+        if (isBank) {
+          await postBankSubtract(
+            bankId,
+            amt,
+            `Expense: ${name}`,
+            created?.data?._id
+          );
+        }
+
+        alert("Expense added");
+      }
+
+      setShowExpenseModal(false);
+      setEditingId(null);
+
+      // refresh
+      setLedgerEntries([]);
+      await fetchSales();
+      await fetchExpenses();
+      dispatch(getProducts());
+      dispatch(getBanks());
+    } catch (e) {
+      console.error("Save expense failed:", e?.response?.data || e);
+      alert(e?.response?.data?.message || "Failed to save expense");
+    }
+  };
+
+  const deleteExpense = async (row) => {
+    if (row.type !== "Expense") {
+      alert("Only Expense rows can be deleted here.");
+      return;
+    }
+    if (!window.confirm("Delete this expense?")) return;
+
+    try {
+      await axios.delete(`${API_URL}/expenses/${row.id}`, {
         withCredentials: true,
       });
 
-      // 2) If paid from a bank, subtract from that bank too (with endpoint resolution)
-      if (isBankMethod) {
-        try {
-          await postBankSubtract(
-            expense.bankID,
-            Number(expense.amount),
-            `Expense: ${expense.expenseName}`
-          );
-        } catch (e) {
-          console.error("❌ Bank subtraction failed:", e?.response?.data || e.message);
-          alert(
-            e?.response?.data?.message ||
-              "Bank deduction failed (endpoint not found). Check route path on backend."
-          );
-        }
-        // Refresh bank balances in UI either way
-        dispatch(getBanks());
-      }
+      setLedgerEntries((prev) => prev.filter((e) => e.id !== row.id));
+      await fetchExpenses();
+      dispatch(getBanks());
+      alert("Expense deleted");
+    } catch (e) {
+      console.error("Delete failed:", e?.response?.data || e);
+      alert(e?.response?.data?.message || "Delete failed");
+    }
+  };
 
-      alert("Expense Added Successfully");
-      setShowExpenseModal(false);
-      // Refresh ledger list
-      fetchExpenses();
-
-      // Reset form
+  const toggleExpenseModal = () => {
+    setShowExpenseModal(!showExpenseModal);
+    if (showExpenseModal) {
+      setEditingId(null);
       setExpense({
         expenseName: "",
         amount: "",
@@ -370,56 +351,43 @@ const fetchExpenses = async () => {
         image: null,
       });
       setImagePreview("");
-    } catch (error) {
-      console.error("Failed to add expense:", error.response?.data || error.message);
-      alert(
-        error.response?.data?.message ||
-          "Failed to add expense. Please try again."
-      );
     }
   };
 
-  const toggleExpenseModal = () => {
-    setShowExpenseModal(!showExpenseModal);
-  };
-
-  const paginatedEntries = filteredEntries.slice(
-    (page - 1) * ITEMS_PER_PAGE,
-    page * ITEMS_PER_PAGE
-  );
-
+  // ---------- FILTER ----------
   const calculateRunningBalance = (entries) => {
     let balance = 0;
-    const reversedEntries = [...entries].reverse();
-    const entriesWithBalance = reversedEntries.map((entry) => {
+    const reversed = [...entries].reverse();
+    const withBalance = reversed.map((entry) => {
       balance += entry.amount;
       return { ...entry, balance };
     });
     setRunningBalance(balance);
-    return entriesWithBalance.reverse();
+    return withBalance.reverse();
   };
 
-  useEffect(() => {
-    filterEntriesByDate();
-  }, [selectedDate, ledgerEntries]);
+  // Local date helper (avoid UTC shift issues)
+  const toLocalYMD = (d) => {
+    const dt = new Date(d);
+    const yyyy = dt.getFullYear();
+    const mm = String(dt.getMonth() + 1).padStart(2, "0");
+    const dd = String(dt.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  };
 
   const filterEntriesByDate = () => {
-    const selectedDateObj = new Date(selectedDate);
-    selectedDateObj.setHours(0, 0, 0, 0);
+    const sel = selectedDate; // "YYYY-MM-DD" from date input (local)
+    const filtered = ledgerEntries
+      .filter((entry) => toLocalYMD(entry.date) === sel)
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
 
-    let filtered = ledgerEntries.filter((entry) => {
-      const entryDate = new Date(entry.date);
-      entryDate.setHours(0, 0, 0, 0);
-      return entryDate.getTime() === selectedDateObj.getTime();
-    });
-
-    filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
-    const entriesWithBalance = calculateRunningBalance(filtered);
-    setFilteredEntries(entriesWithBalance);
-    setTotalPages(Math.ceil(entriesWithBalance.length / ITEMS_PER_PAGE));
+    const withBalance = calculateRunningBalance(filtered);
+    setFilteredEntries(withBalance);
+    setTotalPages(Math.ceil(withBalance.length / ITEMS_PER_PAGE));
     setPage(1);
   };
 
+  // ---------- TABLE ----------
   const columns = [
     {
       field: "date",
@@ -430,10 +398,7 @@ const fetchExpenses = async () => {
       field: "name",
       headerName: "Name",
       renderCell: (row) =>
-        row.name ||
-        row.expenseName ||
-        (row.productID && row.productID.name) ||
-        "-",
+        row.name || row.expenseName || (row.productID && row.productID.name) || "-",
     },
     { field: "type", headerName: "Type" },
     { field: "description", headerName: "Description" },
@@ -442,9 +407,7 @@ const fetchExpenses = async () => {
       headerName: "Debit",
       renderCell: (row) =>
         row.amount < 0 ? (
-          <span style={{ color: "red" }}>
-            {Math.abs(row.amount).toFixed(2)}
-          </span>
+          <span style={{ color: "red" }}>{Math.abs(row.amount).toFixed(2)}</span>
         ) : (
           ""
         ),
@@ -465,34 +428,52 @@ const fetchExpenses = async () => {
       headerName: "Total Amount",
       renderCell: (row) => row.balance.toFixed(2),
     },
+    {
+      field: "actions",
+      headerName: "Actions",
+      renderCell: (row) =>
+        row.type === "Expense" ? (
+          <Box>
+            <Tooltip title="Edit">
+              <IconButton size="small" onClick={() => openEdit(row)}>
+                <EditIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Delete">
+              <IconButton
+                size="small"
+                sx={{ color: "red", ml: 0.5 }}
+                onClick={() => deleteExpense(row)}
+              >
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        ) : null,
+    },
   ];
 
-  const rows = paginatedEntries.map((entry) => ({
-    ...entry,
-    debit: entry.amount,
-    credit: entry.amount,
-    key: `${entry.date}-${entry.description}`,
-  }));
+  const rows = filteredEntries
+    .slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE)
+    .map((entry) => ({
+      ...entry,
+      debit: entry.amount,
+      credit: entry.amount,
+      key: `${entry.id}-${entry.date}-${entry.description}`,
+    }));
 
+  // ---------- RENDER ----------
   return (
     <Container>
-      <Box
-        display="flex"
-        justifyContent="space-between"
-        alignItems="center"
-        mt={2}
-        mb={2}
-      >
+      <Box display="flex" justifyContent="space-between" alignItems="center" mt={2} mb={2}>
         <TextField
           label="Select Date"
           type="date"
           value={selectedDate}
           onChange={(e) => setSelectedDate(e.target.value)}
-          InputLabelProps={{
-            shrink: true,
-          }}
+          InputLabelProps={{ shrink: true }}
         />
-        <Button variant="contained" color="primary" onClick={toggleExpenseModal}>
+        <Button variant="contained" color="primary" onClick={openAdd}>
           Add Expense
         </Button>
       </Box>
@@ -507,31 +488,26 @@ const fetchExpenses = async () => {
           </Typography>
 
           {filteredEntries.length === 0 ? (
-            <Typography variant="body1">
-              No entries found for the selected date.
-            </Typography>
+            <Typography variant="body1">No entries found for the selected date.</Typography>
           ) : (
-            <>
-              <CustomTable
-                columns={columns}
-                data={filteredEntries}
-                page={page - 1}
-                rowsPerPage={rowsPerPage}
-                onPageChange={handlePageChange}
-                onRowsPerPageChange={handleRowsPerPageChange}
-              />
-            </>
+            <CustomTable
+              columns={columns}
+              data={rows}
+              page={page - 1}
+              rowsPerPage={rowsPerPage}
+              onPageChange={(e, newPage) => setPage(newPage + 1)}
+              onRowsPerPageChange={(e) => {
+                setRowsPerPage(parseInt(e.target.value, 10));
+                setPage(1);
+              }}
+            />
           )}
         </CardContent>
       </Card>
 
-      <Dialog
-        open={showExpenseModal}
-        onClose={toggleExpenseModal}
-        fullWidth
-        maxWidth="sm"
-      >
-        <DialogTitle>Add Expense</DialogTitle>
+      {/* Add / Edit Expense Modal */}
+      <Dialog open={showExpenseModal} onClose={toggleExpenseModal} fullWidth maxWidth="sm">
+        <DialogTitle>{editingId ? "Edit Expense" : "Add Expense"}</DialogTitle>
         <DialogContent>
           <form>
             <Grid container spacing={2}>
@@ -587,16 +563,11 @@ const fetchExpenses = async () => {
                 </FormControl>
               </Grid>
 
-              {(expense.paymentMethod === "online" ||
-                expense.paymentMethod === "cheque") && (
+              {(expense.paymentMethod === "online" || expense.paymentMethod === "cheque") && (
                 <Grid item xs={12} sm={6}>
                   <FormControl fullWidth margin="normal">
                     <InputLabel>Bank Name</InputLabel>
-                    <Select
-                      name="bankID"
-                      value={expense.bankID}
-                      onChange={handleInputChange}
-                    >
+                    <Select name="bankID" value={expense.bankID} onChange={handleInputChange}>
                       {banks.map((bank) => (
                         <MenuItem key={bank._id} value={bank._id}>
                           {bank.bankName}
@@ -622,24 +593,14 @@ const fetchExpenses = async () => {
                 </Grid>
               )}
 
-              {(expense.paymentMethod === "online" ||
-                expense.paymentMethod === "cheque") && (
+              {(expense.paymentMethod === "online" || expense.paymentMethod === "cheque") && (
                 <Grid item xs={12}>
-                  <TextField
-                    type="file"
-                    fullWidth
-                    onChange={handleImageChange}
-                    margin="normal"
-                  />
+                  <TextField type="file" fullWidth onChange={handleImageChange} margin="normal" />
                   {imagePreview && (
                     <img
                       src={imagePreview}
                       alt="Preview"
-                      style={{
-                        width: "100%",
-                        maxHeight: "200px",
-                        marginTop: "10px",
-                      }}
+                      style={{ width: "100%", maxHeight: 200, marginTop: 10 }}
                     />
                   )}
                 </Grid>
@@ -648,14 +609,10 @@ const fetchExpenses = async () => {
           </form>
         </DialogContent>
         <DialogActions>
-          <Button variant="contained" color="primary" onClick={addExpense}>
-            Add Expense
+          <Button variant="contained" color="primary" onClick={saveExpense}>
+            {editingId ? "Save Changes" : "Add Expense"}
           </Button>
-          <Button
-            variant="outlined"
-            color="secondary"
-            onClick={toggleExpenseModal}
-          >
+          <Button variant="outlined" color="secondary" onClick={toggleExpenseModal}>
             Cancel
           </Button>
         </DialogActions>

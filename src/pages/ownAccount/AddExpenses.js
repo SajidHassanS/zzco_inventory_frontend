@@ -89,15 +89,16 @@ const AddExpense = ({ onExpenseAdded }) => {
       return;
     }
 
-    const payload = {
-      expenseName: expense.expenseName,
-      amount: amt,
-      description: expense.description || "",
-      expenseDate: expense.expenseDate || new Date().toISOString().split("T")[0],
-      paymentMethod: method,
-      bankID: isBankMethod ? String(expense.bankID) : undefined,
-      chequeDate: method === "cheque" ? expense.chequeDate : undefined,
-    };
+const payload = {
+  expenseName: expense.expenseName,
+  amount: -amt, // 👈 NEGATIVE, so it matches your backend/ledger logic
+  description: expense.description || "",
+  expenseDate: expense.expenseDate || new Date().toISOString().split("T")[0],
+  paymentMethod: method,
+  bankID: isBankMethod ? String(expense.bankID) : undefined,
+  chequeDate: method === "cheque" ? expense.chequeDate : undefined,
+};
+
 
     try {
       // 1) Create expense and capture returned doc
