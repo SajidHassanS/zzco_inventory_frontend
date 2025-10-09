@@ -26,17 +26,15 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
   const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isTransactionModalOpen, setTransactionModalOpen] = useState(false);
 
-  // report selection (monthly/yearly)
-  const [reportType, setReportType] = useState("monthly");
+  // ===== Report selectors (Daily | Monthly | Yearly) =====
+  const [reportType, setReportType] = useState("monthly"); // "daily" | "monthly" | "yearly"
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1); // 1..12
 
   const canDelete = useSelector(selectCanDelete);
 
-  // We still fetch expenses (used only for display fallback for cash)
+  // ===== Expenses & Bank transactions (existing) =====
   const [expenses, setExpenses] = useState([]);
-
-  // Bank transactions cache (source of truth for bank expenses)
   const [bankTransactions, setBankTransactions] = useState([]);
 
   useEffect(() => {
@@ -75,11 +73,12 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     fetchExpenses();
   }, []);
 
-  // ===== helpers for date filters =====
+  // ===== helpers for date filters (align cash/bank lists with selectors) =====
   const isInSelectedPeriod = (isoDate) => {
     const d = new Date(isoDate);
     const y = d.getFullYear();
     const m = d.getMonth() + 1;
+    if (reportType === "daily") return y === selectedYear && m === selectedMonth; // daily view = chosen month
     if (reportType === "monthly") return y === selectedYear && m === selectedMonth;
     if (reportType === "yearly") return y === selectedYear;
     return true;
@@ -90,7 +89,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     return t === "deduct" || t === "subtract" || t === "withdraw" || t === "expense";
   };
 
-  // ===== CASH (source of truth = your cash module) =====
+  // ===== CASH (existing) =====
   const filteredCashTransactions = useMemo(() => {
     return (cash?.allEntries || []).filter(t =>
       isInSelectedPeriod(t.createdAt || t.date)
@@ -105,22 +104,16 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
   }, [filteredCashTransactions]);
 
   const totalCashDeductsFromModule = useMemo(() => {
-    // Count any “cash out” types your module might use
     return filteredCashTransactions.reduce((sum, t) =>
       isCashOutType(t.type)
         ? sum + Math.abs(Number(t.balance) || 0)
         : sum, 0);
   }, [filteredCashTransactions]);
 
-  // ✅ Available cash = module adds − module deducts (no /expenses subtraction)
   const availableCashBalance = useMemo(() => {
     return totalCashAdds - totalCashDeductsFromModule;
   }, [totalCashAdds, totalCashDeductsFromModule]);
 
-  // ---- DISPLAY “Cash Expenses” ----
-  // 1) Prefer the module's cash-out total
-  // 2) If it’s zero (i.e., module didn’t create deduction rows),
-  //    FALLBACK to /expenses of paymentMethod==='cash' for display ONLY
   const cashExpensesFromExpensesApi = useMemo(() => {
     return (expenses || [])
       .filter(
@@ -137,14 +130,13 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
       : cashExpensesFromExpensesApi;
   }, [totalCashDeductsFromModule, cashExpensesFromExpensesApi]);
 
-  // ===== BANK (source of truth = bank transactions) =====
+  // ===== BANK (existing) =====
   const filteredBankTx = useMemo(() => {
     return (bankTransactions || [])
       .filter(tx => isInSelectedPeriod(tx.createdAt || tx.date))
       .filter(tx => (tx.type || "").toLowerCase() === "subtract");
   }, [bankTransactions, reportType, selectedYear, selectedMonth]);
 
-  // Per-bank expense map from bank transactions ONLY
   const bankExpenseMap = useMemo(() => {
     const map = new Map();
     filteredBankTx.forEach(tx => {
@@ -159,12 +151,68 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     return filteredBankTx.reduce((sum, tx) => sum + Math.abs(Number(tx.amount) || 0), 0);
   }, [filteredBankTx]);
 
-  // Bank total balance (as stored in bank docs)
   const totalBankBalance = useMemo(() => {
     return (banks || []).reduce((total, bank) => total + (Number(bank.balance) || 0), 0);
   }, [banks]);
 
-  // ===== tables =====
+  // ===== PROFIT & LOSS (NEW) =====
+  const [plLoading, setPlLoading] = useState(false);
+  const [plRows, setPlRows] = useState([]);        // [{ period, revenue, cogs, expenses, grossProfit, netProfit, qtySold, salesCount }]
+  const [plTotals, setPlTotals] = useState(null);  // { revenue, cogs, expenses, grossProfit, netProfit }
+
+  useEffect(() => {
+    const fetchPL = async () => {
+      try {
+        setPlLoading(true);
+        const params = {
+          period: reportType, // "daily" | "monthly" | "yearly"
+          year: selectedYear,
+        };
+        if (reportType === "daily") params.month = selectedMonth;
+
+        const { data } = await axios.get(`${API_BASE}/reports/profit-loss`, {
+          params,
+          withCredentials: true,
+        });
+
+        setPlRows(Array.isArray(data?.rows) ? data.rows : []);
+        setPlTotals(data?.totals ?? null);
+      } catch (e) {
+        console.error("Failed to fetch Profit/Loss", e);
+        setPlRows([]);
+        setPlTotals(null);
+      } finally {
+        setPlLoading(false);
+      }
+    };
+
+    fetchPL();
+  }, [reportType, selectedYear, selectedMonth]);
+
+  const plColumns = useMemo(() => ([
+    {
+      field: "period",
+      headerName:
+        reportType === "daily"
+          ? "Date"
+          : reportType === "monthly"
+          ? "Month"
+          : "Year",
+      renderCell: (row) => {
+        const d = new Date(row.period);
+        if (reportType === "daily") return d.toISOString().slice(0, 10); // YYYY-MM-DD
+        if (reportType === "monthly") return d.toLocaleString("default", { month: "short", year: "numeric" });
+        return `${d.getUTCFullYear()}`;
+      },
+    },
+    { field: "revenue", headerName: "Revenue", align: "right", renderCell: r => (r.revenue ?? 0).toFixed(2) },
+    { field: "cogs", headerName: "COGS", align: "right", renderCell: r => (r.cogs ?? 0).toFixed(2) },
+    { field: "expenses", headerName: "Expenses", align: "right", renderCell: r => (r.expenses ?? 0).toFixed(2) },
+    { field: "grossProfit", headerName: "Gross Profit", align: "right", renderCell: r => (r.grossProfit ?? 0).toFixed(2) },
+    { field: "netProfit", headerName: "Net Profit", align: "right", renderCell: r => (r.netProfit ?? 0).toFixed(2) },
+  ]), [reportType]);
+
+  // ===== tables (existing) =====
   const bankColumns = [
     { field: "bankName", headerName: "Bank Name" },
     { field: "balance", headerName: "Balance", align: "right" },
@@ -191,7 +239,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     { field: "type", headerName: "Type" },
   ];
 
-  // ===== modals =====
+  // ===== modals (existing) =====
   const handleOpenEditModal = (entry, type) => {
     setSelectedEntry(entry);
     setEntryType(type);
@@ -223,29 +271,30 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
 
   return (
     <Box sx={{ margin: 3, bgcolor: "white", borderRadius: 2, padding: 3, width: "auto" }}>
-      {/* Report selectors */}
-      <Box display="flex" alignItems="center" justifyContent="space-between" mb={3}>
+      {/* ===== Report selectors ===== */}
+      <Box display="flex" alignItems="center" justifyContent="space-between" mb={3} gap={2}>
         <FormControl>
           <InputLabel>Report Type</InputLabel>
           <Select
             value={reportType}
             label="Report Type"
             onChange={(e) => setReportType(e.target.value)}
-            sx={{ minWidth: 140 }}
+            sx={{ minWidth: 160 }}
           >
+            <MenuItem value="daily">Daily</MenuItem>
             <MenuItem value="monthly">Monthly</MenuItem>
             <MenuItem value="yearly">Yearly</MenuItem>
           </Select>
         </FormControl>
 
-        {reportType === "monthly" && (
+        {(reportType === "daily" || reportType === "monthly") && (
           <FormControl>
             <InputLabel>Month</InputLabel>
             <Select
               value={selectedMonth}
               label="Month"
               onChange={(e) => setSelectedMonth(Number(e.target.value))}
-              sx={{ minWidth: 140 }}
+              sx={{ minWidth: 160 }}
             >
               {Array.from({ length: 12 }, (_, i) => (
                 <MenuItem key={i + 1} value={i + 1}>
@@ -264,7 +313,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
             onChange={(e) => setSelectedYear(Number(e.target.value))}
             sx={{ minWidth: 140 }}
           >
-            {Array.from({ length: 5 }, (_, i) => {
+            {Array.from({ length: 7 }, (_, i) => {
               const y = new Date().getFullYear() - i;
               return (
                 <MenuItem key={y} value={y}>
@@ -276,8 +325,64 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
         </FormControl>
       </Box>
 
-      {/* Banks list */}
-      <Typography variant="h3" align="center">Banks List</Typography>
+      {/* ===== Profit & Loss (NEW) ===== */}
+      <Box sx={{ mt: 1, p: 2, borderRadius: 2, bgcolor: "#fafafa", border: "1px solid #eee" }}>
+        <Box display="flex" alignItems="center" justifyContent="space-between" mb={2}>
+          <Typography variant="h5" fontWeight="bold">
+            Profit &amp; Loss{" "}
+            {reportType === "daily"
+              ? `(${new Date(selectedYear, selectedMonth - 1).toLocaleString("default", { month: "long" })} ${selectedYear})`
+              : `(${selectedYear})`}
+          </Typography>
+          {plLoading && <Typography variant="body2">Loading…</Typography>}
+        </Box>
+
+        {plTotals && (
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: "repeat(5, 1fr)",
+              gap: 2,
+              mb: 2
+            }}
+          >
+            <Box>
+              <Typography variant="subtitle2">Revenue</Typography>
+              <Typography variant="h6">{plTotals.revenue.toFixed(2)}</Typography>
+            </Box>
+            <Box>
+              <Typography variant="subtitle2">COGS</Typography>
+              <Typography variant="h6">{plTotals.cogs.toFixed(2)}</Typography>
+            </Box>
+            <Box>
+              <Typography variant="subtitle2">Expenses</Typography>
+              <Typography variant="h6">{plTotals.expenses.toFixed(2)}</Typography>
+            </Box>
+            <Box>
+              <Typography variant="subtitle2">Gross Profit</Typography>
+              <Typography variant="h6">{plTotals.grossProfit.toFixed(2)}</Typography>
+            </Box>
+            <Box>
+              <Typography variant="subtitle2">Net Profit</Typography>
+              <Typography variant="h6" color={plTotals.netProfit >= 0 ? "green" : "error"}>
+                {plTotals.netProfit.toFixed(2)}
+              </Typography>
+            </Box>
+          </Box>
+        )}
+
+        {plRows?.length > 0 && (
+          <CustomTable
+            columns={plColumns}
+            data={plRows}
+            page={0}
+            rowsPerPage={5}
+          />
+        )}
+      </Box>
+
+      {/* ===== Banks list (existing) ===== */}
+      <Typography variant="h3" align="center" sx={{ mt: 4 }}>Banks List</Typography>
       <CustomTable
         columns={bankColumns}
         data={banks || []}
@@ -287,7 +392,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
         cashtrue={false}
       />
 
-      {/* Cash list */}
+      {/* ===== Cash list (existing) ===== */}
       <Typography variant="h3" align="center" mt={3}>
         Cash List
       </Typography>
@@ -300,7 +405,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
         cashtrue={true}
       />
 
-      {/* Summary row */}
+      {/* ===== Summary row (existing) ===== */}
       <Box sx={{ mt: 4, display: "flex", justifyContent: "space-between", gap: 4 }}>
         {/* Bank summary */}
         <Box>
@@ -330,7 +435,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
         </Box>
       </Box>
 
-      {/* Modals */}
+      {/* ===== Modals (existing) ===== */}
       {isEditModalOpen && (
         <EditBankModal
           open={isEditModalOpen}
