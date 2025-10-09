@@ -26,9 +26,14 @@ import {
   Box,
   IconButton,
   TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from "@mui/material";
 import CustomTable from "../../components/CustomTable/CustomTable";
 import { toast } from "react-toastify";
+import { useSelector as useAuthSelector } from "react-redux";
 import { selectCanDelete } from "../../redux/features/auth/authSlice";
 
 const WarehouseManager = () => {
@@ -36,11 +41,10 @@ const WarehouseManager = () => {
   const warehouses = useSelector(selectWarehouses);
   const isLoading = useSelector(selectIsLoading);
   const isProductsLoading = useSelector(selectIsProductsLoading);
-  const canDeleteWarehouse = useSelector(selectCanDelete);
-
-  // products for selected warehouse (from Redux)
-  const warehouseProducts = useSelector(selectWarehouseProducts);
   const isTransferring = useSelector(selectIsTransferring);
+  const canDeleteWarehouse = useAuthSelector(selectCanDelete);
+
+  const warehouseProducts = useSelector(selectWarehouseProducts);
 
   const isAdmin = localStorage.getItem("userRole") === "Admin";
 
@@ -53,7 +57,8 @@ const WarehouseManager = () => {
   // products modal + transfer state
   const [productsModalOpen, setProductsModalOpen] = useState(false);
   const [fromWarehouseId, setFromWarehouseId] = useState("");
-  const [qtyDraft, setQtyDraft] = useState({}); // { productId: number }
+  const [toWarehouseId, setToWarehouseId] = useState("");
+  const [qtyDraft, setQtyDraft] = useState({}); // { [productId]: number }
 
   useEffect(() => {
     dispatch(getWarehouses());
@@ -106,6 +111,7 @@ const WarehouseManager = () => {
   // Open products modal for a warehouse & fetch products via Redux
   const handleViewProducts = async (warehouseId) => {
     setFromWarehouseId(warehouseId);
+    setToWarehouseId("");
     setProductsModalOpen(true);
     setQtyDraft({});
     await dispatch(getProductsByWarehouse(warehouseId));
@@ -152,6 +158,21 @@ const WarehouseManager = () => {
     },
   ];
 
+  // helpers to normalize product id and available qty
+  const getProductId = (p) =>
+    p.productId ||
+    p.productID ||
+    p._id ||
+    p.product?._id ||
+    p.product?.productID ||
+    p.product?.id;
+
+  const getAvailable = (p) =>
+    (typeof p.available === "number" ? p.available : null) ??
+    (typeof p.quantity === "number" ? p.quantity : null) ??
+    (typeof p.warehouseQuantity === "number" ? p.warehouseQuantity : null) ??
+    0;
+
   // Products modal columns (uses `available` and an editable Transfer Qty)
   const productColumns = useMemo(
     () => [
@@ -159,7 +180,7 @@ const WarehouseManager = () => {
       {
         field: "available",
         headerName: "Available",
-        renderCell: (p) => p?.available ?? 0,
+        renderCell: (p) => getAvailable(p),
       },
       {
         field: "price",
@@ -180,20 +201,20 @@ const WarehouseManager = () => {
         field: "transferQty",
         headerName: "Transfer Qty",
         renderCell: (p) => {
-          const productId = p.productId || p._id;
-          const max = p?.available ?? 0;
+          const productId = getProductId(p);
+          const max = getAvailable(p);
           const value = qtyDraft[productId] ?? "";
           return (
             <TextField
               size="small"
               type="number"
               value={value}
-              inputProps={{ min: 0, max }}
+              inputProps={{ min: 0, max, step: 1 }}
               onChange={(e) => {
                 const next = Number(e.target.value);
                 setQtyDraft((prev) => ({
                   ...prev,
-                  [productId]: Number.isNaN(next) ? "" : next,
+                  [productId]: Number.isFinite(next) ? next : ""
                 }));
               }}
               sx={{ width: 120 }}
@@ -205,14 +226,22 @@ const WarehouseManager = () => {
     [qtyDraft]
   );
 
+  // Destination options exclude source
+  const destinationWarehouses = useMemo(
+    () => warehouses.filter((w) => String(w._id) !== String(fromWarehouseId)),
+    [warehouses, fromWarehouseId]
+  );
+
   // Items selected to transfer (from qtyDraft)
   const selectedItems = useMemo(() => {
     const items = [];
     for (const p of warehouseProducts || []) {
-      const pid = p.productId || p._id;
-      const qty = Number(qtyDraft[pid] || 0);
-      if (qty > 0) {
-        const allowed = Math.min(qty, p.available ?? 0);
+      const pid = getProductId(p);
+      if (!pid) continue;
+      const max = getAvailable(p);
+      const qty = Number(qtyDraft[pid] ?? 0);
+      if (Number.isFinite(qty) && qty > 0) {
+        const allowed = Math.min(qty, max);
         if (allowed > 0) items.push({ productId: pid, quantity: allowed });
       }
     }
@@ -221,21 +250,28 @@ const WarehouseManager = () => {
 
   const handleDoTransfer = async () => {
     if (!fromWarehouseId) return toast.error("Select a source warehouse");
+    if (!toWarehouseId) return toast.error("Select a destination warehouse");
+    if (fromWarehouseId === toWarehouseId) {
+      return toast.error("Source and destination cannot be the same");
+    }
     if (selectedItems.length === 0) return toast.error("Add at least one item to transfer");
 
     const action = await dispatch(
       transferStock({
         fromWarehouseId,
-        // no toWarehouseId — backend should default to system/dispatch
+        toWarehouseId,
         items: selectedItems,
       })
     );
 
     if (transferStock.fulfilled.match(action)) {
-      // Refresh source after transfer-out
-      dispatch(getWarehouses());
-      dispatch(getProductsByWarehouse(fromWarehouseId));
+      toast.success("Stock transferred");
+      await dispatch(getWarehouses());
+      await dispatch(getProductsByWarehouse(fromWarehouseId));
+      await dispatch(getProductsByWarehouse(toWarehouseId));
       setQtyDraft({});
+    } else {
+      toast.error(action?.error?.message || "Transfer failed");
     }
   };
 
@@ -329,18 +365,35 @@ const WarehouseManager = () => {
             Warehouse Products
           </Typography>
 
-          {/* Transfer controls (no destination) */}
-          <Box sx={{ mt: 2, display: "grid", gridTemplateColumns: "1fr auto", gap: 2 }}>
+          {/* Transfer controls */}
+          <Box sx={{ mt: 2, display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 2 }}>
             <TextField
               label="From"
               value={warehouses.find((w) => String(w._id) === String(fromWarehouseId))?.name || ""}
               InputProps={{ readOnly: true }}
             />
+
+            <FormControl fullWidth>
+              <InputLabel id="to-warehouse-label">To warehouse</InputLabel>
+              <Select
+                labelId="to-warehouse-label"
+                label="To warehouse"
+                value={toWarehouseId}
+                onChange={(e) => setToWarehouseId(e.target.value)}
+              >
+                {destinationWarehouses.map((w) => (
+                  <MenuItem key={w._id} value={w._id}>
+                    {w.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
             <Button
               variant="contained"
               startIcon={<LocalShippingIcon />}
               onClick={handleDoTransfer}
-              disabled={isTransferring || selectedItems.length === 0}
+              disabled={isTransferring || !toWarehouseId || selectedItems.length === 0}
             >
               {isTransferring ? "Transferring..." : "Transfer"}
             </Button>
