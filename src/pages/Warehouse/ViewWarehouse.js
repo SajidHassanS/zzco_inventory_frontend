@@ -1,16 +1,23 @@
-import React, { useState, useEffect } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import EditIcon from '@mui/icons-material/Edit';
-import DeleteIcon from '@mui/icons-material/Delete';
-import VisibilityIcon from '@mui/icons-material/Visibility';
+// src/pages/Warehouse/WarehouseManager.jsx
+import React, { useEffect, useMemo, useState } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import EditIcon from "@mui/icons-material/Edit";
+import DeleteIcon from "@mui/icons-material/Delete";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import LocalShippingIcon from "@mui/icons-material/LocalShipping";
 import {
   createWarehouse,
   getWarehouses,
   updateWarehouse,
   deleteWarehouse,
+  getProductsByWarehouse,
+  transferStock,
   selectWarehouses,
-  selectIsLoading
-} from '../../redux/features/WareHouse/warehouseSlice';
+  selectIsLoading,
+  selectWarehouseProducts,
+  selectIsTransferring,
+  selectIsProductsLoading,
+} from "../../redux/features/WareHouse/warehouseSlice";
 import {
   Button,
   Modal,
@@ -18,50 +25,50 @@ import {
   CircularProgress,
   Box,
   IconButton,
-  TextField
-} from '@mui/material';
-import CustomTable from '../../components/CustomTable/CustomTable';
-import axios from 'axios';
-import { toast } from 'react-toastify';
-import { selectCanDelete } from '../../redux/features/auth/authSlice';
+  TextField,
+} from "@mui/material";
+import CustomTable from "../../components/CustomTable/CustomTable";
+import { toast } from "react-toastify";
+import { selectCanDelete } from "../../redux/features/auth/authSlice";
 
 const WarehouseManager = () => {
   const dispatch = useDispatch();
   const warehouses = useSelector(selectWarehouses);
   const isLoading = useSelector(selectIsLoading);
+  const isProductsLoading = useSelector(selectIsProductsLoading);
   const canDeleteWarehouse = useSelector(selectCanDelete);
 
-  // Check if the user has an admin role
+  // products for selected warehouse (from Redux)
+  const warehouseProducts = useSelector(selectWarehouseProducts);
+  const isTransferring = useSelector(selectIsTransferring);
+
   const isAdmin = localStorage.getItem("userRole") === "Admin";
 
   const [editingWarehouse, setEditingWarehouse] = useState(null);
   const [open, setOpen] = useState(false);
-  const [newWarehouse, setNewWarehouse] = useState({ name: '', location: '' });
+  const [newWarehouse, setNewWarehouse] = useState({ name: "", location: "" });
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(5);
+
+  // products modal + transfer state
   const [productsModalOpen, setProductsModalOpen] = useState(false);
-  const [warehouseProducts, setWarehouseProducts] = useState([]);
-  
-  const [loadingProducts, setLoadingProducts] = useState(false);
-  const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
- 
-  const API_URL = `${BACKEND_URL}api/warehouses`;
-console.log("warehouseProducts",warehouseProducts);
+  const [fromWarehouseId, setFromWarehouseId] = useState("");
+  const [qtyDraft, setQtyDraft] = useState({}); // { productId: number }
+
   useEffect(() => {
     dispatch(getWarehouses());
   }, [dispatch]);
- 
- 
+
   const handleClickOpen = () => setOpen(true);
   const handleClose = () => {
     setOpen(false);
-    setNewWarehouse({ name: '', location: '' });
+    setNewWarehouse({ name: "", location: "" });
     setEditingWarehouse(null);
   };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setNewWarehouse(prev => ({ ...prev, [name]: value }));
+    setNewWarehouse((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleEdit = (warehouse) => {
@@ -70,19 +77,16 @@ console.log("warehouseProducts",warehouseProducts);
     setOpen(true);
   };
 
-const handleDelete = async (id) => {
-  if (!isAdmin && !canDeleteWarehouse) {
-    toast.error("You do not have permission to delete this warehouse.");
-    return;
-  }
-
-  if (window.confirm('Are you sure you want to delete this warehouse?')) {
-    await dispatch(deleteWarehouse(id));
-    await dispatch(getWarehouses()); // ✅ Refreshes list correctly
-  }
-};
-
-
+  const handleDelete = async (id) => {
+    if (!isAdmin && !canDeleteWarehouse) {
+      toast.error("You do not have permission to delete this warehouse.");
+      return;
+    }
+    if (window.confirm("Are you sure you want to delete this warehouse?")) {
+      await dispatch(deleteWarehouse(id));
+      await dispatch(getWarehouses());
+    }
+  };
 
   const handleSubmit = () => {
     if (editingWarehouse) {
@@ -93,147 +97,180 @@ const handleDelete = async (id) => {
     handleClose();
   };
 
-  const handleChangePage = (event, newPage) => setPage(newPage);
+  const handleChangePage = (_event, newPage) => setPage(newPage);
   const handleChangeRowsPerPage = (event) => {
     setRowsPerPage(parseInt(event.target.value, 10));
     setPage(0);
   };
 
+  // Open products modal for a warehouse & fetch products via Redux
   const handleViewProducts = async (warehouseId) => {
-    setLoadingProducts(true);
-    try {
-      console.log("warehouseId",warehouseId);
-      const response = await axios.get(`${API_URL}/allproducts/${warehouseId}`, { withCredentials: true });
-      console.log("res",response);
-      if (response.data.message === "No products found for this warehouse") {
-        toast.info("No products found for this warehouse");
-        setWarehouseProducts([]);
-      } else {
-        setWarehouseProducts(response.data);
-        setProductsModalOpen(true);
-      }
-    } catch (error) {
-      toast.error("Failed to fetch warehouse products");
-    }
-    setLoadingProducts(false);
+    setFromWarehouseId(warehouseId);
+    setProductsModalOpen(true);
+    setQtyDraft({});
+    await dispatch(getProductsByWarehouse(warehouseId));
   };
 
+  // Warehouses table columns
   const columns = [
-    { field: 'name', headerName: 'Name' },
-    { field: 'location', headerName: 'Location' ,
-      renderCell: (params) => params?.location ? params.location : "N/A"
+    { field: "name", headerName: "Name" },
+    {
+      field: "location",
+      headerName: "Location",
+      renderCell: (params) => (params?.location ? params.location : "N/A"),
     },
     {
-      field: 'createdAt',
-      headerName: 'Created At',
-      renderCell: (params) => params?.createdAt ? new Date(params.createdAt).toLocaleString() : "N/A"
+      field: "createdAt",
+      headerName: "Created At",
+      renderCell: (params) =>
+        params?.createdAt ? new Date(params.createdAt).toLocaleString() : "N/A",
     },
     {
-      field: 'updatedAt',
-      headerName: 'Updated At',
-      renderCell: (params) => params?.updatedAt ? new Date(params.updatedAt).toLocaleString() : "N/A"
+      field: "updatedAt",
+      headerName: "Updated At",
+      renderCell: (params) =>
+        params?.updatedAt ? new Date(params.updatedAt).toLocaleString() : "N/A",
     },
     {
-      field: 'actions',
-      headerName: 'Actions',
-      renderCell: (params) => (
+      field: "actions",
+      headerName: "Actions",
+      renderCell: (row) => (
         <>
-          <IconButton onClick={() => handleViewProducts(params._id)}>
+          <IconButton onClick={() => handleViewProducts(row._id)}>
             {productsModalOpen ? null : <VisibilityIcon />}
           </IconButton>
-          <IconButton onClick={() => handleEdit(params)}>
-          {productsModalOpen ? null : <EditIcon/>}
-         
+          <IconButton onClick={() => handleEdit(row)}>
+            {productsModalOpen ? null : <EditIcon />}
           </IconButton>
           {(isAdmin || canDeleteWarehouse) && (
-            <IconButton onClick={() => handleDelete(params._id)}>
-          {productsModalOpen ? null : <DeleteIcon/>}
-          
+            <IconButton onClick={() => handleDelete(row._id)}>
+              {productsModalOpen ? null : <DeleteIcon />}
             </IconButton>
           )}
         </>
       ),
     },
   ];
-  const column = [
-    { field: 'name', headerName: 'Name' },
-    { field: 'quantity', headerName: 'Quantity' ,
-      renderCell: (params) => params?.quantity ? params.quantity : "N/A"
-    },
-    { field: 'price', headerName: 'Price' ,
-      renderCell: (params) => params?.price ? params.price : "N/A"
-    },
-    { field: 'category', headerName: 'Category' ,
-      renderCell: (params) => params?.category ? params.category : "N/A"
-    },
-    { field: 'shippingType', headerName: 'Shipping Type' ,
-      renderCell: (params) => params?.shippingType ? params.shippingType : "N/A"
-    },
-  {
-  field: 'receivedQuantity',
-  headerName: 'Received Quantity',
-  renderCell: (params) => {
-    const product = params; // alias for clarity
-    if (product.shippingType === "local") {
-      return product.quantity ?? "N/A";
-    } else {
-      return product.receivedQuantity ?? "N/A";
+
+  // Products modal columns (uses `available` and an editable Transfer Qty)
+  const productColumns = useMemo(
+    () => [
+      { field: "name", headerName: "Name" },
+      {
+        field: "available",
+        headerName: "Available",
+        renderCell: (p) => p?.available ?? 0,
+      },
+      {
+        field: "price",
+        headerName: "Price",
+        renderCell: (p) => p?.price ?? "N/A",
+      },
+      {
+        field: "category",
+        headerName: "Category",
+        renderCell: (p) => p?.category ?? "N/A",
+      },
+      {
+        field: "shippingType",
+        headerName: "Shipping Type",
+        renderCell: (p) => p?.shippingType ?? "N/A",
+      },
+      {
+        field: "transferQty",
+        headerName: "Transfer Qty",
+        renderCell: (p) => {
+          const productId = p.productId || p._id;
+          const max = p?.available ?? 0;
+          const value = qtyDraft[productId] ?? "";
+          return (
+            <TextField
+              size="small"
+              type="number"
+              value={value}
+              inputProps={{ min: 0, max }}
+              onChange={(e) => {
+                const next = Number(e.target.value);
+                setQtyDraft((prev) => ({
+                  ...prev,
+                  [productId]: Number.isNaN(next) ? "" : next,
+                }));
+              }}
+              sx={{ width: 120 }}
+            />
+          );
+        },
+      },
+    ],
+    [qtyDraft]
+  );
+
+  // Items selected to transfer (from qtyDraft)
+  const selectedItems = useMemo(() => {
+    const items = [];
+    for (const p of warehouseProducts || []) {
+      const pid = p.productId || p._id;
+      const qty = Number(qtyDraft[pid] || 0);
+      if (qty > 0) {
+        const allowed = Math.min(qty, p.available ?? 0);
+        if (allowed > 0) items.push({ productId: pid, quantity: allowed });
+      }
     }
-  }
-},
+    return items;
+  }, [qtyDraft, warehouseProducts]);
 
-    {
-      field: 'createdAt',
-      headerName: 'Created At',
-      renderCell: (params) => params?.createdAt ? new Date(params.createdAt).toLocaleString() : "N/A"
-    },
-    // {
-    //   field: 'updatedAt',
-    //   headerName: 'Updated At',
-    //   renderCell: (params) => params?.updatedAt ? new Date(params.updatedAt).toLocaleString() : "N/A"
-    // },
-    
-  ];
-  
-  
+  const handleDoTransfer = async () => {
+    if (!fromWarehouseId) return toast.error("Select a source warehouse");
+    if (selectedItems.length === 0) return toast.error("Add at least one item to transfer");
 
-  if (isLoading) {
-    return <CircularProgress />;
-  }
+    const action = await dispatch(
+      transferStock({
+        fromWarehouseId,
+        // no toWarehouseId — backend should default to system/dispatch
+        items: selectedItems,
+      })
+    );
+
+    if (transferStock.fulfilled.match(action)) {
+      // Refresh source after transfer-out
+      dispatch(getWarehouses());
+      dispatch(getProductsByWarehouse(fromWarehouseId));
+      setQtyDraft({});
+    }
+  };
+
+  if (isLoading) return <CircularProgress />;
 
   return (
     <div>
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px', marginBottom: '20px' }}>
+      <Box sx={{ display: "flex", justifyContent: "flex-end", mt: 2, mb: 2 }}>
         <Button variant="contained" color="primary" onClick={handleClickOpen}>
           Add Warehouse
         </Button>
       </Box>
 
-      <Modal
-        open={open}
-        onClose={handleClose}
-        aria-labelledby="warehouse-modal-title"
-        aria-describedby="warehouse-modal-description"
-      >
-        <Box sx={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          width: 400,
-          bgcolor: 'background.paper',
-          boxShadow: 24,
-          p: 4,
-        }}>
-          <Typography id="warehouse-modal-title" variant="h6" component="h2">
-            {editingWarehouse ? 'Edit Warehouse' : 'Add New Warehouse'}
+      {/* Add/Edit modal */}
+      <Modal open={open} onClose={handleClose} aria-labelledby="warehouse-modal-title">
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: 400,
+            bgcolor: "background.paper",
+            boxShadow: 24,
+            p: 4,
+          }}
+        >
+          <Typography id="warehouse-modal-title" variant="h6">
+            {editingWarehouse ? "Edit Warehouse" : "Add New Warehouse"}
           </Typography>
           <TextField
             autoFocus
             margin="dense"
             name="name"
             label="Warehouse Name"
-            type="text"
             fullWidth
             variant="standard"
             value={newWarehouse.name}
@@ -243,21 +280,23 @@ const handleDelete = async (id) => {
             margin="dense"
             name="location"
             label="Location"
-            type="text"
             fullWidth
             variant="standard"
             value={newWarehouse.location}
             onChange={handleInputChange}
           />
-          <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
-            <Button onClick={handleClose} sx={{ mr: 1 }}>Cancel</Button>
+          <Box sx={{ mt: 2, display: "flex", justifyContent: "flex-end" }}>
+            <Button onClick={handleClose} sx={{ mr: 1 }}>
+              Cancel
+            </Button>
             <Button onClick={handleSubmit} variant="contained">
-              {editingWarehouse ? 'Update' : 'Add'}
+              {editingWarehouse ? "Update" : "Add"}
             </Button>
           </Box>
         </Box>
       </Modal>
 
+      {/* Warehouses table */}
       <CustomTable
         columns={columns}
         data={warehouses}
@@ -267,38 +306,60 @@ const handleDelete = async (id) => {
         onRowsPerPageChange={handleChangeRowsPerPage}
       />
 
+      {/* Products + Transfer modal */}
       <Modal
         open={productsModalOpen}
         onClose={() => setProductsModalOpen(false)}
         aria-labelledby="warehouse-products-modal"
-        aria-describedby="modal-modal-description"
       >
-        <Box sx={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          width: '80%',
-          bgcolor: 'background.paper',
-          boxShadow: 24,
-          p: 4,
-        }}>
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: "90%",
+            maxWidth: 1100,
+            bgcolor: "background.paper",
+            boxShadow: 24,
+            p: 4,
+          }}
+        >
           <Typography id="warehouse-products-modal" variant="h6" component="h2">
             Warehouse Products
           </Typography>
+
+          {/* Transfer controls (no destination) */}
+          <Box sx={{ mt: 2, display: "grid", gridTemplateColumns: "1fr auto", gap: 2 }}>
+            <TextField
+              label="From"
+              value={warehouses.find((w) => String(w._id) === String(fromWarehouseId))?.name || ""}
+              InputProps={{ readOnly: true }}
+            />
+            <Button
+              variant="contained"
+              startIcon={<LocalShippingIcon />}
+              onClick={handleDoTransfer}
+              disabled={isTransferring || selectedItems.length === 0}
+            >
+              {isTransferring ? "Transferring..." : "Transfer"}
+            </Button>
+          </Box>
+
           <Box sx={{ mt: 2 }}>
-            {warehouseProducts ? (
-              <CustomTable
-                columns={column}
-                data={warehouseProducts}
-                page={0}
-                rowsPerPage={5}
-              />
-            ) : (
+            {isProductsLoading ? (
               <CircularProgress />
+            ) : (
+              <CustomTable columns={productColumns} data={warehouseProducts} page={0} rowsPerPage={5} />
             )}
           </Box>
-          <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
+
+          {/* Summary */}
+          <Box sx={{ mt: 2, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <Typography variant="body2">
+              Selected lines: <b>{selectedItems.length}</b>{" "}
+              {selectedItems.length > 0 && `| Total units: ${selectedItems.reduce((s, i) => s + i.quantity, 0)}`}
+            </Typography>
             <Button onClick={() => setProductsModalOpen(false)}>Close</Button>
           </Box>
         </Box>
