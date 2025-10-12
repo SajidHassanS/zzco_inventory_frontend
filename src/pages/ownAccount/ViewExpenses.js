@@ -23,10 +23,7 @@ import {
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import { useDispatch, useSelector } from "react-redux";
-import { getProducts } from "../../redux/features/product/productSlice";
 import { getBanks } from "../../redux/features/Bank/bankSlice";
-import { getCustomers } from "../../redux/features/cutomer/customerSlice";
-import { getSuppliers } from "../../redux/features/supplier/supplierSlice";
 import axios from "axios";
 import CustomTable from "../../components/CustomTable/CustomTable";
 
@@ -34,10 +31,9 @@ const ITEMS_PER_PAGE = 10;
 
 const ViewExpenses = () => {
   const dispatch = useDispatch();
-  const { products } = useSelector((s) => s.product);
   const banks = useSelector((s) => s.bank.banks || []);
 
-  const [ledgerEntries, setLedgerEntries] = useState([]);
+  const [entries, setEntries] = useState([]); // only expenses
   const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().split("T")[0]
   );
@@ -67,53 +63,27 @@ const ViewExpenses = () => {
   const API_URL = `${BASE}api`;
 
   useEffect(() => {
-    dispatch(getProducts());
-    dispatch(getCustomers());
-    dispatch(getSuppliers());
     dispatch(getBanks());
-    fetchSales();
     fetchExpenses();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch]);
 
   useEffect(() => {
     filterEntriesByDate();
-  }, [selectedDate, ledgerEntries]);
+  }, [selectedDate, entries]);
 
-  // ---------- FETCH DATA ----------
-  const fetchSales = async () => {
-    try {
-      const { data } = await axios.get(`${API_URL}/sales`, {
-        withCredentials: true,
-      });
-      const salesData = data.map((sale) => ({
-        id: `sale-${sale._id}`,
-        type: "Sale",
-        name: sale.productID ? sale.productID.name : "Unknown Product",
-        amount: Math.abs(Number(sale.totalSaleAmount) || 0), // positive
-        date: new Date(sale.saleDate),
-        description: `Sale of ${sale.stockSold} unit(s) of ${
-          sale.productID ? sale.productID.name : "Unknown"
-        } to ${sale.customerID ? sale.customerID.username : "Unknown"}`,
-        paymentMethod: sale.paymentMethod || "N/A",
-      }));
-      updateLedger(salesData);
-    } catch (err) {
-      console.error("Error fetching sales:", err);
-    }
-  };
-
+  // ---------- FETCH (expenses only) ----------
   const fetchExpenses = async () => {
     try {
       const { data } = await axios.get(`${API_URL}/expenses/all`, {
         withCredentials: true,
       });
 
-      const expensesData = data.map((exp) => ({
+      const expensesData = (data || []).map((exp) => ({
         id: exp._id,
         type: "Expense",
         name: exp.expenseName,
-        amount: Number(exp.amount), // backend already stores as negative
+        amount: Number(exp.amount), // backend stores negative
         date: new Date(exp.expenseDate || exp.createdAt),
         description: exp.description,
         paymentMethod: exp.paymentMethod,
@@ -122,40 +92,14 @@ const ViewExpenses = () => {
         raw: exp,
       }));
 
-      updateLedger(expensesData);
+      setEntries(
+        expensesData.sort((a, b) => new Date(b.date) - new Date(a.date))
+      );
     } catch (err) {
       console.error("❌ Error fetching expenses:", err);
+      setEntries([]);
     }
   };
-
-  const updateLedger = (newEntries) => {
-    setLedgerEntries((prev) => {
-      const merged = [...prev];
-      newEntries.forEach((e) => {
-        if (!merged.some((x) => x.id === e.id)) merged.push(e);
-      });
-      return merged.sort((a, b) => new Date(b.date) - new Date(a.date));
-    });
-  };
-
-  // purchases
-  useEffect(() => {
-    if (products.length > 0) {
-      const purchaseEntries = products.map((p) => ({
-        id: `purchase-${p._id}`,
-        type: "Purchase",
-        name: p.name,
-        amount: -Math.abs(Number(p.price) * Number(p.quantity) || 0),
-        date: new Date(p.createdAt),
-        description: `Purchase of ${p.quantity} ${p.name} from ${
-          p.supplier ? p.supplier.username : "Unknown"
-        } at ${p.price} each`,
-        paymentMethod: p.paymentMethod || "N/A",
-        category: p.category,
-      }));
-      updateLedger(purchaseEntries);
-    }
-  }, [products]);
 
   // ---------- FORM ----------
   const handleInputChange = (e) => {
@@ -202,10 +146,7 @@ const ViewExpenses = () => {
   };
 
   const openEdit = (row) => {
-    if (row.type !== "Expense") {
-      alert("Only Expense rows are editable here.");
-      return;
-    }
+    if (row.type !== "Expense") return;
     setEditingId(row.id);
     setExpense({
       expenseName: row.name,
@@ -221,20 +162,6 @@ const ViewExpenses = () => {
     });
     setImagePreview("");
     setShowExpenseModal(true);
-  };
-
-  // helper: create a bank subtract transaction
-  const postBankSubtract = (bankId, amount, description, expenseId) => {
-    return axios.post(
-      `${API_URL}/banks/${String(bankId)}/transactions`,
-      {
-        type: "subtract",
-        amount: Number(amount), // positive; backend subtracts
-        description,
-        expenseId,
-      },
-      { withCredentials: true }
-    );
   };
 
   const saveExpense = async () => {
@@ -256,14 +183,9 @@ const ViewExpenses = () => {
 
     const fd = new FormData();
     fd.append("expenseName", name);
-
-    // send positive amount; backend persists as negative
+    // send positive amount; backend persists as negative and applies cash/bank effect
     fd.append("amount", String(amt));
-
-    fd.append(
-      "description",
-      desc
-    );
+    fd.append("description", desc);
     fd.append(
       "expenseDate",
       expense.expenseDate || new Date().toISOString().slice(0, 10)
@@ -282,32 +204,19 @@ const ViewExpenses = () => {
         });
         alert("Expense updated");
       } else {
-        const created = await axios.post(`${API_URL}/expenses/add`, fd, {
+        await axios.post(`${API_URL}/expenses/add`, fd, {
           headers: { "Content-Type": "multipart/form-data" },
           withCredentials: true,
         });
-
-        if (isBank) {
-          await postBankSubtract(
-            bankId,
-            amt,
-            `Expense: ${name}`,
-            created?.data?._id
-          );
-        }
-
+        // IMPORTANT: do NOT post a separate bank/cash transaction here.
         alert("Expense added");
       }
 
       setShowExpenseModal(false);
       setEditingId(null);
 
-      // refresh
-      setLedgerEntries([]);
-      await fetchSales();
       await fetchExpenses();
-      dispatch(getProducts());
-      dispatch(getBanks());
+      dispatch(getBanks()); // keep bank balances fresh
     } catch (e) {
       console.error("Save expense failed:", e?.response?.data || e);
       alert(e?.response?.data?.message || "Failed to save expense");
@@ -315,10 +224,7 @@ const ViewExpenses = () => {
   };
 
   const deleteExpense = async (row) => {
-    if (row.type !== "Expense") {
-      alert("Only Expense rows can be deleted here.");
-      return;
-    }
+    if (row.type !== "Expense") return;
     if (!window.confirm("Delete this expense?")) return;
 
     try {
@@ -326,7 +232,6 @@ const ViewExpenses = () => {
         withCredentials: true,
       });
 
-      setLedgerEntries((prev) => prev.filter((e) => e.id !== row.id));
       await fetchExpenses();
       dispatch(getBanks());
       alert("Expense deleted");
@@ -355,9 +260,9 @@ const ViewExpenses = () => {
   };
 
   // ---------- FILTER ----------
-  const calculateRunningBalance = (entries) => {
+  const calculateRunningBalance = (entriesList) => {
     let balance = 0;
-    const reversed = [...entries].reverse();
+    const reversed = [...entriesList].reverse();
     const withBalance = reversed.map((entry) => {
       balance += entry.amount;
       return { ...entry, balance };
@@ -366,7 +271,6 @@ const ViewExpenses = () => {
     return withBalance.reverse();
   };
 
-  // Local date helper (avoid UTC shift issues)
   const toLocalYMD = (d) => {
     const dt = new Date(d);
     const yyyy = dt.getFullYear();
@@ -376,8 +280,8 @@ const ViewExpenses = () => {
   };
 
   const filterEntriesByDate = () => {
-    const sel = selectedDate; // "YYYY-MM-DD" from date input (local)
-    const filtered = ledgerEntries
+    const sel = selectedDate; // "YYYY-MM-DD"
+    const filtered = entries
       .filter((entry) => toLocalYMD(entry.date) === sel)
       .sort((a, b) => new Date(b.date) - new Date(a.date));
 
@@ -394,12 +298,7 @@ const ViewExpenses = () => {
       headerName: "Date",
       renderCell: (row) => new Date(row.date).toLocaleDateString(),
     },
-    {
-      field: "name",
-      headerName: "Name",
-      renderCell: (row) =>
-        row.name || row.expenseName || (row.productID && row.productID.name) || "-",
-    },
+    { field: "name", headerName: "Name", renderCell: (row) => row.name || "-" },
     { field: "type", headerName: "Type" },
     { field: "description", headerName: "Description" },
     {
@@ -425,7 +324,7 @@ const ViewExpenses = () => {
     { field: "paymentMethod", headerName: "Payment Method" },
     {
       field: "balance",
-      headerName: "Total Amount",
+      headerName: "Running Balance",
       renderCell: (row) => row.balance.toFixed(2),
     },
     {
@@ -457,8 +356,6 @@ const ViewExpenses = () => {
     .slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE)
     .map((entry) => ({
       ...entry,
-      debit: entry.amount,
-      credit: entry.amount,
       key: `${entry.id}-${entry.date}-${entry.description}`,
     }));
 
@@ -481,14 +378,14 @@ const ViewExpenses = () => {
       <Card sx={{ mt: 3 }}>
         <CardContent>
           <Typography variant="h5" gutterBottom>
-            Ledger for {new Date(selectedDate).toDateString()}
+            Expenses for {new Date(selectedDate).toDateString()}
           </Typography>
           <Typography variant="h6" gutterBottom>
-            Balance: {runningBalance.toFixed(2)}
+            Daily Balance: {runningBalance.toFixed(2)}
           </Typography>
 
           {filteredEntries.length === 0 ? (
-            <Typography variant="body1">No entries found for the selected date.</Typography>
+            <Typography variant="body1">No expenses for the selected date.</Typography>
           ) : (
             <CustomTable
               columns={columns}
