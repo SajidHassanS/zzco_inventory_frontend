@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Modal from "react-modal";
 import { SpinnerImg } from "../../loader/Loader";
 import "./productList.scss";
@@ -17,8 +17,11 @@ import {
   deleteProduct,
   getProducts
 } from "../../../redux/features/product/productSlice";
-import { selectUserRole } from "../../../redux/features/auth/authSlice"; // Import userRole selector
+import { selectUserRole } from "../../../redux/features/auth/authSlice";
 import { Link } from "react-router-dom";
+
+// ⬅️ NEW: bring in cheques so we can show real-time cheque status
+import { getPendingCheques } from "../../../redux/features/cheque/chequeSlice";
 
 Modal.setAppElement("#root");
 
@@ -26,22 +29,28 @@ const ProductList = ({ products, isLoading }) => {
   const [search, setSearch] = useState("");
   const [modalIsOpen, setModalIsOpen] = useState(false);
   const [currentImage, setCurrentImage] = useState(null);
+
   const filteredProducts = useSelector(selectFilteredPoducts);
-  const userRole = useSelector(selectUserRole); // Get user role
+  const userRole = useSelector(selectUserRole);
+
+  // ⬅️ NEW: read cheque rows (pending + cleared)
+  const cheques = useSelector(state => state.cheque.cheques);
 
   const dispatch = useDispatch();
 
   const shortenText = (text, n) => {
-    if (text.length > n) {
-      return text.substring(0, n).concat("...");
-    }
+    if (!text) return "";
+    if (text.length > n) return text.substring(0, n).concat("...");
     return text;
   };
 
   const delProduct = async id => {
     await dispatch(deleteProduct(id));
     await dispatch(getProducts());
+    // also refresh cheques because removing a product may remove its cheque rows
+    await dispatch(getPendingCheques({ status: "all" }));
   };
+
   const confirmDelete = id => {
     if (userRole !== "Admin") {
       alert("You do not have permission to delete this product.");
@@ -67,7 +76,7 @@ const ProductList = ({ products, isLoading }) => {
             <div style={{ marginTop: "1.5rem" }}>
               <button
                 style={{
-                  backgroundColor: "#e53935", // red
+                  backgroundColor: "#e53935",
                   color: "white",
                   border: "none",
                   padding: "8px 16px",
@@ -106,23 +115,25 @@ const ProductList = ({ products, isLoading }) => {
     setCurrentImage(imagePath);
     setModalIsOpen(true);
   };
-
   const closeModal = () => {
     setModalIsOpen(false);
     setCurrentImage(null);
   };
 
-  // Pagination logic
+  // Pagination
   const [currentItems, setCurrentItems] = useState([]);
   const [pageCount, setPageCount] = useState(0);
   const [itemOffset, setItemOffset] = useState(0);
   const itemsPerPage = 5;
 
+  // Fetch products + cheques on mount
   useEffect(
     () => {
       dispatch(getProducts()).then(response => {
         console.log("Products fetched:", response.payload);
       });
+      // ⬅️ NEW: also fetch all cheques so we can compute cheque status reliably
+      dispatch(getPendingCheques({ status: "all" }));
     },
     [dispatch]
   );
@@ -146,6 +157,23 @@ const ProductList = ({ products, isLoading }) => {
       dispatch(FILTER_PRODUCTS({ products, search }));
     },
     [products, search, dispatch]
+  );
+
+  // ⬅️ NEW: Map productId => cleared (true/false) from cheque store
+  const productChequeClearedMap = useMemo(
+    () => {
+      const map = new Map();
+      if (Array.isArray(cheques)) {
+        cheques.forEach(c => {
+          // We only care about Product cheques; controller sends relatedProductId in those rows
+          if (c.type === "Product" && c.relatedProductId) {
+            map.set(String(c.relatedProductId), !!c.status);
+          }
+        });
+      }
+      return map;
+    },
+    [cheques]
   );
 
   return (
@@ -191,14 +219,20 @@ const ProductList = ({ products, isLoading }) => {
                       quantity,
                       paymentMethod,
                       shippingType,
-                      status
+                      status // may be stale if we didn't refetch products after cash-out
                     } = product;
 
-                    let displayStatus;
+                    // ✅ Prefer cheque store for truth; fallback to product.status
+                    let displayStatus = "---";
                     if (paymentMethod === "cheque") {
-                      displayStatus = status ? "Cash Out" : "Pending";
-                    } else {
-                      displayStatus = "---";
+                      const clearedFromCheques = productChequeClearedMap.get(
+                        String(_id)
+                      );
+                      const isCleared =
+                        typeof clearedFromCheques === "boolean"
+                          ? clearedFromCheques
+                          : !!status;
+                      displayStatus = isCleared ? "Cash Out" : "Pending";
                     }
 
                     return (
@@ -262,6 +296,7 @@ const ProductList = ({ products, isLoading }) => {
                 </tbody>
               </table>}
         </div>
+
         <ReactPaginate
           breakLabel="..."
           nextLabel="Next"
@@ -277,7 +312,7 @@ const ProductList = ({ products, isLoading }) => {
           activeLinkClassName="activePage"
         />
 
-        {/* Modal for displaying the large image */}
+        {/* Image modal */}
         <Modal
           isOpen={modalIsOpen}
           onRequestClose={closeModal}

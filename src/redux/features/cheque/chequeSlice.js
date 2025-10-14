@@ -1,38 +1,26 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import axios from "axios";
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+import service from "./chequeService";
 
-const API_URL = `${BACKEND_URL}api/cheques`;
-
+// Fetch pending/cleared/all — keep the name if you want
 export const getPendingCheques = createAsyncThunk(
-  "cheque/getPendingCheques",
-  async (_, thunkAPI) => {
+  "cheque/getCheques",
+  async ({ status = "pending" } = {}, thunkAPI) => {
     try {
-      const response = await axios.get(`${API_URL}/pending`, {
-        withCredentials: true // ✅ Required to send cookies for auth
-      });
-
-      return response.data;
-    } catch (error) {
-      return thunkAPI.rejectWithValue(error.response.data);
+      return await service.getCheques({ status });
+    } catch (e) {
+      return thunkAPI.rejectWithValue(e?.response?.data || { message: "Fetch failed" });
     }
   }
 );
 
+// Update a single cheque by CHEQUE _id
 export const updateChequeStatus = createAsyncThunk(
   "cheque/updateStatus",
-  async ({ id, status, type, amount, bank, description }, thunkAPI) => {
+  async ({ id, status }, thunkAPI) => {
     try {
-      const response = await axios.patch(`${API_URL}/update-status/${id}`, {
-        status,
-        type,
-        amount,
-        bank,
-        description // ✅ pass it here
-      });
-      return response.data;
-    } catch (error) {
-      return thunkAPI.rejectWithValue(error.response.data);
+      return await service.patchChequeStatus({ id, status });
+    } catch (e) {
+      return thunkAPI.rejectWithValue(e?.response?.data || { message: "Update failed" });
     }
   }
 );
@@ -42,32 +30,35 @@ const chequeSlice = createSlice({
   initialState: {
     cheques: [],
     isLoading: false,
-    error: null
+    error: null,
   },
   reducers: {},
-  extraReducers: builder => {
+  extraReducers: (builder) => {
     builder
-      .addCase(getPendingCheques.pending, state => {
+      .addCase(getPendingCheques.pending, (state) => {
         state.isLoading = true;
+        state.error = null;
       })
       .addCase(getPendingCheques.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.cheques = action.payload;
+        state.cheques = Array.isArray(action.payload) ? action.payload : [];
       })
       .addCase(getPendingCheques.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload;
+        state.cheques = [];
       })
       .addCase(updateChequeStatus.fulfilled, (state, action) => {
-        const updatedCheque = action.payload.updatedDoc;
-        const index = state.cheques.findIndex(
-          cheque => cheque._id === updatedCheque._id
-        );
-        if (index !== -1) {
-          state.cheques[index] = updatedCheque;
+        const updated = action.payload?.updatedDoc;
+        if (!updated?._id) return;
+        // Our table rows use the CHEQUE _id for _id
+        const idx = state.cheques.findIndex((c) => c._id === updated._id);
+        if (idx !== -1) {
+          // only status/date might change; keep row shape
+          state.cheques[idx] = { ...state.cheques[idx], status: !!updated.status };
         }
       });
-  }
+  },
 });
 
 export default chequeSlice.reducer;
