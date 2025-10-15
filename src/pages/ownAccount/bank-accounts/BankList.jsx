@@ -600,6 +600,7 @@ const totalBankExpenses = useMemo(() => {
           onClose={closeModals}
           entry={selectedEntry}
           entryType="bank"
+           onChanged={refreshBanks} 
         />
       )}
 

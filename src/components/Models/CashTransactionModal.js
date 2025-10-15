@@ -14,6 +14,12 @@ import {
 } from "@mui/material";
 import axios from "axios";
 
+const CREDIT_TYPES = new Set(["add", "credit", "deposit"]);
+const DEBIT_TYPES  = new Set(["subtract", "deduct", "debit", "withdraw", "expense"]);
+
+const toNum = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+const pickDate = (tx) => new Date(tx?.date || tx?.createdAt || 0);
+
 const CashTransactionHistoryModal = ({ open, onClose, cashEntry }) => {
   const [transactions, setTransactions] = useState([]);
   const [runningBalance, setRunningBalance] = useState(0);
@@ -27,38 +33,44 @@ const CashTransactionHistoryModal = ({ open, onClose, cashEntry }) => {
       if (!cashEntry?._id) return;
       setLoading(true);
       try {
-        const response = await axios.get(
+        const { data } = await axios.get(
           `${BACKEND_URL}api/cash/${cashEntry._id}/transactions`,
           { withCredentials: true }
         );
 
-        const history = (response.data || []).slice();
+        const history = (Array.isArray(data) ? data : []).slice();
 
-        // sort ASC by time so running balance is correct
-        history.sort(
-          (a, b) =>
-            new Date(a.createdAt || a.date) - new Date(b.createdAt || b.date)
-        );
+        // Sort ascending by effective date for correct running balance
+        history.sort((a, b) => pickDate(a) - pickDate(b));
 
         let balance = 0;
         const processed = history.map((tx) => {
-          const isDebit = (tx.type || "").toLowerCase() === "deduct";
-          const amount = Number(tx.amount) || 0;
-          const debit = isDebit ? amount : 0;
-          const credit = isDebit ? 0 : amount;
+          const t = String(tx?.type || "").toLowerCase().trim();
+          const amtAbs = Math.abs(toNum(tx?.amount));
+
+          const isCredit = CREDIT_TYPES.has(t);
+          const isDebit  = DEBIT_TYPES.has(t);
+
+          const credit = isCredit ? amtAbs : 0;
+          const debit  = isDebit  ? amtAbs : 0;
+
           balance += credit - debit;
+
           return {
             ...tx,
             debit,
             credit,
             runningBalance: balance,
+            _displayDate: pickDate(tx),
           };
         });
 
         setTransactions(processed);
         setRunningBalance(balance);
       } catch (error) {
-        console.error("Failed to fetch cash transactions", error);
+        console.error("Failed to fetch cash transactions", error?.response?.data || error);
+        setTransactions([]);
+        setRunningBalance(0);
       } finally {
         setLoading(false);
       }
@@ -93,7 +105,7 @@ const CashTransactionHistoryModal = ({ open, onClose, cashEntry }) => {
           </Box>
         ) : (
           <TableContainer>
-            <Table>
+            <Table size="small">
               <TableHead>
                 <TableRow>
                   <TableCell>Description</TableCell>
@@ -108,17 +120,17 @@ const CashTransactionHistoryModal = ({ open, onClose, cashEntry }) => {
                 {transactions.length > 0 ? (
                   transactions.map((tx) => (
                     <TableRow key={tx._id}>
-                      <TableCell>{tx.description}</TableCell>
+                      <TableCell>{tx.description || "-"}</TableCell>
                       <TableCell>{tx.type}</TableCell>
                       <TableCell sx={{ color: "red" }}>
-                        {tx.debit.toFixed(2)}
+                        {toNum(tx.debit).toFixed(2)}
                       </TableCell>
                       <TableCell sx={{ color: "green" }}>
-                        {tx.credit.toFixed(2)}
+                        {toNum(tx.credit).toFixed(2)}
                       </TableCell>
-                      <TableCell>{tx.runningBalance.toFixed(2)}</TableCell>
+                      <TableCell>{toNum(tx.runningBalance).toFixed(2)}</TableCell>
                       <TableCell>
-                        {new Date(tx.createdAt || tx.date).toLocaleString()}
+                        {tx._displayDate ? new Date(tx._displayDate).toLocaleString() : "-"}
                       </TableCell>
                     </TableRow>
                   ))

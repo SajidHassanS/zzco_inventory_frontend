@@ -17,7 +17,13 @@ import {
 import DeleteIcon from '@mui/icons-material/Delete';
 import axios from 'axios';
 
-const TransactionHistoryModal = ({ open, onClose, entry, entryType }) => {
+const CREDIT_TYPES = new Set(['add', 'credit', 'deposit']);
+const DEBIT_TYPES  = new Set(['subtract', 'deduct', 'debit', 'withdraw', 'expense']);
+
+const toNum = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+const pickDate = (tx) => new Date(tx?.date || tx?.createdAt || 0);
+
+const TransactionHistoryModal = ({ open, onClose, entry, entryType, onChanged }) => {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [runningBalance, setRunningBalance] = useState(0);
@@ -35,18 +41,16 @@ const TransactionHistoryModal = ({ open, onClose, entry, entryType }) => {
     if (tx?.reason) return tx.reason;
     if (tx?.title) return tx.title;
 
-    const t = (tx?.type || '').toLowerCase();
-    const amt = Number(tx?.amount || 0).toFixed(2);
+    const t = String(tx?.type || '').toLowerCase();
+    const amt = Math.abs(toNum(tx?.amount)).toFixed(2);
 
     if (isBankTx) {
-      if (t === 'add' || t === 'credit') return `Deposit Rs ${amt}`;
-      if (t === 'subtract' || t === 'deduct' || t === 'debit')
-        return `Withdrawal Rs ${amt}`;
+      if (CREDIT_TYPES.has(t)) return `Deposit Rs ${amt}`;
+      if (DEBIT_TYPES.has(t))  return `Withdrawal Rs ${amt}`;
       return `Bank transaction Rs ${amt}`;
     } else {
-      if (t === 'add' || t === 'credit') return `Cash received Rs ${amt}`;
-      if (t === 'subtract' || t === 'deduct' || t === 'debit')
-        return `Cash spent Rs ${amt}`;
+      if (CREDIT_TYPES.has(t)) return `Cash received Rs ${amt}`;
+      if (DEBIT_TYPES.has(t))  return `Cash spent Rs ${amt}`;
       return `Cash transaction Rs ${amt}`;
     }
   };
@@ -63,25 +67,24 @@ const TransactionHistoryModal = ({ open, onClose, entry, entryType }) => {
         withCredentials: true,
       });
 
-      const history = Array.isArray(data) ? data : [];
+      const history = (Array.isArray(data) ? data : []).slice();
 
-      // compute simple running balance (credit - debit) for display
+      // Sort ascending by effective date for correct running balance
+      history.sort((a, b) => pickDate(a) - pickDate(b));
+
       let balance = 0;
       const processed = history.map((tx) => {
-        const typeLower = (tx?.type || '').toLowerCase();
-        const rawAmt = Number(tx?.amount || 0);
-        const isCredit = typeLower === 'add' || typeLower === 'credit';
-        const isDebit =
-          typeLower === 'subtract' ||
-          typeLower === 'deduct' ||
-          typeLower === 'debit';
+        const t = String(tx?.type || '').toLowerCase().trim();
+        const amtAbs = Math.abs(toNum(tx?.amount));
+        const isCredit = CREDIT_TYPES.has(t);
+        const isDebit  = DEBIT_TYPES.has(t);
 
-        const credit = isCredit ? rawAmt : 0;
-        const debit = isDebit ? rawAmt : 0;
+        const credit = isCredit ? amtAbs : 0;
+        const debit  = isDebit  ? amtAbs : 0;
 
         balance += credit - debit;
 
-        return { ...tx, debit, credit, runningBalance: balance };
+        return { ...tx, debit, credit, runningBalance: balance, _displayDate: pickDate(tx) };
       });
 
       setTransactions(processed);
@@ -100,18 +103,16 @@ const TransactionHistoryModal = ({ open, onClose, entry, entryType }) => {
   }, [open, loadTransactions]);
 
   const handleDelete = async (txId) => {
-    if (!isBank) return; // in this modal we only implement bank deletion
+    if (!isBank) return;
     if (!window.confirm('Delete this transaction permanently? Balance will be adjusted.')) return;
-
     try {
       setDeletingId(txId);
-      // HARD delete (adjust balance inversely)
       await axios.delete(
         `${BACKEND_URL}api/banks/${entry._id}/transactions/${txId}`,
         { withCredentials: true }
       );
-
-      await loadTransactions(); // refresh table
+      await loadTransactions();
+      if (typeof onChanged === 'function') onChanged(); // let parent refresh bank list
     } catch (e) {
       console.error('Delete failed', e?.response?.data || e);
       alert(e?.response?.data?.message || 'Failed to delete transaction');
@@ -149,7 +150,7 @@ const TransactionHistoryModal = ({ open, onClose, entry, entryType }) => {
         )}
 
         <Typography variant="subtitle2" color="text.secondary" mb={2}>
-          Running balance shown is cumulative within this ledger.
+          Running balance is computed in chronological order for this ledger only.
         </Typography>
 
         {loading ? (
@@ -177,16 +178,15 @@ const TransactionHistoryModal = ({ open, onClose, entry, entryType }) => {
                       <TableCell>{getDescription(tx, isBank)}</TableCell>
                       <TableCell>{tx.type}</TableCell>
                       <TableCell sx={{ color: 'red' }}>
-                        {Number(tx.debit || 0).toFixed(2)}
+                        {toNum(tx.debit).toFixed(2)}
                       </TableCell>
                       <TableCell sx={{ color: 'green' }}>
-                        {Number(tx.credit || 0).toFixed(2)}
+                        {toNum(tx.credit).toFixed(2)}
                       </TableCell>
-                      <TableCell>{Number(tx.runningBalance || 0).toFixed(2)}</TableCell>
+                      <TableCell>{toNum(tx.runningBalance).toFixed(2)}</TableCell>
                       <TableCell>
-                        {tx.createdAt ? new Date(tx.createdAt).toLocaleString() : '-'}
+                        {tx._displayDate ? new Date(tx._displayDate).toLocaleString() : '-'}
                       </TableCell>
-
                       {isBank && (
                         <TableCell align="right">
                           <Tooltip title="Delete permanently (adjust balance)">
