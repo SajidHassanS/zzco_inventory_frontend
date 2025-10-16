@@ -2,42 +2,55 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import axios from "axios";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL; // e.g. "http://localhost:5000/"
 
-// Async thunk to get cash
+// Get current cash summary + rows
 export const getCash = createAsyncThunk("cash/getCash", async (_, thunkAPI) => {
   try {
-    const response = await axios.get(`${BACKEND_URL}api/cash`, {
-      withCredentials: true
+    // 🚨 use the route your server actually exposes
+    const { data } = await axios.get(`${BACKEND_URL}api/cash/all`, {
+      withCredentials: true,
     });
-    return response.data;
+    // data shape: { totalBalance, latestEntry, allEntries }
+    return data;
   } catch (error) {
-    return thunkAPI.rejectWithValue(error.response?.data?.message || "Failed to fetch cash data.");
+    return thunkAPI.rejectWithValue(
+      error?.response?.data?.message || "Failed to fetch cash data."
+    );
   }
 });
 
 const cashSlice = createSlice({
   name: "cash",
   initialState: {
-    cash: [],
+    // Store the object your API returns (NOT an array)
+    cash: null,            // { totalBalance, latestEntry, allEntries } | null
     isLoading: false,
-    error: null
+    error: null,
   },
   reducers: {},
-  extraReducers: builder => {
+  extraReducers: (builder) => {
     builder
-      .addCase(getCash.pending, state => {
+      .addCase(getCash.pending, (state) => {
         state.isLoading = true;
+        state.error = null;
       })
       .addCase(getCash.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.cash = action.payload;
+        state.cash = action.payload; // object with totalBalance, allEntries, ...
       })
       .addCase(getCash.rejected, (state, action) => {
         state.isLoading = false;
-        state.error = action.payload;
+        state.error = action.payload || "Failed to fetch cash data.";
       });
-  }
+  },
 });
 
 export default cashSlice.reducer;
+
+// Handy selectors (optional but recommended)
+export const selectCashObject = (s) => s.cash.cash; // whole object
+export const selectCashRows   = (s) => s.cash.cash?.allEntries ?? [];
+export const selectCashTotal  = (s) => Number(s.cash.cash?.totalBalance ?? 0);
+export const selectCashLoading= (s) => s.cash.isLoading;
+export const selectCashError  = (s) => s.cash.error;

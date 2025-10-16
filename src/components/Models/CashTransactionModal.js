@@ -22,61 +22,69 @@ const pickDate = (tx) => new Date(tx?.date || tx?.createdAt || 0);
 
 const CashTransactionHistoryModal = ({ open, onClose, cashEntry }) => {
   const [transactions, setTransactions] = useState([]);
-  const [runningBalance, setRunningBalance] = useState(0);
+  const [runningBalance, setRunningBalance] = useState(0); // per-entry running total
+  const [currentCashTotal, setCurrentCashTotal] = useState(null); // global cash total from server
   const [loading, setLoading] = useState(false);
 
   const BACKEND_URL =
     process.env.REACT_APP_BACKEND_URL || "http://13.60.223.186:5000/";
 
   useEffect(() => {
-    const fetchTransactions = async () => {
+    const fetchData = async () => {
       if (!cashEntry?._id) return;
       setLoading(true);
       try {
+        // 1) Fetch transactions for this specific cash entry
         const { data } = await axios.get(
           `${BACKEND_URL}api/cash/${cashEntry._id}/transactions`,
           { withCredentials: true }
         );
 
         const history = (Array.isArray(data) ? data : []).slice();
+        history.sort((a, b) => pickDate(a) - pickDate(b)); // oldest -> newest
 
-        // Sort ascending by effective date for correct running balance
-        history.sort((a, b) => pickDate(a) - pickDate(b));
-
-        let balance = 0;
+        let bal = 0;
         const processed = history.map((tx) => {
           const t = String(tx?.type || "").toLowerCase().trim();
           const amtAbs = Math.abs(toNum(tx?.amount));
-
           const isCredit = CREDIT_TYPES.has(t);
           const isDebit  = DEBIT_TYPES.has(t);
 
           const credit = isCredit ? amtAbs : 0;
           const debit  = isDebit  ? amtAbs : 0;
 
-          balance += credit - debit;
+          bal += credit - debit;
 
           return {
             ...tx,
             debit,
             credit,
-            runningBalance: balance,
+            runningBalance: bal,
             _displayDate: pickDate(tx),
           };
         });
 
         setTransactions(processed);
-        setRunningBalance(balance);
+        setRunningBalance(bal);
+
+        // 2) Fetch the exact global cash total
+        const { data: allCash } = await axios.get(
+          `${BACKEND_URL}api/cash/all`,
+          { withCredentials: true }
+        );
+        // Your /api/cash/all returns { totalBalance, latestEntry, allEntries }
+        setCurrentCashTotal(Number(allCash?.totalBalance ?? 0));
       } catch (error) {
-        console.error("Failed to fetch cash transactions", error?.response?.data || error);
+        console.error("Failed to fetch cash data", error?.response?.data || error);
         setTransactions([]);
         setRunningBalance(0);
+        setCurrentCashTotal(null);
       } finally {
         setLoading(false);
       }
     };
 
-    if (open) fetchTransactions();
+    if (open) fetchData();
   }, [cashEntry, open, BACKEND_URL]);
 
   return (
@@ -94,9 +102,15 @@ const CashTransactionHistoryModal = ({ open, onClose, cashEntry }) => {
       >
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
           <Typography variant="h6">Cash Transaction History</Typography>
-          <Button onClick={onClose} variant="outlined" size="small">
-            Close
-          </Button>
+          <Box display="flex" alignItems="center" gap={2}>
+            <Typography variant="body2">
+              Current Cash Total:&nbsp;
+              {Number(currentCashTotal ?? 0).toFixed(2)}
+            </Typography>
+            <Button onClick={onClose} variant="outlined" size="small">
+              Close
+            </Button>
+          </Box>
         </Box>
 
         {loading ? (
@@ -112,7 +126,7 @@ const CashTransactionHistoryModal = ({ open, onClose, cashEntry }) => {
                   <TableCell>Type</TableCell>
                   <TableCell>Debit</TableCell>
                   <TableCell>Credit</TableCell>
-                  <TableCell>Running Balance</TableCell>
+                  <TableCell>Entry Running Balance</TableCell>
                   <TableCell>Date</TableCell>
                 </TableRow>
               </TableHead>
@@ -130,7 +144,9 @@ const CashTransactionHistoryModal = ({ open, onClose, cashEntry }) => {
                       </TableCell>
                       <TableCell>{toNum(tx.runningBalance).toFixed(2)}</TableCell>
                       <TableCell>
-                        {tx._displayDate ? new Date(tx._displayDate).toLocaleString() : "-"}
+                        {tx._displayDate
+                          ? new Date(tx._displayDate).toLocaleString()
+                          : "-"}
                       </TableCell>
                     </TableRow>
                   ))

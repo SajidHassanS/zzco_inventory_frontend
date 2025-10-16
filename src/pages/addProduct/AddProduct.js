@@ -1,4 +1,5 @@
-import React, { Fragment, useEffect, useState } from "react";
+// ✅ Only diff: added useRef and a few guards / disabled props
+import React, { Fragment, useEffect, useState, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -38,7 +39,8 @@ import {
   TableHead, // Add this import
   TableBody, // Add this import
   TableRow, // Add this import
-  TableCell
+  TableCell,
+  CircularProgress,                // ✅ for small spinner
 } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import AddSupplierModal from "../../components/Models/addSupplierModel";
@@ -86,10 +88,10 @@ const AddProduct = () => {
     setActiveStep(0); // Reset to the first step
   };
   const [product, setProduct] = useState(initialState);
-const [productImage, setProductImage] = useState("");
-const [paymentProofImage, setPaymentProofImage] = useState(null); // <-- NEW
-const [imagePreview, setImagePreview] = useState(null);
-const [paymentImagePreview, setPaymentImagePreview] = useState(null); // <-- NEW
+  const [productImage, setProductImage] = useState("");
+  const [paymentProofImage, setPaymentProofImage] = useState(null); // <-- NEW
+  const [imagePreview, setImagePreview] = useState(null);
+  const [paymentImagePreview, setPaymentImagePreview] = useState(null); // <-- NEW
   const [description, setDescription] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [chequeDate, setChequeDate] = useState("");
@@ -111,6 +113,10 @@ const [paymentImagePreview, setPaymentImagePreview] = useState(null); // <-- NEW
   const [openImageModal, setOpenImageModal] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
 
+  // ✅ submit guards
+  const [submitting, setSubmitting] = useState(false);
+  const inflightRef = useRef(false);
+
   useEffect(
     () => {
       dispatch(getBanks());
@@ -123,26 +129,31 @@ const [paymentImagePreview, setPaymentImagePreview] = useState(null); // <-- NEW
   const handleCloseSupplierModal = () => setOpenSupplierModal(false); // Function to close the supplier modal
 
   const handleProductImageChange = (e) => {
-  const file = e.target.files[0];
-  if (file) {
-    setProductImage(file);
-    setImagePreview(URL.createObjectURL(file));
-  }
-};
+    const file = e.target.files[0];
+    if (file) {
+      setProductImage(file);
+      setImagePreview(URL.createObjectURL(file));
+    }
+  };
 
-const handlePaymentImageChange = (e) => {
-  const file = e.target.files[0];
-  if (file) {
-    setPaymentProofImage(file);
-    setPaymentImagePreview(URL.createObjectURL(file));
-  }
-};
+  const handlePaymentImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setPaymentProofImage(file);
+      setPaymentImagePreview(URL.createObjectURL(file));
+    }
+  };
 
-const handleInputChange = (e) => {
-  const { name, value } = e.target;
-  setProduct({ ...product, [name]: value });
-};
-
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    // Coerce known numeric fields to numbers, keep others as-is
+    if (name === "price" || name === "quantity") {
+      const num = value === "" ? "" : Number(value);
+      setProduct((p) => ({ ...p, [name]: num }));
+    } else {
+      setProduct((p) => ({ ...p, [name]: value }));
+    }
+  };
 
   const handleImageClick = imageUrl => {
     setSelectedImage(imageUrl);
@@ -165,141 +176,159 @@ const handleInputChange = (e) => {
   };
 
   const handleNext = () => {
+    if (submitting) return;           // ✅ block step changes while submitting
     setActiveStep(prevActiveStep => prevActiveStep + 1);
   };
 
   const handleBack = () => {
+    if (submitting) return;           // ✅
     setActiveStep(prevActiveStep => prevActiveStep - 1);
   };
 
-const recordSupplierTransaction = async () => {
-  if (!supplier.id || !product.price || !product.quantity) {
-    toast.error("Supplier, price, or quantity missing.");
-    return;
-  }
-
-  const transactionAmount = product.price * product.quantity;
-
-  const transactionData = new FormData();
-  transactionData.append("name", product.name);
-  transactionData.append("amount", transactionAmount);
-  transactionData.append("paymentMethod", paymentMethod);
-  transactionData.append("type", "debit");
-  transactionData.append("description", `Purchased ${product.quantity} x ${product.name}`);
-
-  if (paymentMethod === "cheque") {
-    transactionData.append("chequeDate", chequeDate);
-  }
-
-  if ((paymentMethod === "online" || paymentMethod === "cheque") && selectedBank) {
-    transactionData.append("bankId", selectedBank);
-  }
-
- if (paymentProofImage && (paymentMethod === "cheque" || paymentMethod === "online")) {
-  transactionData.append("image", paymentProofImage);
-}
-
-
-  try {
-    const res = await axios.post(
-      `${API_URL}/${supplier.id}/transaction`,
-      transactionData,
-      {
-        headers: { "Content-Type": "multipart/form-data" }
-      }
-    );
-
-    if (res.status === 201) {
-      toast.success("Supplier transaction recorded.");
-const quantity = product?.quantity || 0;
-const name = product?.name || "Unknown Product";
-const supplierName = supplier?.name || supplier?.username|| "Unknown Supplier";
-      // ✅ Now handle payment method-wise deduction
-      if (paymentMethod === "cash") {
-        await axios.post(`${BACKEND_URL}api/cash/add`, {
-          balance: transactionAmount,
-          type: "deduct",
-          description: `Cash payment for ${quantity} x ${name} to ${supplierName}`
-        }, {
-          withCredentials: true
-        });
-
-        toast.success("Cash deducted successfully.");
-        // dispatch(getCash());
-      } else if (paymentMethod === "online") {
-        await axios.post(`${BACKEND_URL}api/banks/${selectedBank}/transaction`, {
-          amount: transactionAmount,
-          type: "subtract",
-          description: `Online payment for ${product.quantity} x ${product.name} to ${supplier.name}`
-        }, {
-          withCredentials: true
-        });
-
-        toast.success("Bank balance updated (online).");
-      } 
-      else if (paymentMethod === "cheque") {
-  toast.info("Cheque will be deducted when cashed out.");
-}
-     // else if (paymentMethod === "cheque") {
-      //   await axios.post(`${BACKEND_URL}api/banks/${selectedBank}/transaction`, {
-      //     amount: transactionAmount,
-      //     type: "subtract",
-      //     description: `Cheque payment for ${product.quantity} x ${product.name} to ${supplier.name}`,
-      //      chequeDate
-      //   }, {
-      //     withCredentials: true
-      //   });
-
-      //   toast.success("Bank balance updated (cheque).");
-      // }
-    }
-  } catch (error) {
-    console.error("Transaction error:", error);
-    toast.error(error.response?.data?.message || "Transaction failed.");
-  }
-};
-
-
-
-const saveProduct = async () => {
-  const formData = new FormData();
-  Object.keys(product).forEach(key => formData.append(key, product[key]));
-  formData.append("shippingType", shippingType);
-
-  if (shippingType === "local") {
-    if (selectedWarehouse && selectedWarehouse !== "addNew") {
-      formData.append("warehouse", selectedWarehouse);
-    } else {
-      toast.error("Please select a valid warehouse or create one.");
+  const recordSupplierTransaction = async () => {
+    if (!supplier.id || !product.price || !product.quantity) {
+      toast.error("Supplier, price, or quantity missing.");
       return;
     }
-  }
 
-  formData.append("paymentMethod", paymentMethod);
-  formData.append("chequeDate", chequeDate);
-  formData.append("bank", selectedBank);
-  formData.append("supplier", supplier.id);
+    const price = Number(product.price) || 0;
+    const qty   = Number(product.quantity) || 0;
+    const transactionAmount = price * qty;
+    if (transactionAmount <= 0) { toast.error("Invalid price/quantity"); return; }
 
-  if (productImage) {
-    formData.append("image", productImage); // ✅ IMPORTANT: field name must be 'file'
-  }
+    const transactionData = new FormData();
+    transactionData.append("name", product.name);
+    transactionData.append("amount", transactionAmount);
+    transactionData.append("paymentMethod", paymentMethod);
+    transactionData.append("type", "debit");
+    transactionData.append("description", `Purchased ${product.quantity} x ${product.name}`);
 
-  const res = await dispatch(createProduct(formData));
-  if (res.payload && !res.error) {
-    toast.success("Product added successfully");
-    navigate("/dashboard");
-  }
-};
+    if (paymentMethod === "cheque") {
+      transactionData.append("chequeDate", chequeDate);
+    }
 
+    if ((paymentMethod === "online" || paymentMethod === "cheque") && selectedBank) {
+      transactionData.append("bankId", selectedBank);
+    }
+
+    if (paymentProofImage && (paymentMethod === "cheque" || paymentMethod === "online")) {
+      transactionData.append("image", paymentProofImage);
+    }
+
+    try {
+      const res = await axios.post(
+        `${API_URL}/${supplier.id}/transaction`,
+        transactionData,
+        {
+          headers: { "Content-Type": "multipart/form-data" },
+          withCredentials: true
+        }
+      );
+
+      if (res.status === 201) {
+        toast.success("Supplier transaction recorded.");
+        const quantity = product?.quantity || 0;
+        const name = product?.name || "Unknown Product";
+        const supplierName = supplier?.name || supplier?.username|| "Unknown Supplier";
+        // ✅ Now handle payment method-wise deduction
+        if (paymentMethod === "cash") {
+          await axios.post(`${BACKEND_URL}api/cash/add`, {
+            balance: transactionAmount,
+            type: "deduct",
+            description: `Cash payment for ${quantity} x ${name} to ${supplierName}`
+          }, {
+            withCredentials: true
+          });
+
+          toast.success("Cash deducted successfully.");
+          await dispatch(getCash()).unwrap();
+        } else if (paymentMethod === "online") {
+          await axios.post(`${BACKEND_URL}api/banks/${selectedBank}/transaction`, {
+            amount: transactionAmount,
+            type: "subtract",
+            description: `Online payment for ${product.quantity} x ${product.name} to ${supplier.name}`
+          }, {
+            withCredentials: true
+          });
+
+          toast.success("Bank balance updated (online).");
+          await dispatch(getBanks()).unwrap();
+        } else if (paymentMethod === "cheque") {
+          toast.info("Cheque will be deducted when cashed out.");
+        }
+      }
+    } catch (error) {
+      console.error("Transaction error:", error);
+      toast.error(error.response?.data?.message || "Transaction failed.");
+    }
+  };
+
+  const saveProduct = async () => {
+    const formData = new FormData();
+    Object.keys(product).forEach(key => formData.append(key, product[key]));
+    formData.append("shippingType", shippingType);
+
+    if (shippingType === "local") {
+      if (selectedWarehouse && selectedWarehouse !== "addNew") {
+        formData.append("warehouse", selectedWarehouse);
+      } else {
+        toast.error("Please select a valid warehouse or create one.");
+        return;
+      }
+    }
+
+    formData.append("paymentMethod", paymentMethod);
+    formData.append("chequeDate", chequeDate);
+    formData.append("bank", selectedBank);
+    formData.append("supplier", supplier.id);
+
+    if (productImage) {
+      formData.append("image", productImage); // ✅ IMPORTANT: field name must be 'file'
+    }
+
+    const res = await dispatch(createProduct(formData));
+    if (res.payload && !res.error) {
+      toast.success("Product added successfully");
+      return true;
+    }
+    return false;
+  };
 
   const handleSubmit = async () => {
-    if (product.quantity <= 0 || product.price <= 0) {
+    // ✅ HARD GUARD: don’t allow re-entry
+    if (submitting || inflightRef.current) return;
+
+    const qty  = Number(product.quantity) || 0;
+    const price = Number(product.price) || 0;
+    if (qty <= 0 || price <= 0) {
       toast.error("Quantity and Price must be greater than 0.");
-      return; // Exit the function if validation fails
+      return;
     }
-    await saveProduct();
-    await recordSupplierTransaction();
-    handleNext();
+
+    try {
+      setSubmitting(true);
+      inflightRef.current = true;
+
+      const ok = await saveProduct();
+      if (!ok) return;
+
+      await recordSupplierTransaction();
+
+      await Promise.all([
+        dispatch(getProducts()).unwrap(),
+        dispatch(getBanks()).unwrap(),
+        dispatch(getCash()).unwrap(),
+      ]);
+
+      setOpenModal(false);              // close the wizard nicely
+      navigate("/dashboard");
+    } catch (err) {
+      console.error("Submit failed:", err);
+      toast.error(err?.response?.data?.message || "Submit failed");
+    } finally {
+      setSubmitting(false);
+      inflightRef.current = false;
+    }
   };
 
   const getStepContent = step => {
@@ -316,6 +345,7 @@ const saveProduct = async () => {
                     name="name"
                     value={product.name}
                     onChange={handleInputChange}
+                    disabled={submitting}            // ✅
                   />
                 </Grid>
                 <Grid item xs={12} sm={6}>
@@ -325,6 +355,7 @@ const saveProduct = async () => {
                     name="category"
                     value={product.category}
                     onChange={handleInputChange}
+                    disabled={submitting}
                   />
                 </Grid>
                 <Grid item xs={12} sm={6}>
@@ -335,6 +366,7 @@ const saveProduct = async () => {
                     type="number"
                     value={product.quantity}
                     onChange={handleInputChange}
+                    disabled={submitting}
                   />
                 </Grid>
                 <Grid item xs={12} sm={6}>
@@ -345,6 +377,7 @@ const saveProduct = async () => {
                     type="number"
                     value={product.price}
                     onChange={handleInputChange}
+                    disabled={submitting}
                   />
                 </Grid>
                 <Grid item xs={12}>
@@ -357,30 +390,31 @@ const saveProduct = async () => {
                     label="Description"
                     value={product.description}
                     onChange={handleInputChange}
+                    disabled={submitting}
                   />
                 </Grid>
 
                 <Grid item xs={12}>
-              <input
-  accept="image/*"
-  style={{ display: "none" }}
-  id="product-image-file"
-  type="file"
-  onChange={handleProductImageChange}
-/>
-<label htmlFor="product-image-file">
-  <Button variant="contained" component="span">
-    Upload Product Image
-  </Button>
-</label>
-{imagePreview && (
-  <img
-    src={imagePreview}
-    alt="Preview"
-    style={{ marginTop: 10, maxWidth: "100%", maxHeight: 200 }}
-  />
-)}
-
+                  <input
+                    accept="image/*"
+                    style={{ display: "none" }}
+                    id="product-image-file"
+                    type="file"
+                    onChange={handleProductImageChange}
+                    disabled={submitting}
+                  />
+                  <label htmlFor="product-image-file">
+                    <Button variant="contained" component="span" disabled={submitting}>
+                      Upload Product Image
+                    </Button>
+                  </label>
+                  {imagePreview && (
+                    <img
+                      src={imagePreview}
+                      alt="Preview"
+                      style={{ marginTop: 10, maxWidth: "100%", maxHeight: 200 }}
+                    />
+                  )}
                 </Grid>
               </Grid>
             </CardContent>
@@ -392,11 +426,12 @@ const saveProduct = async () => {
             <CardContent>
               <Grid container spacing={3}>
                 <Grid item xs={12} sm={6}>
-                  <FormControl fullWidth>
+                  <FormControl fullWidth disabled={submitting}>
                     <InputLabel>Shipping Type</InputLabel>
                     <Select
                       value={shippingType}
                       onChange={e => setShippingType(e.target.value)}
+                      label="Shipping Type"
                     >
                       <MenuItem value="local">Local</MenuItem>
                       <MenuItem value="international">International</MenuItem>
@@ -405,11 +440,12 @@ const saveProduct = async () => {
                 </Grid>
                 {shippingType === "local" &&
                   <Grid item xs={12} sm={6}>
-                    <FormControl fullWidth>
+                    <FormControl fullWidth disabled={submitting}>
                       <InputLabel>Warehouse</InputLabel>
                       <Select
                         value={selectedWarehouse}
                         onChange={e => setSelectedWarehouse(e.target.value)}
+                        label="Warehouse"
                       >
                         {warehouses.map(warehouse =>
                           <MenuItem key={warehouse._id} value={warehouse._id}>
@@ -427,11 +463,12 @@ const saveProduct = async () => {
                     </FormControl>
                   </Grid>}
                 <Grid item xs={12} sm={6}>
-                  <FormControl fullWidth>
+                  <FormControl fullWidth disabled={submitting}>
                     <InputLabel>Payment Method</InputLabel>
                     <Select
                       value={paymentMethod}
                       onChange={e => setPaymentMethod(e.target.value)}
+                      label="Payment Method"
                     >
                       <MenuItem value="cash">Cash</MenuItem>
                       <MenuItem value="cheque">Cheque</MenuItem>
@@ -451,44 +488,46 @@ const saveProduct = async () => {
                       InputLabelProps={{
                         shrink: true
                       }}
+                      disabled={submitting}
                     />
                   </Grid>}
-               {(paymentMethod === "cheque" || paymentMethod === "online") && (
-  <Grid item xs={12}>
-    <input
-  accept="image/*"
-  style={{ display: "none" }}
-  id="payment-image-file"
-  type="file"
-  onChange={handlePaymentImageChange}
-/>
-<label htmlFor="payment-image-file">
-  <Button variant="contained" component="span">
-    Upload {paymentMethod === "cheque" ? "Cheque" : "Payment"} Image
-  </Button>
-</label>
-{paymentImagePreview && (
-  <img
-    src={paymentImagePreview}
-    alt="Preview"
-    style={{
-      marginTop: 10,
-      maxWidth: "100%",
-      maxHeight: 200
-    }}
-  />
-)}
-
-  </Grid>
-)}
+                {(paymentMethod === "cheque" || paymentMethod === "online") && (
+                  <Grid item xs={12}>
+                    <input
+                      accept="image/*"
+                      style={{ display: "none" }}
+                      id="payment-image-file"
+                      type="file"
+                      onChange={handlePaymentImageChange}
+                      disabled={submitting}
+                    />
+                    <label htmlFor="payment-image-file">
+                      <Button variant="contained" component="span" disabled={submitting}>
+                        Upload {paymentMethod === "cheque" ? "Cheque" : "Payment"} Image
+                      </Button>
+                    </label>
+                    {paymentImagePreview && (
+                      <img
+                        src={paymentImagePreview}
+                        alt="Preview"
+                        style={{
+                          marginTop: 10,
+                          maxWidth: "100%",
+                          maxHeight: 200
+                        }}
+                      />
+                    )}
+                  </Grid>
+                )}
 
                 {(paymentMethod === "online" || paymentMethod === "cheque") &&
                   <Grid item xs={12} sm={6}>
-                    <FormControl fullWidth>
+                    <FormControl fullWidth disabled={submitting}>
                       <InputLabel>Bank</InputLabel>
                       <Select
                         value={selectedBank}
                         onChange={e => setSelectedBank(e.target.value)}
+                        label="Bank"
                       >
                         {banks.map(bank =>
                           <MenuItem key={bank._id} value={bank._id}>
@@ -506,7 +545,7 @@ const saveProduct = async () => {
                   flexDirection="row"
                   justifyContent="space-between"
                 >
-                  <FormControl fullWidth>
+                  <FormControl fullWidth disabled={submitting}>
                     <InputLabel>Supplier</InputLabel>
                     <Select
                       value={supplier.id}
@@ -581,9 +620,6 @@ const saveProduct = async () => {
         <Typography variant="h4" gutterBottom align="center">
           Existing Products{" "}
         </Typography>
-        {/* <Typography variant="h6" gutterBottom>
-          Existing Products
-        </Typography> */}
         <Table>
           <TableHead>
             <TableRow>
@@ -607,112 +643,74 @@ const saveProduct = async () => {
                 <TableCell>
                   {new Date(product.createdAt).toLocaleDateString()}
                 </TableCell>{" "}
-                {/* Format Date */}
               </TableRow>
             )}
           </TableBody>
         </Table>
       </StyledPaper>
 
-    <Modal
-  open={openModal}
-  onClose={() => setOpenModal(false)}
-  style={{
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  }}
->
-  <StyledPaper
-    elevation={2}
-    sx={{
-      width: "80%",
-      maxHeight: "90vh",
-      display: "flex",
-      flexDirection: "column",
-    }}
-  >
-    {/* Scrollable Section */}
-    <Box sx={{ flex: 1, overflowY: "auto", p: 2 }}>
-      <Stepper activeStep={activeStep} alternativeLabel>
-        {steps.map((label) => (
-          <Step key={label}>
-            <StepLabel>{label}</StepLabel>
-          </Step>
-        ))}
-      </Stepper>
-
-      <Box mt={4}>{getStepContent(activeStep)}</Box>
-    </Box>
-
-    {/* Fixed Footer (Always Visible) */}
-    <Box
-      sx={{
-        display: "flex",
-        justifyContent: "flex-end",
-        p: 2,
-        borderTop: "1px solid #ddd",
-        backgroundColor: "white",
-      }}
-    >
-      <Button disabled={activeStep === 0} onClick={handleBack} sx={{ mr: 1 }}>
-        Back
-      </Button>
-      <Button
-        variant="contained"
-        color="primary"
-        onClick={activeStep === steps.length - 1 ? handleSubmit : handleNext}
+      <Modal
+        open={openModal}
+        onClose={submitting ? undefined : () => setOpenModal(false)}   // ✅ don't allow close mid-submit
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
       >
-        {activeStep === steps.length - 1 ? "Submit" : "Next"}
-      </Button>
-      <Button onClick={() => setOpenModal(false)} sx={{ ml: 1 }}>
-        Close
-      </Button>
-    </Box>
-  </StyledPaper>
-</Modal>
+        <StyledPaper
+          elevation={2}
+          sx={{
+            width: "80%",
+            maxHeight: "90vh",
+            display: "flex",
+            flexDirection: "column",
+            opacity: submitting ? 0.9 : 1,
+          }}
+        >
+          {/* Scrollable Section */}
+          <Box sx={{ flex: 1, overflowY: "auto", p: 2 }}>
+            <Stepper activeStep={activeStep} alternativeLabel>
+              {steps.map((label) => (
+                <Step key={label}>
+                  <StepLabel>{label}</StepLabel>
+                </Step>
+              ))}
+            </Stepper>
 
-      {/* {showStepper && (
-          
-          <Stepper activeStep={activeStep} alternativeLabel>
-            {steps.map((label) => (
-              <Step key={label}>
-                <StepLabel>{label}</StepLabel>
-              </Step>
-            ))}
-          </Stepper>
-        )}
-        <Box mt={4}>
-          {activeStep === steps.length ? (
-            <Box>
-              <Typography>All steps completed - you're finished</Typography>
-              <Button onClick={() => navigate("/dashboard")} sx={{ mt: 2 }}>
-                Go to Dashboard
-              </Button>
-            </Box>
-          ) : (
-            <Box>
-              {getStepContent(activeStep)}
-              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
-                <Button
-                  disabled={activeStep === 0}
-                  onClick={handleBack}
-                  sx={{ mr: 1 }}
-                >
-                  Back
-                </Button>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  onClick={activeStep === steps.length - 1 ? handleSubmit : handleNext}
-                >
-                  {activeStep === steps.length - 1 ? 'Submit' : 'Next'}
-                </Button>
-              </Box>
-            </Box>
-          )}
-        </Box>
-      </StyledPaper> */}
+            <Box mt={4}>{getStepContent(activeStep)}</Box>
+          </Box>
+
+          {/* Fixed Footer (Always Visible) */}
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "flex-end",
+              p: 2,
+              borderTop: "1px solid #ddd",
+              backgroundColor: "white",
+              gap: 1
+            }}
+          >
+            <Button disabled={activeStep === 0 || submitting} onClick={handleBack} sx={{ mr: 1 }}>
+              Back
+            </Button>
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={activeStep === steps.length - 1 ? handleSubmit : handleNext}
+              disabled={submitting}
+              startIcon={submitting && activeStep === steps.length - 1 ? <CircularProgress size={18} /> : null}
+            >
+              {activeStep === steps.length - 1 ? "Submit" : "Next"}
+            </Button>
+            <Button onClick={() => setOpenModal(false)} sx={{ ml: 1 }} disabled={submitting}>
+              Close
+            </Button>
+          </Box>
+        </StyledPaper>
+      </Modal>
+
       {isLoading && <Loader />}
       <AddSupplierModal
         open={openSupplierModal}

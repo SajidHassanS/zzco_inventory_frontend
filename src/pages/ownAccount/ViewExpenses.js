@@ -29,11 +29,20 @@ import CustomTable from "../../components/CustomTable/CustomTable";
 
 const ITEMS_PER_PAGE = 10;
 
+const KIND_LABEL = {
+  expense: "Expense",
+  purchase: "Purchase",
+  sale: "Sale",
+  customer_manual: "Customer Txn",
+  supplier_manual: "Supplier Txn",
+  stock_arrival: "Stock Arrival",
+};
+
 const ViewExpenses = () => {
   const dispatch = useDispatch();
   const banks = useSelector((s) => s.bank.banks || []);
 
-  const [entries, setEntries] = useState([]); // only expenses
+  const [entries, setEntries] = useState([]); // daily-book rows
   const [selectedDate, setSelectedDate] = useState(
     new Date().toISOString().split("T")[0]
   );
@@ -57,51 +66,61 @@ const ViewExpenses = () => {
   const [totalPages, setTotalPages] = useState(0);
   const [runningBalance, setRunningBalance] = useState(0);
 
-  // Safe API base
+  // API base
   const RAW = process.env.REACT_APP_BACKEND_URL || "";
   const BASE = RAW.endsWith("/") ? RAW : `${RAW}/`;
   const API_URL = `${BASE}api`;
 
+  /* -------------------------------- effects -------------------------------- */
   useEffect(() => {
     dispatch(getBanks());
-    fetchExpenses();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch]);
 
   useEffect(() => {
-    filterEntriesByDate();
-  }, [selectedDate, entries]);
+    // fetch daily-book whenever date changes
+    fetchDailyBook();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate]);
 
-  // ---------- FETCH (expenses only) ----------
-  const fetchExpenses = async () => {
+  useEffect(() => {
+    filterEntriesByDate(); // in practice daily-book already scoped by day, but keep this to compute running balance
+  }, [entries, selectedDate]);
+
+  /* ----------------------------- fetch daily-book ---------------------------- */
+  const fetchDailyBook = async () => {
     try {
-      const { data } = await axios.get(`${API_URL}/expenses/all`, {
-        withCredentials: true,
-      });
+      const from = selectedDate;
+      const to = selectedDate;
 
-      const expensesData = (data || []).map((exp) => ({
-        id: exp._id,
-        type: "Expense",
-        name: exp.expenseName,
-        amount: Number(exp.amount), // backend stores negative
-        date: new Date(exp.expenseDate || exp.createdAt),
-        description: exp.description,
-        paymentMethod: exp.paymentMethod,
-        bankID: exp.bankID || null,
-        chequeDate: exp.chequeDate || null,
-        raw: exp,
+      const { data } = await axios.get(
+        `${API_URL}/daily/daily-book?from=${from}&to=${to}`,
+        { withCredentials: true }
+      );
+
+      const rows = (data?.rows || []).map((r) => ({
+        id: r._id,
+        date: new Date(r.date),
+        type: KIND_LABEL[r.kind] || r.kind,
+        rawKind: r.kind,
+        name: r.productName || r.description || r.counterpartyName || "-",
+        description: r.description || "",
+        amount: Number(r.amount) || 0, // already signed from API
+        paymentMethod: r.paymentMethod || "-",
+        bankID: r.bankID || null,
+        chequeDate: r.chequeDate || null,
+        quantity: r.quantity ?? "",
+        counterparty: r.counterpartyName || "-",
+        raw: r,
       }));
 
-      setEntries(
-        expensesData.sort((a, b) => new Date(b.date) - new Date(a.date))
-      );
+      setEntries(rows.sort((a, b) => new Date(b.date) - new Date(a.date)));
     } catch (err) {
-      console.error("❌ Error fetching expenses:", err);
+      console.error("❌ Error fetching daily book:", err);
       setEntries([]);
     }
   };
 
-  // ---------- FORM ----------
+  /* -------------------------------- form stuff ------------------------------- */
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setExpense((prev) => ({
@@ -183,8 +202,7 @@ const ViewExpenses = () => {
 
     const fd = new FormData();
     fd.append("expenseName", name);
-    // send positive amount; backend persists as negative and applies cash/bank effect
-    fd.append("amount", String(amt));
+    fd.append("amount", String(amt)); // send positive; backend handles sign/posting
     fd.append("description", desc);
     fd.append(
       "expenseDate",
@@ -208,15 +226,14 @@ const ViewExpenses = () => {
           headers: { "Content-Type": "multipart/form-data" },
           withCredentials: true,
         });
-        // IMPORTANT: do NOT post a separate bank/cash transaction here.
         alert("Expense added");
       }
 
       setShowExpenseModal(false);
       setEditingId(null);
 
-      await fetchExpenses();
-      dispatch(getBanks()); // keep bank balances fresh
+      dispatch(getBanks());       // refresh balances
+      await fetchDailyBook();     // refresh daily book grid
     } catch (e) {
       console.error("Save expense failed:", e?.response?.data || e);
       alert(e?.response?.data?.message || "Failed to save expense");
@@ -232,8 +249,8 @@ const ViewExpenses = () => {
         withCredentials: true,
       });
 
-      await fetchExpenses();
       dispatch(getBanks());
+      await fetchDailyBook();
       alert("Expense deleted");
     } catch (e) {
       console.error("Delete failed:", e?.response?.data || e);
@@ -259,16 +276,16 @@ const ViewExpenses = () => {
     }
   };
 
-  // ---------- FILTER ----------
+  /* --------------------------------- filter -------------------------------- */
   const calculateRunningBalance = (entriesList) => {
     let balance = 0;
-    const reversed = [...entriesList].reverse();
+    const reversed = [...entriesList].reverse(); // oldest -> newest
     const withBalance = reversed.map((entry) => {
       balance += entry.amount;
       return { ...entry, balance };
     });
     setRunningBalance(balance);
-    return withBalance.reverse();
+    return withBalance.reverse(); // newest first for grid
   };
 
   const toLocalYMD = (d) => {
@@ -280,7 +297,7 @@ const ViewExpenses = () => {
   };
 
   const filterEntriesByDate = () => {
-    const sel = selectedDate; // "YYYY-MM-DD"
+    const sel = selectedDate; // "YYYY-MM-DD" — API already filtered but keep this
     const filtered = entries
       .filter((entry) => toLocalYMD(entry.date) === sel)
       .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -291,16 +308,18 @@ const ViewExpenses = () => {
     setPage(1);
   };
 
-  // ---------- TABLE ----------
+  /* --------------------------------- table --------------------------------- */
   const columns = [
     {
       field: "date",
       headerName: "Date",
-      renderCell: (row) => new Date(row.date).toLocaleDateString(),
+      renderCell: (row) => new Date(row.date).toLocaleString(),
     },
-    { field: "name", headerName: "Name", renderCell: (row) => row.name || "-" },
     { field: "type", headerName: "Type" },
+    { field: "name", headerName: "Name", renderCell: (row) => row.name || "-" },
     { field: "description", headerName: "Description" },
+    { field: "quantity", headerName: "Qty" },
+    { field: "counterparty", headerName: "Counterparty" },
     {
       field: "debit",
       headerName: "Debit",
@@ -325,7 +344,7 @@ const ViewExpenses = () => {
     {
       field: "balance",
       headerName: "Running Balance",
-      renderCell: (row) => row.balance.toFixed(2),
+      renderCell: (row) => (Number.isFinite(row.balance) ? row.balance.toFixed(2) : ""),
     },
     {
       field: "actions",
@@ -359,7 +378,7 @@ const ViewExpenses = () => {
       key: `${entry.id}-${entry.date}-${entry.description}`,
     }));
 
-  // ---------- RENDER ----------
+  /* --------------------------------- render -------------------------------- */
   return (
     <Container>
       <Box display="flex" justifyContent="space-between" alignItems="center" mt={2} mb={2}>
@@ -378,14 +397,14 @@ const ViewExpenses = () => {
       <Card sx={{ mt: 3 }}>
         <CardContent>
           <Typography variant="h5" gutterBottom>
-            Expenses for {new Date(selectedDate).toDateString()}
+            Daily Book for {new Date(selectedDate).toDateString()}
           </Typography>
           <Typography variant="h6" gutterBottom>
             Daily Balance: {runningBalance.toFixed(2)}
           </Typography>
 
           {filteredEntries.length === 0 ? (
-            <Typography variant="body1">No expenses for the selected date.</Typography>
+            <Typography variant="body1">No entries for the selected date.</Typography>
           ) : (
             <CustomTable
               columns={columns}

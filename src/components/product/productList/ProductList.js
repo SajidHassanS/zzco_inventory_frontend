@@ -6,6 +6,9 @@ import { FaEdit, FaTrashAlt } from "react-icons/fa";
 import { AiOutlineEye } from "react-icons/ai";
 import Search from "../../search/Search";
 import { useDispatch, useSelector } from "react-redux";
+import { getBanks } from "../../../redux/features/Bank/bankSlice";
+import { getCash } from "../../../redux/features/cash/cashSlice";
+
 import {
   FILTER_PRODUCTS,
   selectFilteredPoducts
@@ -45,10 +48,18 @@ const ProductList = ({ products, isLoading }) => {
   };
 
   const delProduct = async id => {
-    await dispatch(deleteProduct(id));
-    await dispatch(getProducts());
-    // also refresh cheques because removing a product may remove its cheque rows
-    await dispatch(getPendingCheques({ status: "all" }));
+    try {
+      await dispatch(deleteProduct(id)).unwrap(); // throws if API fails
+      await Promise.all([
+        dispatch(getProducts()).unwrap(),
+        dispatch(getBanks()).unwrap(),
+        dispatch(getCash()).unwrap(), // <- you were missing this
+        dispatch(getPendingCheques({ status: "all" })).unwrap()
+      ]);
+    } catch (err) {
+      console.error("Delete/refresh failed:", err);
+      // optional: toast.error(err?.message || "Failed to refresh after delete");
+    }
   };
 
   const confirmDelete = id => {
