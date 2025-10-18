@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from "react";
 import { Modal, Box, TextField, Button, Typography, MenuItem, Grid } from "@mui/material";
-import axios from 'axios';
-import { useSelector, useDispatch } from 'react-redux';
+import axios from "axios";
+import { useSelector, useDispatch } from "react-redux";
 import { getBanks } from "../../redux/features/Bank/bankSlice";
 import { toast } from "react-toastify";
 
-const capitalizeFirstLetter = (string) => {
-  return string.charAt(0).toUpperCase() + string.slice(1).toLowerCase();
-};
+// Format number into "lac" with sign, e.g., -420000 => "-4.20 lac"
+function formatLac(value) {
+  const num = Number(value || 0);
+  const sign = num < 0 ? "-" : "";
+  const abs = Math.abs(num);
+  return `${sign}${(abs / 100000).toFixed(2)} lac`;
+}
 
 const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
   const [amount, setAmount] = useState("");
@@ -19,9 +23,8 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
   const [imagePreview, setImagePreview] = useState("");
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
-  const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
- 
 
+  const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
   const dispatch = useDispatch();
   const banks = useSelector((state) => state.bank.banks);
 
@@ -30,28 +33,26 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
   }, [dispatch]);
 
   const API_URL = `${BACKEND_URL}api/suppliers`;
+  const CASH_API_URL = `${BACKEND_URL}api/cash`;
+
+  const currentBalance = Number(supplier?.balance || 0);
 
   const validateForm = () => {
-    let formErrors = {};
-    const numericAmount = parseFloat(amount.trim()); // Parse amount as a float number after trimming whitespace
+    const formErrors = {};
+    const numericAmount = parseFloat((amount || "").toString().trim());
 
-    // Validate if amount is a valid number
     if (isNaN(numericAmount) || numericAmount <= 0) {
       formErrors.amount = "Amount must be a valid positive number";
     }
-
     if (!paymentMethod) {
       formErrors.paymentMethod = "Payment method is required";
     }
-
     if (paymentMethod === "online" && !selectedBank) {
       formErrors.selectedBank = "Bank selection is required for online payment";
     }
-
     if (paymentMethod === "cheque" && !chequeDate) {
       formErrors.chequeDate = "Cheque date is required for cheque payment";
     }
-
     if ((paymentMethod === "online" || paymentMethod === "cheque") && !image) {
       formErrors.image = "Image upload is required for online or cheque payment";
     }
@@ -62,58 +63,117 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-  
-    if (!validateForm()) {
-      return;
-    }
-  
-    const numericAmount = parseFloat(amount.trim());
-    if (isNaN(numericAmount) || numericAmount <= 0) {
-      toast.error("Amount is not a valid number.");
-      return;
-    }
-  
-    const formData = new FormData();
-    formData.append("balance", numericAmount.toString());
-    formData.append("paymentMethod", capitalizeFirstLetter(paymentMethod));
-    formData.append("description", description);
-    formData.append("bankId", selectedBank || "");
-    formData.append("chequeDate", chequeDate || "");
-  
-    if (image) {
-      formData.append("image", image);
-    }
-  
+    if (loading) return;
+    setLoading(true);
+
     try {
-      const response = await axios.post(`${API_URL}/minus-supplier-balance/${supplier._id}`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-  
-      toast.success(response.data.message || "Balance subtracted successfully");
-  
-      // Call the onSuccess callback with the updated supplier object
-      onSuccess(response.data.supplier);
-  
-      onClose();
+      if (!supplier?._id) {
+        toast.error("Supplier data is missing or invalid");
+        return;
+      }
+
+      if (!validateForm()) return;
+
+      const numericAmount = parseFloat(amount.trim());
+      if (isNaN(numericAmount) || numericAmount <= 0) {
+        toast.error("Amount is not a valid number.");
+        return;
+      }
+
+      // 1) Tell backend to subtract (this may push balance further negative)
+      const formData = new FormData();
+      formData.append("balance", numericAmount.toString());
+      formData.append("paymentMethod", (paymentMethod || "").toLowerCase());
+      formData.append("description", description || "");
+      formData.append("bankId", selectedBank || "");
+      formData.append("chequeDate", chequeDate || "");
+      if (image) formData.append("image", image);
+
+      const supplierRes = await axios.post(
+        `${API_URL}/minus-supplier-balance/${supplier._id}`,
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" }, withCredentials: true }
+      );
+
+      toast.success(supplierRes.data?.message || "Balance subtracted from supplier");
+
+      // 2) Since we received money, asset goes UP
+      let ledgerRes;
+
+      if (paymentMethod === "cash") {
+        ledgerRes = await axios.post(
+          `${CASH_API_URL}/add`,
+          {
+            balance: numericAmount,
+            type: "add",
+            description: `Payment received from supplier ${supplier.username}${
+              description ? ` - ${description}` : ""
+            }`,
+          },
+          { withCredentials: true }
+        );
+      } else if (paymentMethod === "online") {
+        ledgerRes = await axios.post(
+          `${BACKEND_URL}api/banks/${selectedBank}/transaction`,
+          {
+            amount: numericAmount,
+            type: "add",
+            description: `Online payment received from supplier ${supplier.username}${
+              description ? ` - ${description}` : ""
+            }`,
+          },
+          { withCredentials: true }
+        );
+      } else if (paymentMethod === "cheque") {
+        toast.info("Cheque recorded as pending. Cash/Bank will increase when the cheque is cleared.");
+      }
+
+      if (paymentMethod === "cheque" || ledgerRes?.status === 200 || ledgerRes?.status === 201) {
+        onSuccess?.(supplierRes.data?.supplier || supplier);
+        onClose?.();
+      } else {
+        throw new Error("Failed to post Cash/Bank ledger entry");
+      }
     } catch (error) {
-      console.error("Error occurred:", error.response?.data || error.message);
-      toast.error(error.response?.data?.message || "Failed to subtract balance. Please try again.");
+      const apiMsg = error?.response?.data?.message;
+      if (apiMsg) toast.error(apiMsg);
+      else toast.error("Failed to post transaction.");
+      console.error("Error:", error?.response?.data || error.message);
+    } finally {
+      setLoading(false);
     }
   };
-  
-  
 
   const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setImage(file);
-      setImagePreview(URL.createObjectURL(file));
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("File size should be less than 5MB");
+      return;
     }
+    if (!["image/jpeg", "image/png"].includes(file.type)) {
+      toast.error("Only JPEG and PNG files are allowed");
+      return;
+    }
+    setImage(file);
+    setImagePreview(URL.createObjectURL(file));
   };
+
+  const disableSubmit =
+    loading ||
+    !amount ||
+    parseFloat(amount) <= 0 ||
+    !paymentMethod ||
+    (paymentMethod === "online" && !selectedBank) ||
+    (paymentMethod === "cheque" && !chequeDate) ||
+    ((paymentMethod === "online" || paymentMethod === "cheque") && !image);
 
   return (
     <Modal open={open} onClose={onClose}>
       <Box
+        component="form"
+        onSubmit={handleSubmit}
         sx={{
           position: "absolute",
           top: "50%",
@@ -130,11 +190,20 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
           Subtract Balance from {supplier?.username}
         </Typography>
 
+        <Typography variant="body2" sx={{ mb: 1, color: "text.secondary" }}>
+          Current Balance: <strong>{formatLac(currentBalance)}</strong>
+        </Typography>
+
         <TextField
           label="Amount"
           type="number"
+          inputProps={{ min: 0, step: "0.01" }}
           value={amount}
-          onChange={(e) => setAmount(e.target.value)}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (Number(v) < 0) return;
+            setAmount(v);
+          }}
           fullWidth
           margin="normal"
           error={!!errors.amount}
@@ -183,9 +252,7 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
             onChange={(e) => setChequeDate(e.target.value)}
             fullWidth
             margin="normal"
-            InputLabelProps={{
-              shrink: true,
-            }}
+            InputLabelProps={{ shrink: true }}
             error={!!errors.chequeDate}
             helperText={errors.chequeDate}
           />
@@ -205,7 +272,11 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
               helperText={errors.image}
             />
             {imagePreview && (
-              <img src={imagePreview} alt="Preview" style={{ width: '100%', maxHeight: '200px' }} />
+              <img
+                src={imagePreview}
+                alt="Preview"
+                style={{ width: "100%", maxHeight: 200, objectFit: "cover", borderRadius: 8 }}
+              />
             )}
           </Grid>
         )}
@@ -223,10 +294,11 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
         <Button
           variant="contained"
           color="primary"
-          onClick={handleSubmit}
+          type="submit"
           fullWidth
+          disabled={disableSubmit}
         >
-          Subtract Balance
+          {loading ? "Submitting..." : "Subtract Balance"}
         </Button>
       </Box>
     </Modal>

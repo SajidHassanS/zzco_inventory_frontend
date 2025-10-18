@@ -1,75 +1,77 @@
 import React, { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import SupplierList from "./SupplierList";  // Assuming you have the SupplierList component here
-import { Box, Button, Grid, Modal, TextField, Typography } from "@mui/material";
-import { ToastContainer } from "react-toastify";
+import SupplierList from "./SupplierList";
+import { Box, Button, Grid } from "@mui/material";
+import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import { getSuppliers, createSupplier, reset } from "../../redux/features/supplier/supplierSlice";
-import AddSupplierModal from '../../components/Models/addSupplierModel'; // Import the new modal component
+import {
+  getSuppliers,
+  createSupplier,
+  reset
+} from "../../redux/features/supplier/supplierSlice";
+import AddSupplierModal from "../../components/Models/addSupplierModel";
 
 const Supplier = () => {
   const dispatch = useDispatch();
-  const { suppliers, isLoading, isError, message } = useSelector((state) => state.supplier);
+  const { suppliers, isLoading, isError, message } = useSelector(
+    state => state.supplier
+  );
 
+  // Modal (Add Supplier)
   const [openModal, setOpenModal] = useState(false);
-  const [username, setUsername] = useState("");
-  // const [email, setEmail] = useState(""); 
-  // const [password, setPassword] = useState("");
-  const [phone, setPhone] = useState("");
-
   const handleOpenModal = () => setOpenModal(true);
   const handleCloseModal = () => setOpenModal(false);
 
-  const handleInputChange = (event) => {
-    const { name, value } = event.target;
-    switch (name) {
-      case "username":
-        setUsername(value);
-        break;
-      // case "email":
-      //   setEmail(value);
-      //   break;
-      // case "password":
-      //   setPassword(value);
-      //   break;
-      case "phone":
-        setPhone(value);
-        break;
-      default:
-        break;
-    }
+  // Pagination state (parent-managed)
+  const [page, setPage] = useState(0); // 0-based page index
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+
+  // Optional: fields for the add-supplier modal (if your modal needs them via props)
+  // const [username, setUsername] = useState("");
+  // const [phone, setPhone] = useState("");
+
+  useEffect(
+    () => {
+      dispatch(getSuppliers());
+      return () => {
+        dispatch(reset());
+      };
+    },
+    [dispatch]
+  );
+
+  useEffect(
+    () => {
+      if (isError && message) {
+        toast.error(message);
+      }
+    },
+    [isError, message]
+  );
+
+  // Pagination handlers passed to SupplierList
+  const handlePageChange = nextPage => {
+    // Guard against negatives just in case
+    setPage(Math.max(0, Number(nextPage) || 0));
   };
 
-  // Fetch suppliers when component is mounted
-  useEffect(() => {
-    dispatch(getSuppliers());
-
-    return () => {
-      dispatch(reset());
-    };
-  }, [dispatch]);
-
-  // Handle form submission to add a new supplier
-  const handleSubmit = () => {
-    const supplierData = {
-      username,
-      // email,
-      // password,
-      phone,
-    };
-    dispatch(createSupplier(supplierData));
-    handleCloseModal();
+  const handleRowsPerPageChange = nextRpp => {
+    const rpp = Number(nextRpp) || 10;
+    setRowsPerPage(rpp);
+    setPage(0); // reset to first page whenever page size changes
   };
 
-  if (isLoading) {
-    return <div>Loading...</div>;
-  }
+  // If you want to paginate data at parent level (only if SupplierList expects already-sliced data):
+  // const start = page * rowsPerPage;
+  // const pagedSuppliers = suppliers?.slice(start, start + rowsPerPage) ?? [];
+
+  if (isLoading) return <div>Loading...</div>;
 
   return (
     <Box sx={{ m: 0, p: 3, width: "100%" }}>
-      <Grid container justifyContent={"flex-end"}>
-        <Button 
-          variant="outlined" 
+      <Grid container justifyContent="flex-end" sx={{ mb: 2 }}>
+        <Button
+          variant="outlined"
           sx={{ borderColor: "dark", color: "dark" }}
           onClick={handleOpenModal}
         >
@@ -77,79 +79,17 @@ const Supplier = () => {
         </Button>
       </Grid>
 
-      {/* Pass suppliers to SupplierList */}
-      <SupplierList suppliers={suppliers} />
-
-      {/* Add Supplier Modal */}
-      <AddSupplierModal 
-        open={openModal} 
-        handleClose={handleCloseModal} 
-        // handleSubmit={handleSubmit} 
-        // username={username} 
-        // email={email} 
-        // password={password} 
-        // phone={phone} 
-        // handleInputChange={handleInputChange} 
+      {/* Pass suppliers & pagination props to SupplierList */}
+      <SupplierList
+        suppliers={suppliers || []} // or pagedSuppliers if you slice here
+        page={page}
+        rowsPerPage={rowsPerPage}
+        onPageChange={handlePageChange} // ✅ fixes the error
+        onRowsPerPageChange={handleRowsPerPageChange}
       />
-      {/* <Modal
-        open={openModal}
-        onClose={handleCloseModal}
-        aria-labelledby="modal-title"
-        aria-describedby="modal-description"
-      >
-        <Box sx={{ 
-          width: 400, 
-          p: 3, 
-          mx: "auto", 
-          mt: 5, 
-          bgcolor: "background.paper", 
-          boxShadow: 24, 
-          borderRadius: 1 
-        }}>
-          <Typography variant="h6" id="modal-title">Add Supplier</Typography>
-          <TextField
-            fullWidth
-            margin="normal"
-            label="Name"
-            name="username"
-            value={username}
-            onChange={handleInputChange}
-          />
-          <TextField
-            fullWidth
-            margin="normal"
-            label="Email (optional)"
-            name="email"
-            type="email"
-            value={email}
-            onChange={handleInputChange}
-          />
-          <TextField
-            fullWidth
-            margin="normal"
-            label="Password (optional)"
-            name="password"
-            type="password"
-            value={password}
-            onChange={handleInputChange}
-          />
-          <TextField
-            fullWidth
-            margin="normal"
-            label="Phone"
-            name="phone"
-            value={phone}
-            onChange={handleInputChange}
-          />
-          <Button 
-            variant="contained" 
-            color="primary" 
-            onClick={handleSubmit}
-          >
-            Submit
-          </Button>
-        </Box>
-      </Modal> */}
+
+      {/* Add Supplier Modal (adjust props to match your modal’s API) */}
+      <AddSupplierModal open={openModal} handleClose={handleCloseModal} />
 
       <ToastContainer />
     </Box>

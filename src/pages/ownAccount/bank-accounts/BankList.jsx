@@ -7,6 +7,8 @@ import {
   Select,
   MenuItem,
   Chip,
+  Button,
+  Stack,
 } from "@mui/material";
 import axios from "axios";
 import ConfirmDeleteModal from "../../../components/Models/ConfirmDeleteModal";
@@ -16,6 +18,10 @@ import { useSelector } from "react-redux";
 import { selectCanDelete } from "../../../redux/features/auth/authSlice";
 import TransactionHistoryModal from "../../../components/Models/TransactionModal";
 import CashTransactionHistoryModal from "../../../components/Models/CashTransactionModal";
+
+// PDF libs
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 const BACKEND_URL =
   process.env.REACT_APP_BACKEND_URL || "http://13.60.223.186:5000/";
@@ -31,15 +37,16 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
   // ===== Report selectors (Daily | Monthly | Yearly) =====
   const [reportType, setReportType] = useState("monthly"); // "daily" | "monthly" | "yearly"
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState(
-    new Date().getMonth() + 1
-  ); // 1..12
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1); // 1..12
 
   const canDelete = useSelector(selectCanDelete);
 
   // ===== Expenses & Bank transactions (existing) =====
   const [expenses, setExpenses] = useState([]);
   const [bankTransactions, setBankTransactions] = useState([]);
+
+  // which bank to export
+  const [selectedBankIdForPdf, setSelectedBankIdForPdf] = useState("");
 
   useEffect(() => {
     const fetchBankTransactions = async () => {
@@ -48,14 +55,16 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
         for (const bank of banks) {
           const res = await axios.get(
             `${API_BASE}/banks/${bank._id}/transactions`,
-            {
-              withCredentials: true,
-            }
+            { withCredentials: true }
           );
           const txns = res.data || [];
           allTx = [
             ...allTx,
-            ...txns.map((t) => ({ ...t, bankID: bank._id })),
+            ...txns.map((t) => ({
+              ...t,
+              bankID: bank._id,
+              bankName: bank.bankName,
+            })),
           ];
         }
         setBankTransactions(allTx);
@@ -105,7 +114,10 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
   // or a backend-provided meta flag is present.
   const isReversalRow = (t) => {
     const desc = (t.description || "").toLowerCase();
-    return (t.meta && t.meta.kind === "reversal") || desc.startsWith("reversal of entry");
+    return (
+      (t.meta && t.meta.kind === "reversal") ||
+      desc.startsWith("reversal of entry")
+    );
   };
 
   // ===== CASH (existing) =====
@@ -128,9 +140,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
   const totalCashDeductsFromModule = useMemo(() => {
     return filteredCashTransactions.reduce(
       (sum, t) =>
-        isCashOutType(t.type)
-          ? sum + Math.abs(Number(t.balance) || 0)
-          : sum,
+        isCashOutType(t.type) ? sum + Math.abs(Number(t.balance) || 0) : sum,
       0
     );
   }, [filteredCashTransactions]);
@@ -153,53 +163,49 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
       .reduce((sum, e) => sum + Math.abs(Number(e.amount) || 0), 0);
   }, [expenses, reportType, selectedYear, selectedMonth]);
 
-  // Only actual expenses (from /expenses API), not sale reversals or other cash movements
+  // Only actual expenses (from /expenses API)
   const cashExpensesDisplay = useMemo(
     () => cashExpensesFromExpensesApi,
     [cashExpensesFromExpensesApi]
   );
 
- // ===== BANK (from /expenses only) =====
-// Build bank expenses strictly from the /expenses API,
-// counting only expenses with paymentMethod = online/cheque
-const bankExpensesFromExpensesApi = useMemo(() => {
-  return (expenses || [])
-    .filter((e) => {
-      const pm = (e.paymentMethod || "").toLowerCase();
-      return (pm === "online" || pm === "cheque") &&
-             isInSelectedPeriod(e.expenseDate || e.createdAt);
-    })
-    .map((e) => ({
-      bankID: e.bankID,                          // may be string or populated object
-      amount: Math.abs(Number(e.amount) || 0),   // backend stores negative
-    }));
-}, [expenses, reportType, selectedYear, selectedMonth]);
+  // ===== BANK (from /expenses only) =====
+  const bankExpensesFromExpensesApi = useMemo(() => {
+    return (expenses || [])
+      .filter((e) => {
+        const pm = (e.paymentMethod || "").toLowerCase();
+        return (
+          (pm === "online" || pm === "cheque") &&
+          isInSelectedPeriod(e.expenseDate || e.createdAt)
+        );
+      })
+      .map((e) => ({
+        bankID: e.bankID, // may be string or populated object
+        amount: Math.abs(Number(e.amount) || 0),
+      }));
+  }, [expenses, reportType, selectedYear, selectedMonth]);
 
-// Per-bank sum for the table column
-const bankExpenseMap = useMemo(() => {
-  const map = new Map();
-  for (const row of bankExpensesFromExpensesApi) {
-    const bid = typeof row.bankID === "object" ? row.bankID?._id : row.bankID;
-    if (!bid) continue;
-    map.set(bid, (map.get(bid) || 0) + row.amount);
-  }
-  return map;
-}, [bankExpensesFromExpensesApi]);
+  // Per-bank sum for the table column
+  const bankExpenseMap = useMemo(() => {
+    const map = new Map();
+    for (const row of bankExpensesFromExpensesApi) {
+      const bid = typeof row.bankID === "object" ? row.bankID?._id : row.bankID;
+      if (!bid) continue;
+      map.set(bid, (map.get(bid) || 0) + row.amount);
+    }
+    return map;
+  }, [bankExpensesFromExpensesApi]);
 
-// Total bank expenses (from /expenses only)
-const totalBankExpenses = useMemo(() => {
-  return bankExpensesFromExpensesApi.reduce((sum, r) => sum + r.amount, 0);
-}, [bankExpensesFromExpensesApi]);
-
-
- 
+  // Total bank expenses (from /expenses only)
+  const totalBankExpenses = useMemo(() => {
+    return bankExpensesFromExpensesApi.reduce((sum, r) => sum + r.amount, 0);
+  }, [bankExpensesFromExpensesApi]);
 
   const totalBankBalance = useMemo(() => {
     return (banks || []).reduce(
       (total, bank) => total + (Number(bank.balance) || 0),
       0
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [banks]);
 
   // ===== PROFIT & LOSS (NEW) =====
@@ -250,7 +256,10 @@ const totalBankExpenses = useMemo(() => {
           const d = new Date(row.period);
           if (reportType === "daily") return d.toISOString().slice(0, 10); // YYYY-MM-DD
           if (reportType === "monthly")
-            return d.toLocaleString("default", { month: "short", year: "numeric" });
+            return d.toLocaleString("default", {
+              month: "short",
+              year: "numeric",
+            });
           return `${d.getUTCFullYear()}`;
         },
       },
@@ -368,10 +377,189 @@ const totalBankExpenses = useMemo(() => {
     setSelectedEntry(null);
   };
 
+  // =========================
+  // PDF EXPORT HELPERS (NEW)
+  // =========================
+
+  // Title for PDFs based on current selectors
+  const titleForPeriod = useMemo(() => {
+    if (reportType === "daily") {
+      return `${new Date(selectedYear, selectedMonth - 1).toLocaleString(
+        "default",
+        { month: "long" }
+      )} ${selectedYear}`;
+    }
+    if (reportType === "monthly") {
+      return `${new Date(selectedYear, selectedMonth - 1).toLocaleString(
+        "default",
+        { month: "long" }
+      )} ${selectedYear}`;
+    }
+    return `${selectedYear}`;
+  }, [reportType, selectedYear, selectedMonth]);
+
+  // Robust helpers for PDFs
+  const PDF_CREDIT_TYPES = new Set(["add", "credit", "deposit"]);
+  const PDF_DEBIT_TYPES = new Set([
+    "subtract",
+    "deduct",
+    "debit",
+    "withdraw",
+    "expense",
+  ]);
+  const toNum = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const pickWhen = (tx) => tx?.createdAt || tx?.date || tx?._displayDate || null;
+
+  // Safely pick the numeric amount from diverse shapes
+  const pickAmount = (tx) => {
+    if (tx?.amount != null) return toNum(tx.amount);
+    if (tx?.balance != null) return toNum(tx.balance);
+    if (tx?.debit != null || tx?.credit != null) {
+      const debit = toNum(tx.debit);
+      const credit = toNum(tx.credit);
+      return Math.max(debit, credit);
+    }
+    return 0;
+  };
+
+  // Build the best human description
+  const bestDescription = (tx, isBankTx) => {
+    const text =
+      tx?.description ?? tx?.note ?? tx?.remarks ?? tx?.reason ?? tx?.title;
+    if (text && String(text).trim().length > 0) return String(text);
+
+    const t = String(tx?.type || "").toLowerCase().trim();
+    const amt = Math.abs(pickAmount(tx)).toFixed(2);
+
+    if (isBankTx) {
+      if (PDF_CREDIT_TYPES.has(t)) return `Deposit Rs ${amt}`;
+      if (PDF_DEBIT_TYPES.has(t)) return `Withdrawal Rs ${amt}`;
+      return `Bank transaction Rs ${amt}`;
+    } else {
+      if (PDF_CREDIT_TYPES.has(t)) return `Cash received Rs ${amt}`;
+      if (PDF_DEBIT_TYPES.has(t)) return `Cash spent Rs ${amt}`;
+      return `Cash transaction Rs ${amt}`;
+    }
+  };
+
+  // Download chosen bank’s full ledger
+  const downloadBankPdf = () => {
+    if (!selectedBankIdForPdf) {
+      alert("Please select a bank first.");
+      return;
+    }
+    const bank = banks.find((b) => b._id === selectedBankIdForPdf);
+    if (!bank) return;
+
+    const tx = bankTransactions
+      .filter((t) => t.bankID === bank._id)
+      .sort((a, b) => new Date(pickWhen(a) || 0) - new Date(pickWhen(b) || 0));
+
+    const totalCredits = tx.reduce((sum, t) => {
+      const isCredit = PDF_CREDIT_TYPES.has(String(t.type).toLowerCase());
+      return sum + (isCredit ? Math.abs(pickAmount(t)) : 0);
+    }, 0);
+
+    const totalDebits = tx.reduce((sum, t) => {
+      const isDebit = PDF_DEBIT_TYPES.has(String(t.type).toLowerCase());
+      return sum + (isDebit ? Math.abs(pickAmount(t)) : 0);
+    }, 0);
+
+    const doc = new jsPDF();
+    doc.text(`Bank Ledger - ${bank.bankName}`, 14, 12);
+    doc.setFontSize(10);
+    doc.text(`Period: ${titleForPeriod}`, 14, 18);
+    doc.text(`Current Balance: ${Number(bank.balance || 0).toFixed(2)}`, 14, 24);
+    doc.text(
+      `Total Credits: ${totalCredits.toFixed(2)}   Total Debits: ${totalDebits.toFixed(2)}`,
+      14,
+      30
+    );
+
+    const head = [["Date", "Type", "Amount", "Description"]];
+    const body = tx.map((t) => [
+      pickWhen(t) ? new Date(pickWhen(t)).toLocaleString() : "-",
+      String(t.type || "-"),
+      Math.abs(pickAmount(t)).toFixed(2),
+      bestDescription(t, true),
+    ]);
+
+    autoTable(doc, {
+      head,
+      body,
+      startY: 36,
+      styles: { fontSize: 9, cellPadding: 2 },
+      headStyles: { fillColor: [33, 150, 243] },
+    });
+
+    doc.save(`Bank_${bank.bankName}_Ledger_${titleForPeriod}.pdf`);
+  };
+
+  // Download cash ledger (current filtered list)
+  const downloadCashPdf = () => {
+    const tx = [...filteredCashTransactions].sort(
+      (a, b) => new Date(pickWhen(a) || 0) - new Date(pickWhen(b) || 0)
+    );
+
+    const doc = new jsPDF();
+    doc.text(`Cash Ledger`, 14, 12);
+    doc.setFontSize(10);
+    doc.text(`Period: ${titleForPeriod}`, 14, 18);
+    doc.text(
+      `Current Cash Balance: ${Number(availableCashBalance || 0).toFixed(2)}`,
+      14,
+      24
+    );
+
+    const head = [["Date", "Type", "Amount", "Description"]];
+    const body = tx.map((t) => [
+      pickWhen(t) ? new Date(pickWhen(t)).toLocaleString() : "-",
+      String(t.type || "-"),
+      Math.abs(pickAmount(t)).toFixed(2),
+      bestDescription(t, false),
+    ]);
+
+    autoTable(doc, {
+      head,
+      body,
+      startY: 30,
+      styles: { fontSize: 9, cellPadding: 2 },
+      headStyles: { fillColor: [76, 175, 80] },
+    });
+
+    doc.save(`Cash_Ledger_${titleForPeriod}.pdf`);
+  };
+
   return (
     <Box
       sx={{ margin: 3, bgcolor: "white", borderRadius: 2, padding: 3, width: "auto" }}
     >
+      {/* ===== PDF Export controls ===== */}
+      <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }}>
+        <FormControl size="small" sx={{ minWidth: 220 }}>
+          <InputLabel>Select Bank for PDF</InputLabel>
+          <Select
+            label="Select Bank for PDF"
+            value={selectedBankIdForPdf}
+            onChange={(e) => setSelectedBankIdForPdf(e.target.value)}
+          >
+            {banks.map((b) => (
+              <MenuItem key={b._id} value={b._id}>
+                {b.bankName}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        <Button variant="contained" onClick={downloadBankPdf}>
+          Download Bank PDF
+        </Button>
+
+        <Button variant="outlined" onClick={downloadCashPdf}>
+          Download Cash PDF
+        </Button>
+      </Stack>
+
       {/* ===== Report selectors ===== */}
       <Box
         display="flex"
@@ -485,9 +673,7 @@ const totalBankExpenses = useMemo(() => {
             </Box>
             <Box>
               <Typography variant="subtitle2">Gross Profit</Typography>
-              <Typography variant="h6">
-                {plTotals.grossProfit.toFixed(2)}
-              </Typography>
+              <Typography variant="h6">{plTotals.grossProfit.toFixed(2)}</Typography>
             </Box>
             <Box>
               <Typography variant="subtitle2">Net Profit</Typography>
@@ -600,7 +786,7 @@ const totalBankExpenses = useMemo(() => {
           onClose={closeModals}
           entry={selectedEntry}
           entryType="bank"
-           onChanged={refreshBanks} 
+          onChanged={refreshBanks}
         />
       )}
 

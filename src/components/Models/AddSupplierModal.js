@@ -1,12 +1,17 @@
 import React, { useState, useEffect } from "react";
 import { Modal, Box, TextField, Button, Typography } from "@mui/material";
 import { useDispatch, useSelector } from "react-redux";
-import { createSupplier, reset } from "../../redux/features/supplier/supplierSlice";
-import { toast } from 'react-toastify';
+import {
+  createSupplier,
+  reset
+} from "../../redux/features/supplier/supplierSlice";
+import { toast } from "react-toastify";
 
 const AddSupplierModal = ({ open, onClose, onSuccess }) => {
   const dispatch = useDispatch();
-  const { isLoading, isError, isSuccess, message } = useSelector((state) => state.supplier);
+  const { isLoading, isError, isSuccess, message } = useSelector(
+    state => state.supplier
+  );
 
   const [username, setUsername] = useState("");
   // const [email, setEmail] = useState("");
@@ -18,25 +23,28 @@ const AddSupplierModal = ({ open, onClose, onSuccess }) => {
       username,
       // email,
       // password,
-      phone,
+      phone
     };
 
     dispatch(createSupplier(supplierData)); // Dispatch the createSupplier action
   };
 
   // Side effects handled in useEffect
-  useEffect(() => {
-    if (isSuccess) {
-      toast.success("Supplier added successfully");
-      onSuccess();  // Trigger the onSuccess callback passed from parent
-      onClose();    // Close modal
-      dispatch(reset());  // Reset the supplier state after success
-    }
+  useEffect(
+    () => {
+      if (isSuccess) {
+        toast.success("Supplier added successfully");
+        onSuccess(); // Trigger the onSuccess callback passed from parent
+        onClose(); // Close modal
+        dispatch(reset()); // Reset the supplier state after success
+      }
 
-    if (isError) {
-      toast.error(message);  // Display error message
-    }
-  }, [isSuccess, isError, message, onClose, onSuccess, dispatch]);
+      if (isError) {
+        toast.error(message); // Display error message
+      }
+    },
+    [isSuccess, isError, message, onClose, onSuccess, dispatch]
+  );
 
   return (
     <Modal open={open} onClose={onClose}>
@@ -50,7 +58,7 @@ const AddSupplierModal = ({ open, onClose, onSuccess }) => {
           bgcolor: "background.paper",
           boxShadow: 24,
           p: 4,
-          borderRadius: 2,
+          borderRadius: 2
         }}
       >
         <Typography variant="h6" gutterBottom>
@@ -61,7 +69,7 @@ const AddSupplierModal = ({ open, onClose, onSuccess }) => {
           fullWidth
           margin="normal"
           value={username}
-          onChange={(e) => setUsername(e.target.value)}
+          onChange={e => setUsername(e.target.value)}
         />
         {/* <TextField
           label="Email"
@@ -84,14 +92,14 @@ const AddSupplierModal = ({ open, onClose, onSuccess }) => {
           fullWidth
           margin="normal"
           value={phone}
-          onChange={(e) => setPhone(e.target.value)}
+          onChange={e => setPhone(e.target.value)}
         />
         <Button
           variant="contained"
           color="primary"
           onClick={handleSubmit}
           fullWidth
-          disabled={isLoading}  // Disable the button when loading
+          disabled={isLoading} // Disable the button when loading
         >
           {isLoading ? "Adding Supplier..." : "Add Supplier"}
         </Button>
