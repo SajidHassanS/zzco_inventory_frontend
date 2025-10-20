@@ -8,8 +8,8 @@ import {
   Typography,
   Grid,
 } from "@mui/material";
-import { useSelector, useDispatch } from 'react-redux';
-import axios from 'axios';
+import { useSelector, useDispatch } from "react-redux";
+import axios from "axios";
 import { getBanks } from "../../redux/features/Bank/bankSlice";
 import { toast } from "react-toastify";
 
@@ -23,10 +23,10 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
   const [imagePreview, setImagePreview] = useState("");
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
-  
+
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
- 
   const API_URL = `${BACKEND_URL}api/customers`;
+
   const dispatch = useDispatch();
   const banks = useSelector((state) => state.bank.banks);
 
@@ -35,7 +35,7 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
   }, [dispatch]);
 
   const validateForm = () => {
-    let formErrors = {};
+    const formErrors = {};
 
     if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
       formErrors.amount = "Please provide a valid amount greater than 0";
@@ -57,77 +57,78 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
     return Object.keys(formErrors).length === 0;
   };
 
+  const capitalizeFirstLetter = (s) =>
+    s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s;
+
   const handleSubmit = async (e) => {
-    e.preventDefault();
+  e.preventDefault();
+  if (!validateForm()) return;
 
-    if (!validateForm()) {
-      return;
-    }
+  setLoading(true);
 
-    setLoading(true);
+  try {
+    const amt = parseFloat(amount);
+    const method = String(paymentMethod).toLowerCase();
 
-    const capitalizeFirstLetter = (string) => {
-      return string.charAt(0).toUpperCase() + string.slice(1).toLowerCase();
+    // Build the base payload once
+    const base = {
+      amount: amt,
+      paymentMethod: method,            // keep it lowercase everywhere
+      description: (description || "").trim(),
+      ...(method === "online" ? { bankId: selectedBank } : {}),
+      ...(method === "cheque" ? { chequeDate } : {}),
     };
 
-    const formData = new FormData();
-    formData.append("amount", amount);
-    formData.append("paymentMethod", capitalizeFirstLetter(paymentMethod));
-    formData.append("description", description);
+    let resp;
 
-    if (paymentMethod === "online") {
-      formData.append("bankId", selectedBank);
-      formData.append("image", image);
-    }
+    if (image) {
+      // Send multipart ONLY if there's a file
+      const fd = new FormData();
+      Object.entries(base).forEach(([k, v]) => fd.append(k, v));
+      fd.append("image", image);
 
-    if (paymentMethod === "cheque") {
-      formData.append("chequeDate", chequeDate);
-      formData.append("image", image);
-    }
-
-    try {
-      const response = await axios.post(
+      resp = await axios.post(
         `${API_URL}/add-customer-balance/${customer._id}`,
-        formData,
-        {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-          withCredentials: true,
-        }
+        fd,
+        { withCredentials: true } // <-- DO NOT set Content-Type manually
       );
-      toast.success(response.data.message || 'Balance added successfully');
-
-      // Update cash API
-      await axios.post(`${BACKEND_URL}api/cash/add`, {
-        balance: parseFloat(amount),
-        type: "add", 
-        description: `Added balance for customer ${customer.username}`,
-      });
-
-      onClose();
-      onSuccess();
-    } catch (error) {
-      toast.error('Failed to add balance. Please try again.');
-    } finally {
-      setLoading(false);
+    } else {
+      // Otherwise send JSON
+      resp = await axios.post(
+        `${API_URL}/add-customer-balance/${customer._id}`,
+        base,
+        { withCredentials: true }
+      );
     }
-  };
+
+    // ✅ IMPORTANT: Do NOT also call /api/banks/... or /api/cash/... here.
+    // Your customer controller already updates bank/cash as needed.
+
+    toast.success(resp?.data?.message || "Balance added successfully");
+    onClose?.();
+    onSuccess?.();
+  } catch (err) {
+    console.error(err);
+    toast.error(
+      err?.response?.data?.message || "Failed to add balance. Please try again."
+    );
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error("File size must be less than 5MB");
-        return;
-      }
-      if (!['image/jpeg', 'image/png'].includes(file.type)) {
-        toast.error("Only JPEG and PNG files are allowed");
-        return;
-      }
-      setImage(file);
-      setImagePreview(URL.createObjectURL(file));
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      return toast.error("File size must be less than 5MB");
     }
+    if (!["image/jpeg", "image/png"].includes(file.type)) {
+      return toast.error("Only JPEG and PNG files are allowed");
+    }
+    setImage(file);
+    setImagePreview(URL.createObjectURL(file));
   };
 
   return (
@@ -160,6 +161,7 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           margin="normal"
           error={!!errors.amount}
           helperText={errors.amount}
+          inputProps={{ min: 0, step: "0.01" }}
         />
 
         <TextField
@@ -204,9 +206,7 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
             onChange={(e) => setChequeDate(e.target.value)}
             fullWidth
             margin="normal"
-            InputLabelProps={{
-              shrink: true,
-            }}
+            InputLabelProps={{ shrink: true }}
             error={!!errors.chequeDate}
             helperText={errors.chequeDate}
           />
@@ -225,7 +225,13 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
               error={!!errors.image}
               helperText={errors.image}
             />
-            {imagePreview && <img src={imagePreview} alt="Preview" style={{ width: '100%', maxHeight: '200px' }} />}
+            {imagePreview && (
+              <img
+                src={imagePreview}
+                alt="Preview"
+                style={{ width: "100%", maxHeight: 200, objectFit: "contain" }}
+              />
+            )}
           </Grid>
         )}
 
@@ -246,7 +252,7 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           fullWidth
           disabled={loading}
         >
-          {loading ? 'Processing...' : 'Add Balance'}
+          {loading ? "Processing..." : "Add Balance"}
         </Button>
       </Box>
     </Modal>

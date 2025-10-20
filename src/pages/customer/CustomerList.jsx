@@ -154,7 +154,7 @@ const CustomerList = ({ customers, refreshCustomers }) => {
         onSuccess={refreshCustomers}
       />
 
-      {/* Minus Balance Modal */}
+      {/* Minus Balance Modal */} 
       <MinusBalanceModal
         open={isMinusModalOpen}
         onClose={closeModals}
