@@ -1,12 +1,10 @@
-// All imports should be at the top of the file
 import React, { useState, useEffect } from "react";
 import { Modal, Box, TextField, Button, Typography, MenuItem, Grid } from "@mui/material";
-import axios from 'axios';
-import { useSelector, useDispatch } from 'react-redux';
+import axios from "axios";
+import { useSelector, useDispatch } from "react-redux";
 import { getBanks } from "../../redux/features/Bank/bankSlice";
 import { toast } from "react-toastify";
 
-// Your component function starts here
 const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
   const [amount, setAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
@@ -17,8 +15,8 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
   const [imagePreview, setImagePreview] = useState("");
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
- 
   const dispatch = useDispatch();
   const banks = useSelector((state) => state.bank.banks);
 
@@ -27,12 +25,13 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
   }, [dispatch]);
 
   const SUPPLIER_API_URL = `${BACKEND_URL}api/suppliers`;
-  const CASH_API_URL = `${BACKEND_URL}api/cash`; // API URL for cash
+  const CASH_API_URL = `${BACKEND_URL}api/cash`;
 
   const validateForm = () => {
-    let formErrors = {};
+    const formErrors = {};
 
-    if (!amount || parseFloat(amount) <= 0) {
+    const n = Number(amount);
+    if (!amount || !Number.isFinite(n) || n <= 0) {
       formErrors.amount = "Amount must be a positive number";
     }
     if (!paymentMethod) {
@@ -52,123 +51,138 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
     return Object.keys(formErrors).length === 0;
   };
 
-const handleSubmit = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-
     if (loading) return;
     setLoading(true);
 
-    // 🔐 Check supplier validity
-    if (!supplier || !supplier._id) {
-        toast.error("Supplier data is missing or invalid");
-        setLoading(false);
-        return;
+    if (!supplier?._id) {
+      toast.error("Supplier data is missing or invalid");
+      setLoading(false);
+      return;
     }
-
     if (!validateForm()) {
-        setLoading(false);
-        return;
+      setLoading(false);
+      return;
     }
 
-    const validAmount = parseFloat(amount);
-    if (isNaN(validAmount)) {
-        setErrors({ ...errors, amount: "Invalid amount" });
-        setLoading(false);
-        return;
+    const validAmount = Number(amount);
+    if (!Number.isFinite(validAmount)) {
+      setErrors((prev) => ({ ...prev, amount: "Invalid amount" }));
+      setLoading(false);
+      return;
     }
 
     const formData = new FormData();
     formData.append("amount", validAmount);
-    formData.append("paymentMethod", paymentMethod);
-    formData.append("description", description);
+    formData.append("paymentMethod", paymentMethod);     // controller normalizes case
+    formData.append("description", description?.trim() || "");
+    formData.append("desc", description?.trim() || "");  // safety: controller accepts desc too
+    // optional name (if you want it in productName)
+    formData.append("name", supplier?.username || "");
 
     if (paymentMethod === "online" || paymentMethod === "cheque") {
-        formData.append("bankId", selectedBank);
-        formData.append("image", image);
+      formData.append("bankId", selectedBank);
+      if (image) formData.append("image", image);
     }
-
     if (paymentMethod === "cheque") {
-        formData.append("chequeDate", chequeDate);
-        formData.append("status", "pending");
+      formData.append("chequeDate", chequeDate);
+      formData.append("status", "pending");
     }
 
     try {
-        const supplierRes = await axios.post(
-            `${SUPPLIER_API_URL}/${supplier._id}/transaction`,
-            formData,
-            { headers: { "Content-Type": "multipart/form-data" } }
+      // 1) Add supplier transaction with your dynamic description
+      const supplierRes = await axios.post(
+        `${SUPPLIER_API_URL}/${supplier._id}/transaction`,
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+
+      if (supplierRes.status !== 200 && supplierRes.status !== 201) {
+        throw new Error("Failed to add transaction to supplier");
+      }
+
+      toast.success(supplierRes.data.message || "Transaction added successfully");
+
+      // 2) Mirror it into the correct ledger with the SAME description
+      let deductionResponse;
+
+      if (paymentMethod === "cash") {
+        // cash: record as a deduct (money left you)
+        deductionResponse = await axios.post(
+          `${CASH_API_URL}/add`,
+          {
+            balance: validAmount,
+            type: "deduct",
+            description: description?.trim() || `Cash payment to supplier ${supplier.username}`,
+          },
+          { withCredentials: true }
         );
+      } else if (paymentMethod === "online") {
+        // bank: subtract from bank with same description
+        deductionResponse = await axios.post(
+          `${BACKEND_URL}api/banks/${selectedBank}/transaction`,
+          {
+            amount: validAmount,
+            type: "subtract",
+            description: description?.trim() || `Online payment to supplier ${supplier.username}`,
+          },
+          { withCredentials: true }
+        );
+      } else if (paymentMethod === "cheque") {
+        // cheque: do not deduct yet (pending)
+        toast.info("Cheque added as pending. It will be deducted once cleared.");
+      }
 
-        if (supplierRes.status === 200 || supplierRes.status === 201) {
-            toast.success(supplierRes.data.message || "Transaction added successfully");
-
-            let deductionResponse;
-
-           if (paymentMethod === "cash") {
-  // Deduct from cash immediately
-  deductionResponse = await axios.post(`${CASH_API_URL}/add`, {
-    balance: validAmount,
-    type: "deduct",
-    description: `Payment given to supplier ${supplier.username}`,
-  }, { withCredentials: true });
-} else if (paymentMethod === "online") {
-  // Deduct from bank immediately
-  deductionResponse = await axios.post(`${BACKEND_URL}api/banks/${selectedBank}/transaction`, {
-    amount: validAmount,
-    type: "subtract",
-    description: `Online payment for supplier ${supplier.username}`,
-  }, { withCredentials: true });
-} else if (paymentMethod === "cheque") {
-  // ✅ For cheques, no deduction yet — just show success
-  toast.info("Cheque added to pending cheques. It will be deducted once cashed.");
-}
-
-
-          if (
-  (paymentMethod === "cheque") || 
-  deductionResponse?.status === 200 || 
-  deductionResponse?.status === 201
-) {
-
-                toast.success("Payment deducted successfully");
-
-                const updatedSupplier = {
-                    ...supplier,
-                    balance: supplierRes.data.supplier.balance,
-                };
-
-                onSuccess(updatedSupplier);
-                onClose();
-            } else {
-                throw new Error("Failed to deduct payment from account");
-            }
-        } else {
-            throw new Error("Failed to add transaction to supplier");
+      if (
+        paymentMethod === "cheque" ||
+        deductionResponse?.status === 200 ||
+        deductionResponse?.status === 201
+      ) {
+        if (paymentMethod !== "cheque") {
+          toast.success("Payment recorded in ledger");
         }
+        // 3) Bubble new supplier balance up
+        const updatedSupplier = {
+          ...supplier,
+          balance: supplierRes?.data?.supplier?.balance ?? supplier.balance,
+        };
+        onSuccess?.(updatedSupplier);
+        onClose?.();
+
+        // reset form for next time
+        setAmount("");
+        setPaymentMethod("");
+        setChequeDate("");
+        setDescription("");
+        setSelectedBank("");
+        setImage(null);
+        setImagePreview("");
+        setErrors({});
+      } else {
+        throw new Error("Failed to record payment in ledger");
+      }
     } catch (error) {
-        toast.error(error.response?.data?.message || "Failed to add balance or cash");
+      toast.error(error?.response?.data?.message || "Failed to add balance or record payment");
     } finally {
-        setLoading(false);
+      setLoading(false);
     }
-};
-
-
-
+  };
 
   const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
-        toast.error("File size should be less than 5MB");
-        return;
-      }
-      if (!["image/jpeg", "image/png"].includes(file.type)) { // Only JPEG and PNG allowed
-        toast.error("Only JPEG and PNG files are allowed");
-        return;
-      }
-      setImage(file);
-      setImagePreview(URL.createObjectURL(file));
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("File size should be less than 5MB");
+      return;
     }
+    if (!["image/jpeg", "image/png"].includes(file.type)) {
+      toast.error("Only JPEG and PNG files are allowed");
+      return;
+    }
+    setImage(file);
+    setImagePreview(URL.createObjectURL(file));
   };
 
   return (
@@ -245,9 +259,7 @@ const handleSubmit = async (e) => {
             onChange={(e) => setChequeDate(e.target.value)}
             fullWidth
             margin="normal"
-            InputLabelProps={{
-              shrink: true,
-            }}
+            InputLabelProps={{ shrink: true }}
             error={!!errors.chequeDate}
             helperText={errors.chequeDate}
           />
@@ -266,7 +278,13 @@ const handleSubmit = async (e) => {
               error={!!errors.image}
               helperText={errors.image}
             />
-            {imagePreview && <img src={imagePreview} alt="Preview" style={{ width: '100%', maxHeight: '200px' }} />}
+            {imagePreview && (
+              <img
+                src={imagePreview}
+                alt="Preview"
+                style={{ width: "100%", maxHeight: "200px" }}
+              />
+            )}
           </Grid>
         )}
 
@@ -287,7 +305,7 @@ const handleSubmit = async (e) => {
           fullWidth
           disabled={loading}
         >
-          {loading ? 'Submitting...' : 'Add Balance'}
+          {loading ? "Submitting..." : "Add Balance"}
         </Button>
       </Box>
     </Modal>

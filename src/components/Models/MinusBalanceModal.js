@@ -4,45 +4,53 @@ import {
   Box,
   TextField,
   Button,
-  Typography, 
+  Typography,
   MenuItem,
-  Grid
+  Grid,
 } from "@mui/material";
-import axios from 'axios';
-import { useSelector, useDispatch } from 'react-redux';
+import axios from "axios";
+import { useSelector, useDispatch } from "react-redux";
 import { getBanks } from "../../redux/features/Bank/bankSlice";
 import { toast } from "react-toastify";
 
-// Function to capitalize the first letter
-const capitalizeFirstLetter = (string) => {
-  return string.charAt(0).toUpperCase() + string.slice(1).toLowerCase();
+// normalize base so we always have exactly one trailing slash
+const normBase = (raw) => {
+  if (!raw) return "";
+  return raw.endsWith("/") ? raw : `${raw}/`;
 };
 
 const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
   const [amount, setAmount] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState(""); // "cash" | "online" | "cheque"
   const [chequeDate, setChequeDate] = useState("");
   const [description, setDescription] = useState("");
   const [selectedBank, setSelectedBank] = useState("");
-  const [image, setImage] = useState(null); // State for the image
-  const [imagePreview, setImagePreview] = useState(""); // State for image preview
-  const [errors, setErrors] = useState({}); // State for validation errors
-  const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
- 
+  const [image, setImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState("");
+  const [errors, setErrors] = useState({});
+  const [loading, setLoading] = useState(false);
+
+  const RAW_BACKEND = process.env.REACT_APP_BACKEND_URL || "";
+  const BASE = normBase(RAW_BACKEND);
+  const API_URL = `${BASE}api/customers`;
+
   const dispatch = useDispatch();
   const banks = useSelector((state) => state.bank.banks);
 
   useEffect(() => {
-    dispatch(getBanks());
-  }, [dispatch]);
-
-  const API_URL = `${BACKEND_URL}api/customers`;
+    if (open) {
+      dispatch(getBanks());
+      setErrors({});
+      setLoading(false);
+    }
+  }, [dispatch, open]);
 
   const validateForm = () => {
-    let formErrors = {};
+    const formErrors = {};
 
-    if (!amount) {
-      formErrors.amount = "Amount is required";
+    const amt = Number(amount);
+    if (!amount || !Number.isFinite(amt) || amt <= 0) {
+      formErrors.amount = "Please provide a valid amount greater than 0";
     }
     if (!paymentMethod) {
       formErrors.paymentMethod = "Payment method is required";
@@ -53,70 +61,91 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
     if (paymentMethod === "cheque" && !chequeDate) {
       formErrors.chequeDate = "Cheque date is required for cheque payment";
     }
-
-    if (paymentMethod === "online" || paymentMethod === "cheque") {
-      if (!image) {
-        formErrors.image = "Image upload is required for online or cheque payment";
-      }
+    if ((paymentMethod === "online" || paymentMethod === "cheque") && !image) {
+      formErrors.image = "Image is required for online or cheque payment";
     }
 
     setErrors(formErrors);
-    return Object.keys(formErrors).length === 0; // Return true if no errors
+    return Object.keys(formErrors).length === 0;
   };
 
-  const handleSubmit = async () => {
-    if (!validateForm()) {
-      return; // Do not proceed if form is invalid
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!customer?._id) {
+      toast.error("Customer missing");
+      return;
     }
-  
-    const formData = new FormData();
-    formData.append("amount", parseFloat(amount));
-    formData.append("paymentMethod", capitalizeFirstLetter(paymentMethod));  // Capitalize the first letter
-    formData.append("description", description);
-    formData.append("type", "deduct"); // Explicitly add type as "deduct"
-  
-    if (paymentMethod === "online") {
-      formData.append("bankId", selectedBank);
-      formData.append("image", image); // Add image if selected
-    }
-  
-    if (paymentMethod === "cheque") {
-      formData.append("chequeDate", chequeDate);
-      formData.append("image", image); // Add image if selected
-    }
-  
+    if (!validateForm()) return;
+
+    setLoading(true);
+
     try {
-      const response = await axios.post(`${API_URL}/minus-customer-balance/${customer._id}`, formData);
-      toast.success(response.data.message || "Balance subtracted successfully");
-  
-      // Update cash API
-      await axios.post(`${BACKEND_URL}api/cash/add`, {
-        balance: -Math.abs(parseFloat(amount)), // Deducting amount from cash
-        type: "deduct", // Explicitly set the type as deduct here as well
-        description: `Subtracted balance for customer ${customer.username}`,
-      });
-  
-      onSuccess();
-      onClose();
-    } catch (error) {
-      toast.error("Failed to subtract balance. Please try again.");
+      const amt = parseFloat(amount);
+      const method = (paymentMethod || "").toLowerCase().trim();
+
+      const cleanDesc =
+        (description && description.trim()) ||
+        `Payout to ${customer?.username || customer?.name || "customer"}`;
+
+      const base = {
+        amount: amt,
+        paymentMethod: method, // "cash" | "online" | "cheque"
+        description: cleanDesc,
+        ...(method === "online" ? { bankId: selectedBank } : {}),
+        ...(method === "cheque" ? { chequeDate } : {}),
+      };
+
+      let resp;
+      if (image) {
+        const fd = new FormData();
+        Object.entries(base).forEach(([k, v]) => fd.append(k, v));
+        fd.append("image", image);
+
+        resp = await axios.post(
+          `${API_URL}/minus-customer-balance/${customer._id}`,
+          fd,
+          { withCredentials: true } // don't set content-type manually
+        );
+      } else {
+        resp = await axios.post(
+          `${API_URL}/minus-customer-balance/${customer._id}`,
+          base,
+          { withCredentials: true }
+        );
+      }
+
+      toast.success(resp?.data?.message || "Balance subtracted successfully");
+      onSuccess?.(resp?.data?.customer);
+      onClose?.();
+    } catch (err) {
+      console.error(err);
+      toast.error(
+        err?.response?.data?.message ||
+          "Failed to subtract balance. Please try again."
+      );
+    } finally {
+      setLoading(false);
     }
   };
-  
-  
-  
 
   const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setImage(file);
-      setImagePreview(URL.createObjectURL(file)); // Set image preview for display
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      return toast.error("File size must be less than 5MB");
     }
+    if (!["image/jpeg", "image/png"].includes(file.type)) {
+      return toast.error("Only JPEG and PNG files are allowed");
+    }
+    setImage(file);
+    setImagePreview(URL.createObjectURL(file));
   };
 
   return (
     <Modal open={open} onClose={onClose}>
       <Box
+        component="form"
+        onSubmit={handleSubmit}
         sx={{
           position: "absolute",
           top: "50%",
@@ -130,7 +159,7 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
         }}
       >
         <Typography variant="h6" gutterBottom>
-          Subtract Balance from {customer?.username}
+          Subtract Balance from {customer?.username || customer?.name}
         </Typography>
 
         <TextField
@@ -142,13 +171,14 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           margin="normal"
           error={!!errors.amount}
           helperText={errors.amount}
+          inputProps={{ min: 0, step: "0.01" }}
         />
 
         <TextField
           label="Payment Method"
           select
           value={paymentMethod}
-          onChange={(e) => setPaymentMethod(e.target.value)}
+          onChange={(e) => setPaymentMethod(e.target.value.toLowerCase())}
           fullWidth
           margin="normal"
           error={!!errors.paymentMethod}
@@ -170,11 +200,17 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
             error={!!errors.selectedBank}
             helperText={errors.selectedBank}
           >
-            {banks.map((bank) => (
-              <MenuItem key={bank._id} value={bank._id}>
-                {bank.bankName}
+            {banks?.length ? (
+              banks.map((bank) => (
+                <MenuItem key={bank._id} value={bank._id}>
+                  {bank.bankName}
+                </MenuItem>
+              ))
+            ) : (
+              <MenuItem value="" disabled>
+                No banks found
               </MenuItem>
-            ))}
+            )}
           </TextField>
         )}
 
@@ -186,9 +222,7 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
             onChange={(e) => setChequeDate(e.target.value)}
             fullWidth
             margin="normal"
-            InputLabelProps={{
-              shrink: true,
-            }}
+            InputLabelProps={{ shrink: true }}
             error={!!errors.chequeDate}
             helperText={errors.chequeDate}
           />
@@ -208,7 +242,11 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
               helperText={errors.image}
             />
             {imagePreview && (
-              <img src={imagePreview} alt="Preview" style={{ width: '100%', maxHeight: '200px' }} />
+              <img
+                src={imagePreview}
+                alt="Preview"
+                style={{ width: "100%", maxHeight: 200, objectFit: "contain" }}
+              />
             )}
           </Grid>
         )}
@@ -221,15 +259,17 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           margin="normal"
           multiline
           rows={2}
+          placeholder={`e.g. Payout to ${customer?.username || customer?.name || "customer"}`}
         />
 
         <Button
           variant="contained"
           color="primary"
-          onClick={handleSubmit}
+          type="submit"
           fullWidth
+          disabled={loading}
         >
-          Subtract Balance
+          {loading ? "Processing..." : "Subtract Balance"}
         </Button>
       </Box>
     </Modal>

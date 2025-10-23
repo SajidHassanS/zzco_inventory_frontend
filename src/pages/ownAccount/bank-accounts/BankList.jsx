@@ -41,7 +41,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
 
   const canDelete = useSelector(selectCanDelete);
 
-  // ===== Expenses & Bank transactions (existing) =====
+  // ===== Expenses & Bank transactions =====
   const [expenses, setExpenses] = useState([]);
   const [bankTransactions, setBankTransactions] = useState([]);
 
@@ -57,10 +57,11 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
             `${API_BASE}/banks/${bank._id}/transactions`,
             { withCredentials: true }
           );
-          const txns = res.data || [];
+          const txns = res.data || {};
+          const list = Array.isArray(txns) ? txns : txns.transactions || [];
           allTx = [
             ...allTx,
-            ...txns.map((t) => ({
+            ...list.map((t) => ({
               ...t,
               bankID: bank._id,
               bankName: bank.bankName,
@@ -92,7 +93,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     fetchExpenses();
   }, []);
 
-  // ===== helpers for date filters (align cash/bank lists with selectors) =====
+  // ===== helpers for date filters =====
   const isInSelectedPeriod = (isoDate) => {
     const d = new Date(isoDate);
     const y = d.getFullYear();
@@ -106,12 +107,27 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
   const isCashOutType = (type) => {
     const t = (type || "").toLowerCase();
     return (
-      t === "deduct" || t === "subtract" || t === "withdraw" || t === "expense"
+      t === "deduct" || t === "subtract" || t === "withdraw" || t === "expense" || t === "debit"
     );
   };
 
-  // Consider a row a "reversal" if description starts with "Reversal of entry"
-  // or a backend-provided meta flag is present.
+  // ===== robust pickers (for mixed shapes) =====
+  const toNum = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const pickWhen = (tx) => tx?.createdAt || tx?.date || tx?._displayDate || null;
+
+  // Safely pick the numeric amount from diverse shapes
+  const pickAmount = (tx) => {
+    if (tx?.amount != null) return toNum(tx.amount);   // <- backend customer flows use this
+    if (tx?.balance != null) return toNum(tx.balance); // <- older cash module used this
+    if (tx?.debit != null || tx?.credit != null) {
+      const debit = toNum(tx.debit);
+      const credit = toNum(tx.credit);
+      return Math.max(debit, credit);
+    }
+    return 0;
+  };
+
+  // reversal detector
   const isReversalRow = (t) => {
     const desc = (t.description || "").toLowerCase();
     return (
@@ -120,29 +136,31 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     );
   };
 
-  // ===== CASH (existing) =====
+  // ===== CASH (FIXED) =====
+  // Use new backend array (transactions). Fallback to allEntries if present.
+  const cashRowsRaw = useMemo(() => {
+    return (cash?.transactions || cash?.allEntries || []);
+  }, [cash]);
+
   const filteredCashTransactions = useMemo(() => {
-    return (cash?.allEntries || [])
-      .filter((t) => isInSelectedPeriod(t.createdAt || t.date))
+    return cashRowsRaw
+      .filter((t) => isInSelectedPeriod(pickWhen(t)))
       .filter((t) => !isReversalRow(t)); // hide reversal rows from the list
-  }, [cash, reportType, selectedYear, selectedMonth]);
+  }, [cashRowsRaw, reportType, selectedYear, selectedMonth]);
 
   const totalCashAdds = useMemo(() => {
-    return filteredCashTransactions.reduce(
-      (sum, t) =>
-        (t.type || "").toLowerCase() === "add"
-          ? sum + (Number(t.balance) || 0)
-          : sum,
-      0
-    );
+    return filteredCashTransactions.reduce((sum, t) => {
+      const ttype = String(t.type || "").toLowerCase();
+      const isCredit =
+        ttype === "add" || ttype === "credit" || ttype === "deposit";
+      return sum + (isCredit ? Math.abs(pickAmount(t)) : 0);
+    }, 0);
   }, [filteredCashTransactions]);
 
   const totalCashDeductsFromModule = useMemo(() => {
-    return filteredCashTransactions.reduce(
-      (sum, t) =>
-        isCashOutType(t.type) ? sum + Math.abs(Number(t.balance) || 0) : sum,
-      0
-    );
+    return filteredCashTransactions.reduce((sum, t) => {
+      return sum + (isCashOutType(t.type) ? Math.abs(pickAmount(t)) : 0);
+    }, 0);
   }, [filteredCashTransactions]);
 
   // Use server running total if present; otherwise fallback to local calc
@@ -163,7 +181,6 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
       .reduce((sum, e) => sum + Math.abs(Number(e.amount) || 0), 0);
   }, [expenses, reportType, selectedYear, selectedMonth]);
 
-  // Only actual expenses (from /expenses API)
   const cashExpensesDisplay = useMemo(
     () => cashExpensesFromExpensesApi,
     [cashExpensesFromExpensesApi]
@@ -185,7 +202,6 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
       }));
   }, [expenses, reportType, selectedYear, selectedMonth]);
 
-  // Per-bank sum for the table column
   const bankExpenseMap = useMemo(() => {
     const map = new Map();
     for (const row of bankExpensesFromExpensesApi) {
@@ -196,7 +212,6 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     return map;
   }, [bankExpensesFromExpensesApi]);
 
-  // Total bank expenses (from /expenses only)
   const totalBankExpenses = useMemo(() => {
     return bankExpensesFromExpensesApi.reduce((sum, r) => sum + r.amount, 0);
   }, [bankExpensesFromExpensesApi]);
@@ -208,10 +223,10 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     );
   }, [banks]);
 
-  // ===== PROFIT & LOSS (NEW) =====
+  // ===== PROFIT & LOSS (unchanged) =====
   const [plLoading, setPlLoading] = useState(false);
-  const [plRows, setPlRows] = useState([]); // [{ period, revenue, cogs, expenses, grossProfit, netProfit, qtySold, salesCount }]
-  const [plTotals, setPlTotals] = useState(null); // { revenue, cogs, expenses, grossProfit, netProfit }
+  const [plRows, setPlRows] = useState([]);
+  const [plTotals, setPlTotals] = useState(null);
 
   useEffect(() => {
     const fetchPL = async () => {
@@ -254,7 +269,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
             : "Year",
         renderCell: (row) => {
           const d = new Date(row.period);
-          if (reportType === "daily") return d.toISOString().slice(0, 10); // YYYY-MM-DD
+          if (reportType === "daily") return d.toISOString().slice(0, 10);
           if (reportType === "monthly")
             return d.toLocaleString("default", {
               month: "short",
@@ -297,7 +312,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     [reportType]
   );
 
-  // ===== tables (existing) =====
+  // ===== tables =====
   const bankColumns = [
     { field: "bankName", headerName: "Bank Name" },
     { field: "balance", headerName: "Balance", align: "right" },
@@ -318,9 +333,16 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
       field: "createdAt",
       headerName: "Date",
       valueGetter: (params) =>
-        new Date(params.row.createdAt).toISOString().slice(0, 10),
+        pickWhen(params.row)
+          ? new Date(pickWhen(params.row)).toISOString().slice(0, 10)
+          : "-",
     },
-    { field: "balance", headerName: "Amount", align: "right" },
+    {
+      field: "amountDisplay",
+      headerName: "Amount",
+      align: "right",
+      renderCell: (row) => Math.abs(pickAmount(row)).toFixed(2),
+    },
     {
       field: "type",
       headerName: "Type",
@@ -337,7 +359,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
             />
           );
         }
-        return t;
+        return t || "-";
       },
     },
     {
@@ -347,7 +369,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     },
   ];
 
-  // ===== modals (existing) =====
+  // ===== modals =====
   const handleOpenEditModal = (entry, type) => {
     setSelectedEntry(entry);
     setEntryType(type);
@@ -378,10 +400,9 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
   };
 
   // =========================
-  // PDF EXPORT HELPERS (NEW)
+  // PDF EXPORT HELPERS
   // =========================
 
-  // Title for PDFs based on current selectors
   const titleForPeriod = useMemo(() => {
     if (reportType === "daily") {
       return `${new Date(selectedYear, selectedMonth - 1).toLocaleString(
@@ -398,7 +419,6 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     return `${selectedYear}`;
   }, [reportType, selectedYear, selectedMonth]);
 
-  // Robust helpers for PDFs
   const PDF_CREDIT_TYPES = new Set(["add", "credit", "deposit"]);
   const PDF_DEBIT_TYPES = new Set([
     "subtract",
@@ -407,22 +427,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     "withdraw",
     "expense",
   ]);
-  const toNum = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
-  const pickWhen = (tx) => tx?.createdAt || tx?.date || tx?._displayDate || null;
 
-  // Safely pick the numeric amount from diverse shapes
-  const pickAmount = (tx) => {
-    if (tx?.amount != null) return toNum(tx.amount);
-    if (tx?.balance != null) return toNum(tx.balance);
-    if (tx?.debit != null || tx?.credit != null) {
-      const debit = toNum(tx.debit);
-      const credit = toNum(tx.credit);
-      return Math.max(debit, credit);
-    }
-    return 0;
-  };
-
-  // Build the best human description
   const bestDescription = (tx, isBankTx) => {
     const text =
       tx?.description ?? tx?.note ?? tx?.remarks ?? tx?.reason ?? tx?.title;
@@ -622,7 +627,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
         </FormControl>
       </Box>
 
-      {/* ===== Profit & Loss (NEW) ===== */}
+      {/* ===== Profit & Loss ===== */}
       <Box
         sx={{
           mt: 1,
@@ -692,7 +697,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
         )}
       </Box>
 
-      {/* ===== Banks list (existing) ===== */}
+      {/* ===== Banks list ===== */}
       <Typography variant="h3" align="center" sx={{ mt: 4 }}>
         Banks List
       </Typography>
@@ -705,7 +710,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
         cashtrue={false}
       />
 
-      {/* ===== Cash list (existing) ===== */}
+      {/* ===== Cash list (FIXED) ===== */}
       <Typography variant="h3" align="center" mt={3}>
         Cash List
       </Typography>
@@ -718,7 +723,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
         cashtrue={true}
       />
 
-      {/* ===== Summary row (existing) ===== */}
+      {/* ===== Summary row ===== */}
       <Box
         sx={{ mt: 4, display: "flex", justifyContent: "space-between", gap: 4 }}
       >
@@ -759,7 +764,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
         </Box>
       </Box>
 
-      {/* ===== Modals (existing) ===== */}
+      {/* ===== Modals ===== */}
       {isEditModalOpen && (
         <EditBankModal
           open={isEditModalOpen}

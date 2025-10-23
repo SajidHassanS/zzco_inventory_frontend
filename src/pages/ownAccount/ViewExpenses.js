@@ -69,12 +69,20 @@ const ViewExpenses = () => {
   const [runningBalance, setRunningBalance] = useState(0);
 
   // main table pagination
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(1); // 1-based local
   const [rowsPerPage, setRowsPerPage] = useState(ITEMS_PER_PAGE);
 
   // transfers table pagination
   const [tPage, setTPage] = useState(1);
   const [tRowsPerPage, setTRowsPerPage] = useState(ITEMS_PER_PAGE);
+
+  // cash table pagination
+  const [cPage, setCPage] = useState(1);
+  const [cRowsPerPage, setCRowsPerPage] = useState(ITEMS_PER_PAGE);
+
+  // bank table pagination
+  const [bPage, setBPage] = useState(1);
+  const [bRowsPerPage, setBRowsPerPage] = useState(ITEMS_PER_PAGE);
 
   // expense modal
   const [showExpenseModal, setShowExpenseModal] = useState(false);
@@ -106,7 +114,6 @@ const ViewExpenses = () => {
   }, [selectedDate]); // eslint-disable-line
 
   useEffect(() => {
-    // cash & bank lists (independent of daily book)
     fetchCash();
   }, [selectedDate]); // eslint-disable-line
 
@@ -178,23 +185,21 @@ const ViewExpenses = () => {
   };
 
   /* ------------------------------- fetch cash -------------------------------- */
- const fetchCash = async () => {
-  try {
-    const { data } = await axios.get(`${API_URL}/cash/all`, {
-      withCredentials: true,
-    });
+  const fetchCash = async () => {
+    try {
+      const { data } = await axios.get(`${API_URL}/cash/all`, {
+        withCredentials: true,
+      });
 
-    // Your controller getCurrentTotalBalance returns:
-    // { totalBalance, latestEntry, allEntries }
-    const totalBalance = Number(data?.totalBalance ?? 0);
-    const allEntries = Array.isArray(data?.allEntries) ? data.allEntries : [];
+      const totalBalance = Number(data?.totalBalance ?? 0);
+      const allEntries = Array.isArray(data?.allEntries) ? data.allEntries : [];
 
-    setCashData({ totalBalance, allEntries });
-  } catch (e) {
-    console.error("❌ Failed to fetch cash from /api/cash/all", e?.response?.data || e);
-    setCashData({ totalBalance: 0, allEntries: [] });
-  }
-};
+      setCashData({ totalBalance, allEntries });
+    } catch (e) {
+      console.error("❌ Failed to fetch cash from /api/cash/all", e?.response?.data || e);
+      setCashData({ totalBalance: 0, allEntries: [] });
+    }
+  };
 
   /* --------------------------- fetch bank transactions ----------------------- */
   const fetchBankTransactions = async () => {
@@ -210,7 +215,6 @@ const ViewExpenses = () => {
           { withCredentials: true }
         );
         const txns = Array.isArray(data) ? data : [];
-        // stash bank id/name for rendering
         all = all.concat(
           txns.map((t) => ({
             ...t,
@@ -379,7 +383,7 @@ const ViewExpenses = () => {
   /* -------------------------------- helpers --------------------------------- */
   const toLocalYMD = (d) => {
     const dt = new Date(d);
-    const yyyy = dt.getFullYear();
+       const yyyy = dt.getFullYear();
     const mm = String(dt.getMonth() + 1).padStart(2, "0");
     const dd = String(dt.getDate()).padStart(2, "0");
     return `${yyyy}-${mm}-${dd}`;
@@ -410,6 +414,8 @@ const ViewExpenses = () => {
     setFilteredEntries(withBalance);
     setPage(1);
     setTPage(1);
+    setCPage(1);
+    setBPage(1);
   };
 
   /* ------------------------------ main table cols --------------------------- */
@@ -453,7 +459,7 @@ const ViewExpenses = () => {
       field: "balance",
       headerName: "Running Balance",
       renderCell: (row) =>
-        Number.isFinite(row.balance) ? row.balance.toFixed(2) : "",
+        Number.isFinite(row.balance) ? Number(row.balance).toFixed(2) : "",
     },
     {
       field: "actions",
@@ -480,8 +486,11 @@ const ViewExpenses = () => {
     },
   ];
 
-  const rows = filteredEntries
-    .slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE)
+  // MAIN table rows (paged here)
+  const mainTotal = filteredEntries.length;
+  const mainStart = (page - 1) * rowsPerPage;
+  const mainRows = filteredEntries
+    .slice(mainStart, mainStart + rowsPerPage)
     .map((entry) => ({
       ...entry,
       key: `${entry.id}-${entry.date}-${entry.description}`,
@@ -516,44 +525,42 @@ const ViewExpenses = () => {
       }));
   }, [transfers, selectedDate]);
 
-  const tRowsPaged = tRowsForDay.slice(
-    (tPage - 1) * tRowsPerPage,
-    tPage * tRowsPerPage
-  );
+  const tTotal = tRowsForDay.length;
+  const tStart = (tPage - 1) * tRowsPerPage;
+  const tRowsPaged = tRowsForDay.slice(tStart, tStart + tRowsPerPage);
 
   /* ------------------------ CASH MOVEMENTS (this day) ----------------------- */
-// ✅ replace your cashRowsForDay useMemo with this more robust version
-const cashRowsForDay = useMemo(() => {
-  const day = selectedDate;
-  const asc = [...(cashData.allEntries || [])]
-    .map((c) => {
-      const when = c.effectiveDate || c.createdAt || c.date || c.updatedAt || Date.now();
-      return { ...c, _ts: new Date(when) };
-    })
-    .filter((c) => toLocalYMD(c._ts) === day)
-    .sort((a, b) => a._ts - b._ts); // oldest -> newest
+  const cashRowsForDay = useMemo(() => {
+    const day = selectedDate;
+    const asc = [...(cashData.allEntries || [])]
+      .map((c) => {
+        const when = c.effectiveDate || c.createdAt || c.date || c.updatedAt || Date.now();
+        return { ...c, _ts: new Date(when) };
+      })
+      .filter((c) => toLocalYMD(c._ts) === day)
+      .sort((a, b) => a._ts - b._ts); // oldest -> newest
 
-  let bal = 0;
-  const out = asc.map((c) => {
-    const type = toPM(c.type);
-    const amt = Math.abs(toNum(c.balance));
-    const credit = CREDIT_TYPES.has(type) ? amt : 0;
-    const debit  = DEBIT_TYPES.has(type) ? amt : 0;
-    bal += credit - debit;
+    let bal = 0;
+    const out = asc.map((c) => {
+      const type = toPM(c.type);
+      const amt = Math.abs(toNum(c.balance));
+      const credit = CREDIT_TYPES.has(type) ? amt : 0;
+      const debit  = DEBIT_TYPES.has(type) ? amt : 0;
+      bal += credit - debit;
 
-    return {
-      id: c._id,
-      date: c._ts,
-      type,
-      description: c.description || "-",
-      debit,
-      credit,
-      running: bal,
-    };
-  });
+      return {
+        id: c._id,
+        date: c._ts,
+        type,
+        description: c.description || "-",
+        debit,
+        credit,
+        running: bal,
+      };
+    });
 
-  return out.reverse(); // newest first in the table
-}, [cashData, selectedDate]);
+    return out.reverse(); // newest first in the table
+  }, [cashData, selectedDate]);
 
   const cashColumns = [
     { field: "date", headerName: "Date", renderCell: (r) => r.date.toLocaleString() },
@@ -563,25 +570,28 @@ const cashRowsForDay = useMemo(() => {
       field: "debit",
       headerName: "Debit",
       renderCell: (r) =>
-        r.debit ? <span style={{ color: "red" }}>{r.debit.toFixed(2)}</span> : "",
+        r.debit ? <span style={{ color: "red" }}>{Number(r.debit).toFixed(2)}</span> : "",
     },
     {
       field: "credit",
       headerName: "Credit",
       renderCell: (r) =>
-        r.credit ? <span style={{ color: "green" }}>{r.credit.toFixed(2)}</span> : "",
+        r.credit ? <span style={{ color: "green" }}>{Number(r.credit).toFixed(2)}</span> : "",
     },
     {
       field: "running",
       headerName: "Day Running",
-      renderCell: (r) => r.running?.toFixed(2),
+      renderCell: (r) => (Number.isFinite(r.running) ? Number(r.running).toFixed(2) : ""),
     },
   ];
+
+  const cTotal = cashRowsForDay.length;
+  const cStart = (cPage - 1) * cRowsPerPage;
+  const cashRowsPaged = cashRowsForDay.slice(cStart, cStart + cRowsPerPage);
 
   /* ---------------------- BANK TRANSACTIONS (this day) ---------------------- */
   const bankRowsForDay = useMemo(() => {
     const day = selectedDate;
-    // group by bank, but we show a flat list; compute day-running per bank
     const byBank = new Map();
     for (const tx of bankTxns) {
       const d = new Date(tx.date || tx.createdAt || 0);
@@ -593,7 +603,7 @@ const cashRowsForDay = useMemo(() => {
 
     const out = [];
     for (const [bankId, list] of byBank) {
-      list.sort((a, b) => a._date - b._date); // oldest->newest for running
+      list.sort((a, b) => a._date - b._date); // oldest -> newest
       let bal = 0;
       for (const t of list) {
         const ttype = toPM(t.type);
@@ -604,7 +614,9 @@ const cashRowsForDay = useMemo(() => {
         out.push({
           id: t._id,
           date: t._date,
-          bankName: t.bankName || (banks.find((b) => String(b._id) === String(bankId))?.bankName || "-"),
+          bankName:
+            t.bankName ||
+            (banks.find((b) => String(b._id) === String(bankId))?.bankName || "-"),
           type: t.type,
           description: t.description || "-",
           debit,
@@ -613,7 +625,6 @@ const cashRowsForDay = useMemo(() => {
         });
       }
     }
-    // newest first overall
     return out.sort((a, b) => b.date - a.date);
   }, [bankTxns, banks, selectedDate]);
 
@@ -626,9 +637,7 @@ const cashRowsForDay = useMemo(() => {
       renderCell: (row) => {
         const t = toPM(row.type);
         if (t.startsWith("reversal")) {
-          return (
-            <Chip size="small" label="Reversal" variant="outlined" sx={{ fontWeight: 600 }} />
-          );
+          return <Chip size="small" label="Reversal" variant="outlined" sx={{ fontWeight: 600 }} />;
         }
         return row.type;
       },
@@ -638,20 +647,24 @@ const cashRowsForDay = useMemo(() => {
       field: "debit",
       headerName: "Debit",
       renderCell: (r) =>
-        r.debit ? <span style={{ color: "red" }}>{r.debit.toFixed(2)}</span> : "",
+        r.debit ? <span style={{ color: "red" }}>{Number(r.debit).toFixed(2)}</span> : "",
     },
     {
       field: "credit",
       headerName: "Credit",
       renderCell: (r) =>
-        r.credit ? <span style={{ color: "green" }}>{r.credit.toFixed(2)}</span> : "",
+        r.credit ? <span style={{ color: "green" }}>{Number(r.credit).toFixed(2)}</span> : "",
     },
     {
       field: "running",
       headerName: "Bank Day Running",
-      renderCell: (r) => r.running?.toFixed(2),
+      renderCell: (r) => (Number.isFinite(r.running) ? Number(r.running).toFixed(2) : ""),
     },
   ];
+
+  const bTotal = bankRowsForDay.length;
+  const bStart = (bPage - 1) * bRowsPerPage;
+  const bankRowsPaged = bankRowsForDay.slice(bStart, bStart + bRowsPerPage);
 
   /* --------------------------------- render -------------------------------- */
   return (
@@ -677,7 +690,7 @@ const cashRowsForDay = useMemo(() => {
             Daily Book for {new Date(selectedDate).toDateString()}
           </Typography>
           <Typography variant="h6" gutterBottom>
-            Daily Balance (monetary only): {runningBalance.toFixed(2)}
+            Daily Balance (monetary only): {Number(runningBalance || 0).toFixed(2)}
           </Typography>
 
           {filteredEntries.length === 0 ? (
@@ -685,13 +698,18 @@ const cashRowsForDay = useMemo(() => {
           ) : (
             <CustomTable
               columns={columns}
-              data={rows}
-              page={page - 1}
+              data={mainRows}
+              count={mainTotal}
+              page={page - 1} // 0-based for MUI
               rowsPerPage={rowsPerPage}
+              rowsPerPageOptions={[10, 25, 50, 100]}
               onPageChange={(_e, newPage) => setPage(newPage + 1)}
-              onRowsPerPageChange={(e) => {
-                setRowsPerPage(parseInt(e.target.value, 10));
-                setPage(1);
+              onRowsPerPageChange={(arg) => {
+                const newValue = Number(typeof arg === "number" ? arg : arg?.target?.value);
+                if (Number.isFinite(newValue) && newValue > 0) {
+                  setRowsPerPage(newValue);
+                  setPage(1);
+                }
               }}
             />
           )}
@@ -711,12 +729,17 @@ const cashRowsForDay = useMemo(() => {
             <CustomTable
               columns={tColumns}
               data={tRowsPaged}
+              count={tTotal}
               page={tPage - 1}
               rowsPerPage={tRowsPerPage}
+              rowsPerPageOptions={[10, 25, 50, 100]}
               onPageChange={(_e, newPage) => setTPage(newPage + 1)}
-              onRowsPerPageChange={(e) => {
-                setTRowsPerPage(parseInt(e.target.value, 10));
-                setTPage(1);
+              onRowsPerPageChange={(arg) => {
+                const newValue = Number(typeof arg === "number" ? arg : arg?.target?.value);
+                if (Number.isFinite(newValue) && newValue > 0) {
+                  setTRowsPerPage(newValue);
+                  setTPage(1);
+                }
               }}
             />
           )}
@@ -733,14 +756,24 @@ const cashRowsForDay = useMemo(() => {
             Current Cash Total: {Number(cashData.totalBalance || 0).toFixed(2)}
           </Typography>
 
-          {cashRowsForDay.length === 0 ? (
+          {cTotal === 0 ? (
             <Typography variant="body1">No cash movements for the selected date.</Typography>
           ) : (
             <CustomTable
               columns={cashColumns}
-              data={cashRowsForDay}
-              page={0}
-              rowsPerPage={ITEMS_PER_PAGE}
+              data={cashRowsPaged}
+              count={cTotal}
+              page={cPage - 1}
+              rowsPerPage={cRowsPerPage}
+              rowsPerPageOptions={[10, 25, 50, 100]}
+              onPageChange={(_e, newPage) => setCPage(newPage + 1)}
+              onRowsPerPageChange={(arg) => {
+                const newValue = Number(typeof arg === "number" ? arg : arg?.target?.value);
+                if (Number.isFinite(newValue) && newValue > 0) {
+                  setCRowsPerPage(newValue);
+                  setCPage(1);
+                }
+              }}
             />
           )}
         </CardContent>
@@ -753,14 +786,24 @@ const cashRowsForDay = useMemo(() => {
             Bank Transactions ({new Date(selectedDate).toDateString()})
           </Typography>
 
-          {bankRowsForDay.length === 0 ? (
+          {bTotal === 0 ? (
             <Typography variant="body1">No bank transactions for the selected date.</Typography>
           ) : (
             <CustomTable
               columns={bankColumns}
-              data={bankRowsForDay}
-              page={0}
-              rowsPerPage={ITEMS_PER_PAGE}
+              data={bankRowsPaged}
+              count={bTotal}
+              page={bPage - 1}
+              rowsPerPage={bRowsPerPage}
+              rowsPerPageOptions={[10, 25, 50, 100]}
+              onPageChange={(_e, newPage) => setBPage(newPage + 1)}
+              onRowsPerPageChange={(arg) => {
+                const newValue = Number(typeof arg === "number" ? arg : arg?.target?.value);
+                if (Number.isFinite(newValue) && newValue > 0) {
+                  setBRowsPerPage(newValue);
+                  setBPage(1);
+                }
+              }}
             />
           )}
         </CardContent>

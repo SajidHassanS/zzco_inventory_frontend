@@ -80,11 +80,14 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
         return;
       }
 
+      const cleanDesc = (description || "").trim();
+
       // 1) Tell backend to subtract (this may push balance further negative)
       const formData = new FormData();
       formData.append("balance", numericAmount.toString());
       formData.append("paymentMethod", (paymentMethod || "").toLowerCase());
-      formData.append("description", description || "");
+      formData.append("description", cleanDesc);  // ✅ explicit dynamic text
+      formData.append("desc", cleanDesc);         // ✅ send alias too
       formData.append("bankId", selectedBank || "");
       formData.append("chequeDate", chequeDate || "");
       if (image) formData.append("image", image);
@@ -97,40 +100,49 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
 
       toast.success(supplierRes.data?.message || "Balance subtracted from supplier");
 
-      // 2) Since we received money, asset goes UP
+      // 2) Record in the correct ledger with the SAME description
       let ledgerRes;
 
       if (paymentMethod === "cash") {
+        // money received -> cash add
         ledgerRes = await axios.post(
           `${CASH_API_URL}/add`,
           {
             balance: numericAmount,
             type: "add",
-            description: `Payment received from supplier ${supplier.username}${
-              description ? ` - ${description}` : ""
-            }`,
+            description: cleanDesc || `Payment received from supplier ${supplier.username}`, // fallback
           },
           { withCredentials: true }
         );
       } else if (paymentMethod === "online") {
+        // money received -> bank add
         ledgerRes = await axios.post(
           `${BACKEND_URL}api/banks/${selectedBank}/transaction`,
           {
             amount: numericAmount,
             type: "add",
-            description: `Online payment received from supplier ${supplier.username}${
-              description ? ` - ${description}` : ""
-            }`,
+            description: cleanDesc || `Online payment received from supplier ${supplier.username}`, // fallback
           },
           { withCredentials: true }
         );
       } else if (paymentMethod === "cheque") {
+        // cheque stays pending – bank/cash will increase on clearance
         toast.info("Cheque recorded as pending. Cash/Bank will increase when the cheque is cleared.");
       }
 
       if (paymentMethod === "cheque" || ledgerRes?.status === 200 || ledgerRes?.status === 201) {
         onSuccess?.(supplierRes.data?.supplier || supplier);
         onClose?.();
+
+        // reset
+        setAmount("");
+        setPaymentMethod("");
+        setChequeDate("");
+        setDescription("");
+        setSelectedBank("");
+        setImage(null);
+        setImagePreview("");
+        setErrors({});
       } else {
         throw new Error("Failed to post Cash/Bank ledger entry");
       }

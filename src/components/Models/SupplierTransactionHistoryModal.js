@@ -9,8 +9,8 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
   const [transactions, setTransactions] = useState([]);
   const [totalBalance, setTotalBalance] = useState(0);
 
-  // 🔹 Local pagination state
-  const [page, setPage] = useState(0);            // 0-based
+  // Local pagination state
+  const [page, setPage] = useState(0); // 0-based
   const [rowsPerPage, setRowsPerPage] = useState(5);
 
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -31,13 +31,15 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
 
         // Build debit/credit + running balance
         let balance = 0;
-        const ledger = history.map((t) => {
+        const ledger = history.map((t, idx) => {
           const isDebit = String(t.type || "").toLowerCase() === "debit";
           const debit = isDebit ? Number(t.amount || 0) : 0;
           const credit = isDebit ? 0 : Number(t.amount || 0);
           balance += credit - debit;
 
           return {
+            // give each row a stable id for tables that need it
+            id: t._id || idx,
             ...t,
             debit,
             credit,
@@ -55,7 +57,7 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
     fetchTransactions();
   }, [open, supplier?._id, API_URL]);
 
-  // 🔹 Pagination handlers expected by CustomTable
+  // Pagination handlers expected by CustomTable
   const handlePageChange = (nextPage) => {
     setPage(Math.max(0, Number(nextPage) || 0));
   };
@@ -65,7 +67,7 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
     setPage(0);
   };
 
-  // PDF download
+  // PDF download (now includes Description + Qty)
   const downloadPDF = () => {
     const doc = new jsPDF();
     doc.text(`Ledger for ${supplier?.username || "-"}`, 14, 10);
@@ -73,16 +75,24 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
     const tableColumn = [
       "Date",
       "Product Name",
+      "Description",
+      "Qty",
       "Payment Type",
       "Debit",
       "Credit",
       "Cheque Date",
       "Running Balance",
     ];
+
     const tableRows = transactions.map((tr) => [
       tr.date ? new Date(tr.date).toLocaleDateString() : "-",
       tr.productName || "-",
-      tr.paymentMethod || "-",
+      tr.description || "-",                  // ✅ description in PDF
+      (tr.quantity ?? "") === "" ? "-" : tr.quantity, // ✅ quantity in PDF
+      tr.paymentMethod
+        ? String(tr.paymentMethod).charAt(0).toUpperCase() +
+          String(tr.paymentMethod).slice(1).toLowerCase()
+        : "-",
       (tr.debit ?? 0).toFixed(2),
       (tr.credit ?? 0).toFixed(2),
       tr.chequeDate ? new Date(tr.chequeDate).toLocaleDateString() : "-",
@@ -96,29 +106,59 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
     });
 
     const endY = doc.lastAutoTable?.finalY ?? 20;
-    doc.text(`Total Balance: ${Number(totalBalance || 0).toFixed(2)}`, 14, endY + 10);
-    doc.save(`Supplier_Transaction_History_${supplier?.username || "supplier"}.pdf`);
+    doc.text(
+      `Total Balance: ${Number(totalBalance || 0).toFixed(2)}`,
+      14,
+      endY + 10
+    );
+    doc.save(
+      `Supplier_Transaction_History_${supplier?.username || "supplier"}.pdf`
+    );
   };
 
-  // Columns for CustomTable
+  // Columns for CustomTable (now includes Description + Qty)
   const columns = useMemo(
     () => [
       {
         field: "date",
         headerName: "Date",
-        renderCell: (row) => (row.date ? new Date(row.date).toLocaleDateString() : "-"),
+        renderCell: (row) =>
+          row.date ? new Date(row.date).toLocaleDateString() : "-",
       },
       { field: "productName", headerName: "Product Name" },
-      { field: "paymentMethod", headerName: "Payment Type" },
+      { field: "description", headerName: "Description" }, // ✅ show dynamic description
+      {
+        field: "quantity",
+        headerName: "Qty", // ✅ show quantity if you sent it in the tx
+        renderCell: (row) =>
+          (row.quantity ?? "") === "" ? "-" : String(row.quantity),
+      },
+      {
+        field: "paymentMethod",
+        headerName: "Payment Type",
+        renderCell: (row) => {
+          const pm = String(row.paymentMethod || "");
+          if (!pm) return "-";
+          return pm.charAt(0).toUpperCase() + pm.slice(1).toLowerCase();
+        },
+      },
       {
         field: "debit",
         headerName: "Debit",
-        renderCell: (row) => <span style={{ color: "red" }}>{(row.debit ?? 0).toFixed(2)}</span>,
+        renderCell: (row) => (
+          <span style={{ color: "red" }}>
+            {(row.debit ?? 0).toFixed(2)}
+          </span>
+        ),
       },
       {
         field: "credit",
         headerName: "Credit",
-        renderCell: (row) => <span style={{ color: "green" }}>{(row.credit ?? 0).toFixed(2)}</span>,
+        renderCell: (row) => (
+          <span style={{ color: "green" }}>
+            {(row.credit ?? 0).toFixed(2)}
+          </span>
+        ),
       },
       {
         field: "chequeDate",
@@ -129,7 +169,9 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
       {
         field: "runningBalance",
         headerName: "Running Balance",
-        renderCell: (row) => <span>{(row.runningBalance ?? 0).toFixed(2)}</span>,
+        renderCell: (row) => (
+          <span>{(row.runningBalance ?? 0).toFixed(2)}</span>
+        ),
       },
     ],
     []
@@ -139,7 +181,7 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
     <Modal open={open} onClose={onClose}>
       <Box
         sx={{
-          width: 900,
+          width: 1000,
           p: 3,
           mx: "auto",
           mt: 5,
@@ -149,14 +191,15 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
           overflow: "auto",
         }}
       >
-        <Typography variant="h6">Ledger for {supplier?.username}</Typography>
+        <Typography variant="h6" sx={{ mb: 2 }}>
+          Ledger for {supplier?.username}
+        </Typography>
 
         <CustomTable
           columns={columns}
           data={transactions}
           page={page}
           rowsPerPage={rowsPerPage}
-          // ✅ Pass the callbacks so CustomTable can call them safely
           onPageChange={handlePageChange}
           onRowsPerPageChange={handleRowsPerPageChange}
         />
@@ -172,13 +215,21 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
         >
           <Typography
             variant="subtitle1"
-            sx={{ fontWeight: "bold", color: totalBalance >= 0 ? "green" : "red" }}
+            sx={{
+              fontWeight: "bold",
+              color: totalBalance >= 0 ? "green" : "red",
+            }}
           >
             Total Balance: {Number(totalBalance || 0).toFixed(2)}
           </Typography>
 
           <Box>
-            <Button variant="contained" color="secondary" onClick={downloadPDF} sx={{ mr: 2 }}>
+            <Button
+              variant="contained"
+              color="secondary"
+              onClick={downloadPDF}
+              sx={{ mr: 2 }}
+            >
               Download PDF
             </Button>
             <Button variant="contained" color="primary" onClick={onClose}>

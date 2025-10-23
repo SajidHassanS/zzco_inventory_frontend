@@ -13,31 +13,60 @@ import axios from "axios";
 import { getBanks } from "../../redux/features/Bank/bankSlice";
 import { toast } from "react-toastify";
 
+// normalize base so we always have exactly one trailing slash
+const normBase = (raw) => (raw ? (raw.endsWith("/") ? raw : `${raw}/`) : "");
+
+const initialState = {
+  amount: "",
+  paymentMethod: "",
+  chequeDate: "",
+  description: "",
+  selectedBank: "",
+  image: null,
+  imagePreview: "",
+};
+
 const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
-  const [amount, setAmount] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("");
-  const [chequeDate, setChequeDate] = useState("");
-  const [description, setDescription] = useState("");
-  const [selectedBank, setSelectedBank] = useState("");
-  const [image, setImage] = useState(null);
-  const [imagePreview, setImagePreview] = useState("");
+  const [amount, setAmount] = useState(initialState.amount);
+  const [paymentMethod, setPaymentMethod] = useState(initialState.paymentMethod); // "cash" | "online" | "cheque"
+  const [chequeDate, setChequeDate] = useState(initialState.chequeDate);
+  const [description, setDescription] = useState(initialState.description);
+  const [selectedBank, setSelectedBank] = useState(initialState.selectedBank);
+  const [image, setImage] = useState(initialState.image);
+  const [imagePreview, setImagePreview] = useState(initialState.imagePreview);
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
-  const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-  const API_URL = `${BACKEND_URL}api/customers`;
+  const RAW_BACKEND = process.env.REACT_APP_BACKEND_URL || "";
+  const BASE = normBase(RAW_BACKEND);
+  const API_URL = `${BASE}api/customers`;
 
   const dispatch = useDispatch();
   const banks = useSelector((state) => state.bank.banks);
 
   useEffect(() => {
-    dispatch(getBanks());
-  }, [dispatch]);
+    if (open) {
+      dispatch(getBanks());
+      setErrors({});
+      setLoading(false);
+    } else {
+      // reset on close
+      setAmount(initialState.amount);
+      setPaymentMethod(initialState.paymentMethod);
+      setChequeDate(initialState.chequeDate);
+      setDescription(initialState.description);
+      setSelectedBank(initialState.selectedBank);
+      setImage(initialState.image);
+      setImagePreview(initialState.imagePreview);
+      setErrors({});
+    }
+  }, [dispatch, open]);
 
   const validateForm = () => {
     const formErrors = {};
+    const amt = Number(amount);
 
-    if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
+    if (!amount || !Number.isFinite(amt) || amt <= 0) {
       formErrors.amount = "Please provide a valid amount greater than 0";
     }
     if (!paymentMethod) {
@@ -57,66 +86,65 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
     return Object.keys(formErrors).length === 0;
   };
 
-  const capitalizeFirstLetter = (s) =>
-    s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s;
-
   const handleSubmit = async (e) => {
-  e.preventDefault();
-  if (!validateForm()) return;
-
-  setLoading(true);
-
-  try {
-    const amt = parseFloat(amount);
-    const method = String(paymentMethod).toLowerCase();
-
-    // Build the base payload once
-    const base = {
-      amount: amt,
-      paymentMethod: method,            // keep it lowercase everywhere
-      description: (description || "").trim(),
-      ...(method === "online" ? { bankId: selectedBank } : {}),
-      ...(method === "cheque" ? { chequeDate } : {}),
-    };
-
-    let resp;
-
-    if (image) {
-      // Send multipart ONLY if there's a file
-      const fd = new FormData();
-      Object.entries(base).forEach(([k, v]) => fd.append(k, v));
-      fd.append("image", image);
-
-      resp = await axios.post(
-        `${API_URL}/add-customer-balance/${customer._id}`,
-        fd,
-        { withCredentials: true } // <-- DO NOT set Content-Type manually
-      );
-    } else {
-      // Otherwise send JSON
-      resp = await axios.post(
-        `${API_URL}/add-customer-balance/${customer._id}`,
-        base,
-        { withCredentials: true }
-      );
+    e.preventDefault();
+    if (!customer?._id) {
+      toast.error("Customer missing");
+      return;
     }
+    if (!validateForm()) return;
 
-    // ✅ IMPORTANT: Do NOT also call /api/banks/... or /api/cash/... here.
-    // Your customer controller already updates bank/cash as needed.
+    setLoading(true);
 
-    toast.success(resp?.data?.message || "Balance added successfully");
-    onClose?.();
-    onSuccess?.();
-  } catch (err) {
-    console.error(err);
-    toast.error(
-      err?.response?.data?.message || "Failed to add balance. Please try again."
-    );
-  } finally {
-    setLoading(false);
-  }
-};
+    try {
+      const amt = parseFloat(amount);
+      const method = (paymentMethod || "").toLowerCase().trim();
 
+      const cleanDesc =
+        (description && description.trim()) ||
+        `Payment received from ${customer?.username || customer?.name || "customer"}`;
+
+      // backend will auto-pick Cash doc; we do NOT send cashId
+      const base = {
+        amount: amt,
+        paymentMethod: method, // "cash" | "online" | "cheque"
+        description: cleanDesc,
+        ...(method === "online" ? { bankId: selectedBank } : {}),
+        ...(method === "cheque" ? { chequeDate } : {}),
+      };
+
+      let resp;
+      if (image) {
+        const fd = new FormData();
+        Object.entries(base).forEach(([k, v]) => fd.append(k, v));
+        fd.append("image", image);
+
+        resp = await axios.post(
+          `${API_URL}/add-customer-balance/${customer._id}`,
+          fd,
+          { withCredentials: true }
+        );
+      } else {
+        resp = await axios.post(
+          `${API_URL}/add-customer-balance/${customer._id}`,
+          base,
+          { withCredentials: true }
+        );
+      }
+
+      toast.success(resp?.data?.message || "Balance added successfully");
+      onSuccess?.(resp?.data?.customer);
+      onClose?.();
+    } catch (err) {
+      console.error(err);
+      toast.error(
+        err?.response?.data?.message ||
+          "Failed to add balance. Please try again."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleImageChange = (e) => {
     const file = e.target.files?.[0];
@@ -149,7 +177,7 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
         }}
       >
         <Typography variant="h6" gutterBottom>
-          Add Balance to {customer?.username}
+          Add Balance to {customer?.username || customer?.name}
         </Typography>
 
         <TextField
@@ -190,11 +218,17 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
             error={!!errors.selectedBank}
             helperText={errors.selectedBank}
           >
-            {banks.map((bank) => (
-              <MenuItem key={bank._id} value={bank._id}>
-                {bank.bankName}
+            {banks?.length ? (
+              banks.map((bank) => (
+                <MenuItem key={bank._id} value={bank._id}>
+                  {bank.bankName}
+                </MenuItem>
+              ))
+            ) : (
+              <MenuItem value="" disabled>
+                No banks found
               </MenuItem>
-            ))}
+            )}
           </TextField>
         )}
 
@@ -243,6 +277,7 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           margin="normal"
           multiline
           rows={2}
+          placeholder={`e.g. Payment received from ${customer?.username || customer?.name || "customer"}`}
         />
 
         <Button

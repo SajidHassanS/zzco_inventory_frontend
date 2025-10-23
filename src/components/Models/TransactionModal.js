@@ -8,7 +8,7 @@ import {
   TableCell,
   TableContainer,
   TableHead,
-  TableRow,  
+  TableRow,
   Button,
   CircularProgress,
   IconButton,
@@ -23,23 +23,35 @@ const DEBIT_TYPES  = new Set(['subtract', 'deduct', 'debit', 'withdraw', 'expens
 const toNum = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const pickDate = (tx) => new Date(tx?.date || tx?.createdAt || 0);
 
+// normalize base so we don't end up with double or missing slashes
+const normBase = (raw) => (raw ? (raw.endsWith('/') ? raw : `${raw}/`) : '');
+
 const TransactionHistoryModal = ({ open, onClose, entry, entryType, onChanged }) => {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [runningBalance, setRunningBalance] = useState(0);
   const [deletingId, setDeletingId] = useState(null);
 
-  const BACKEND_URL =
-    process.env.REACT_APP_BACKEND_URL || 'http://13.60.223.186:5000/';
+  const RAW_BASE = process.env.REACT_APP_BACKEND_URL || 'http://13.60.223.186:5000/';
+  const BASE = normBase(RAW_BASE);
 
   const isBank = entryType === 'bank';
 
+  // Prefer any non-empty trimmed text from common fields; only then fallback
   const getDescription = (tx, isBankTx) => {
-    if (tx?.description) return tx.description;
-    if (tx?.note) return tx.note;
-    if (tx?.remarks) return tx.remarks;
-    if (tx?.reason) return tx.reason;
-    if (tx?.title) return tx.title;
+    const desc = (
+      tx?.description ??
+      tx?.desc ??
+      tx?.details ??   // also check "details"
+      tx?.note ??
+      tx?.remarks ??
+      tx?.reason ??
+      tx?.title ??
+      tx?.narration ??
+      ''
+    ).toString().trim();
+
+    if (desc.length > 0) return desc;
 
     const t = String(tx?.type || '').toLowerCase();
     const amt = Math.abs(toNum(tx?.amount)).toFixed(2);
@@ -60,16 +72,16 @@ const TransactionHistoryModal = ({ open, onClose, entry, entryType, onChanged })
     setLoading(true);
     try {
       const apiPath = isBank
-        ? `api/banks/${entry._id}/transactions`
+        ? `api/banks/${entry._id}/transactions`   // embedded transactions in Bank model
         : `api/cash/${entry._id}/transactions`;
 
-      const { data } = await axios.get(`${BACKEND_URL}${apiPath}`, {
+      const { data } = await axios.get(`${BASE}${apiPath}`, {
         withCredentials: true,
       });
 
       const history = (Array.isArray(data) ? data : []).slice();
 
-      // Sort ascending by effective date for correct running balance
+      // oldest -> newest for running balance
       history.sort((a, b) => pickDate(a) - pickDate(b));
 
       let balance = 0;
@@ -81,10 +93,16 @@ const TransactionHistoryModal = ({ open, onClose, entry, entryType, onChanged })
 
         const credit = isCredit ? amtAbs : 0;
         const debit  = isDebit  ? amtAbs : 0;
-
         balance += credit - debit;
 
-        return { ...tx, debit, credit, runningBalance: balance, _displayDate: pickDate(tx) };
+        return {
+          ...tx,
+          debit,
+          credit,
+          runningBalance: balance,
+          _displayDate: pickDate(tx),
+          _displayDesc: getDescription(tx, isBank), // <-- computed once here
+        };
       });
 
       setTransactions(processed);
@@ -96,7 +114,7 @@ const TransactionHistoryModal = ({ open, onClose, entry, entryType, onChanged })
     } finally {
       setLoading(false);
     }
-  }, [BACKEND_URL, entry, isBank]);
+  }, [BASE, entry, isBank]);
 
   useEffect(() => {
     if (open) loadTransactions();
@@ -107,12 +125,11 @@ const TransactionHistoryModal = ({ open, onClose, entry, entryType, onChanged })
     if (!window.confirm('Delete this transaction permanently? Balance will be adjusted.')) return;
     try {
       setDeletingId(txId);
-      await axios.delete(
-        `${BACKEND_URL}api/banks/${entry._id}/transactions/${txId}`,
-        { withCredentials: true }
-      );
+      await axios.delete(`${BASE}api/banks/${entry._id}/transactions/${txId}`, {
+        withCredentials: true,
+      });
       await loadTransactions();
-      if (typeof onChanged === 'function') onChanged(); // let parent refresh bank list
+      if (typeof onChanged === 'function') onChanged();
     } catch (e) {
       console.error('Delete failed', e?.response?.data || e);
       alert(e?.response?.data?.message || 'Failed to delete transaction');
@@ -175,7 +192,7 @@ const TransactionHistoryModal = ({ open, onClose, entry, entryType, onChanged })
                 {transactions.length > 0 ? (
                   transactions.map((tx) => (
                     <TableRow key={tx._id}>
-                      <TableCell>{getDescription(tx, isBank)}</TableCell>
+                      <TableCell>{tx._displayDesc}</TableCell>
                       <TableCell>{tx.type}</TableCell>
                       <TableCell sx={{ color: 'red' }}>
                         {toNum(tx.debit).toFixed(2)}
