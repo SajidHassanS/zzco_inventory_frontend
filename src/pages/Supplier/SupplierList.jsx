@@ -1,5 +1,6 @@
-import React, { useState } from "react";
-import { Avatar, Box, Grid, IconButton } from "@mui/material";
+// src/pages/SupplierList.jsx
+import React, { useEffect, useMemo, useState } from "react";
+import { Avatar, Box, Grid, IconButton, Tooltip } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import { Add, Delete, History, Remove } from "@mui/icons-material";
 import { useSelector } from "react-redux";
@@ -9,51 +10,59 @@ import MinusSupplierBalanceModal from "../../components/Models/MinusSupplierBala
 import ConfirmDeleteModal from "../../components/Models/ConfirmDeleteModal";
 import SupplierTransactionHistoryModal from "../../components/Models/SupplierTransactionHistoryModal";
 
-const SupplierList = ({ suppliers, refreshSuppliers }) => {
+const currency = (v) =>
+  typeof v === "number" && !Number.isNaN(v) ? v.toFixed(2) : "0.00";
+
+const SupplierList = ({ suppliers = [], refreshSuppliers }) => {
   const [selectedSupplier, setSelectedSupplier] = useState(null);
+
+  // modals
   const [isAddModalOpen, setAddModalOpen] = useState(false);
   const [isMinusModalOpen, setMinusModalOpen] = useState(false);
   const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isHistoryModalOpen, setHistoryModalOpen] = useState(false);
+
+  // local copy so we can optimistically update after actions
   const [supplierList, setSupplierList] = useState(suppliers);
 
-  // Check if the user is admin from local storage
+  // keep local list in sync when parent passes fresh data (e.g., after reload)
+  useEffect(() => {
+    setSupplierList(suppliers);
+  }, [suppliers]);
+
+  // permissions
   const isAdmin = localStorage.getItem("userRole") === "Admin";
-  const canDeleteSupplier = useSelector(state =>
+  const canDeleteSupplier = useSelector((state) =>
     selectCanDelete(state, "deleteSupplier")
   );
+  const canDelete = isAdmin || !!canDeleteSupplier;
 
-  // Open respective modals
-  const openAddModal = supplier => {
-    if (!supplier || !supplier._id) {
-      console.error("Invalid supplier data");
-      return;
-    }
+  /* ------------------------------- modal openers ------------------------------ */
+  const openAddModal = (supplier) => {
+    if (!supplier || !supplier._id) return;
     setSelectedSupplier(supplier);
     setAddModalOpen(true);
   };
-
-  const openMinusModal = supplier => {
+  const openMinusModal = (supplier) => {
+    if (!supplier || !supplier._id) return;
     setSelectedSupplier(supplier);
     setMinusModalOpen(true);
   };
-
-  const openDeleteModal = supplier => {
-    if (!isAdmin && !canDeleteSupplier) {
+  const openDeleteModal = (supplier) => {
+    if (!canDelete) {
       alert("You do not have permission to delete this supplier.");
       return;
     }
     setSelectedSupplier(supplier);
     setDeleteModalOpen(true);
   };
-
-  const openHistoryModal = supplier => {
+  const openHistoryModal = (supplier) => {
+    if (!supplier || !supplier._id) return;
     setSelectedSupplier(supplier);
     setHistoryModalOpen(true);
   };
 
   const closeModals = () => {
-    // Close all open modals and reset selected supplier
     setAddModalOpen(false);
     setMinusModalOpen(false);
     setDeleteModalOpen(false);
@@ -61,102 +70,158 @@ const SupplierList = ({ suppliers, refreshSuppliers }) => {
     setSelectedSupplier(null);
   };
 
-  // Handle successful deletion
-  const handleDeleteSuccess = deletedSupplierId => {
-    // Update the supplier list by removing the deleted supplier
-    setSupplierList(
-      supplierList.filter(supplier => supplier._id !== deletedSupplierId)
+  /* ------------------------------- updaters ---------------------------------- */
+  // called by Add / Minus modals; pass the UPDATED supplier returned by API
+  const handleBalanceUpdate = (updatedSupplier) => {
+    if (!updatedSupplier || !updatedSupplier._id) return;
+
+    setSupplierList((prev) =>
+      prev.map((s) =>
+        s._id === updatedSupplier._id
+          ? {
+              ...s,
+              // keep everything the API just sent (balance, last desc, etc.)
+              ...updatedSupplier,
+              // fallback safety:
+              balance: Number(
+           updatedSupplier.balance ?? s.balance ?? 0
+        ),
+              latestTxnDescription:
+                updatedSupplier.latestTxnDescription ?? s.latestTxnDescription,
+            }
+          : s
+      )
     );
+
+    // if parent wants a hard refresh, allow it
+    if (typeof refreshSuppliers === "function") refreshSuppliers();
     closeModals();
   };
 
-  const handleBalanceUpdate = updatedSupplier => {
-    if (!updatedSupplier || !updatedSupplier._id) return;
-
-    // Ensure updatedBalance is properly set in the supplier data.
-    const updatedSupplierList = supplierList.map(
-      supplier =>
-        supplier._id === updatedSupplier._id
-          ? {
-              ...supplier,
-              balance: updatedSupplier.balance || supplier.balance
-            } // Fallback to previous balance if undefined
-          : supplier
-    );
-    setSupplierList(updatedSupplierList); // Update state with the modified supplier list
+  const handleDeleteSuccess = (deletedSupplierId) => {
+    setSupplierList((prev) => prev.filter((s) => s._id !== deletedSupplierId));
+    if (typeof refreshSuppliers === "function") refreshSuppliers();
+    closeModals();
   };
 
-  // Define columns for the DataGrid
-  const columns = [
-    {
-      field: "avatar",
-      headerName: "Avatar",
-      width: 100,
-      renderCell: params =>
-        <Avatar
-          src={params.value || "/default-avatar.png"}
-          alt={params.row.username}
-        />
-    },
-    { field: "_id", headerName: "ID", width: 220 },
-    { field: "username", headerName: "Username", width: 150 },
-    // { field: "email", headerName: "Email", width: 200 },
-    { field: "phone", headerName: "Phone", width: 120 },
-    {
-      field: "balance",
-      headerName: "Balance",
-      width: 120,
-      renderCell: params =>
-        <div>
-          {params.value !== undefined ? params.value : "0"}
-        </div> // Fallback to "0" if balance is undefined
-    },
-    {
-      field: "action",
-      headerName: "Action",
-      width: 180,
-      renderCell: params =>
-        <Grid container spacing={1}>
-          <Grid item>
-            <IconButton
-              color="primary"
-              onClick={() => openAddModal(params.row)}
-            >
-              <Add />
-            </IconButton>
+  /* -------------------------------- columns --------------------------------- */
+  // We assume your backend now returns:
+  // latestTxnDescription, totalPurchasedQty, totalInStockQty
+  const columns = useMemo(
+    () => [
+      {
+        field: "avatar",
+        headerName: "Avatar",
+        width: 80,
+        sortable: false,
+        filterable: false,
+        renderCell: (params) => (
+          <Avatar
+            src={params.value || "/default-avatar.png"}
+            alt={params.row.username}
+            sx={{ width: 34, height: 34 }}
+          />
+        ),
+      },
+      { field: "_id", headerName: "ID", width: 210 },
+      { field: "username", headerName: "Username", width: 160 },
+      { field: "phone", headerName: "Phone", width: 130 },
+      {
+        field: "balance",
+        headerName: "Balance",
+       minWidth: 90,
+  flex: 0.5,   
+     
+       valueGetter: (p) => Number(p.row?.balance ?? 0),
+ renderCell: (p) => <strong>{currency(Number(p.value))}</strong>,
+      },
+      {
+        field: "latestTxnDescription",
+        headerName: "Latest Description",
+       flex: 1.6,                 // give it the most, but not all
+   minWidth: 260,
+        renderCell: (params) => (
+          <Tooltip title={params.value || "—"} arrow>
+            <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {params.value || "—"}
+            </span>
+          </Tooltip>
+        ),
+      },
+     
+      {
+        field: "totalInStockQty",
+        headerName: "In Stock",
+      minWidth: 110,
+   flex: 0.6, 
+        valueGetter: (p) => Number(p.row?.totalInStockQty || 0),
+      },
+      {
+        field: "action",
+        headerName: "Action",
+     minWidth: 160,
+  flex: 0.7,   
+        sortable: false,
+        filterable: false,
+        renderCell: (params) => (
+          <Grid container spacing={1} wrap="nowrap">
+            <Grid item>
+              <Tooltip title="Add (credit)">
+                <IconButton color="primary" size="small" onClick={() => openAddModal(params.row)}>
+                  <Add fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Grid>
+            <Grid item>
+              <Tooltip title="Minus (debit)">
+                <IconButton color="secondary" size="small" onClick={() => openMinusModal(params.row)}>
+                  <Remove fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Grid>
+            <Grid item>
+              <Tooltip title={canDelete ? "Delete supplier" : "No permission"}>
+                <span>
+                  <IconButton
+                    color="error"
+                    size="small"
+                    onClick={() => openDeleteModal(params.row)}
+                    disabled={!canDelete}
+                  >
+                    <Delete fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            </Grid>
+            <Grid item>
+              <Tooltip title="Transaction history">
+                <IconButton color="info" size="small" onClick={() => openHistoryModal(params.row)}>
+                  <History fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Grid>
           </Grid>
-          <Grid item>
-            <IconButton
-              color="secondary"
-              onClick={() => openMinusModal(params.row)}
-            >
-              <Remove />
-            </IconButton>
-          </Grid>
-          <Grid item>
-            <IconButton
-              color="error"
-              onClick={() => openDeleteModal(params.row)}
-              disabled={!isAdmin && !canDeleteSupplier}
-            >
-              <Delete />
-            </IconButton>
-          </Grid>
-          <Grid item>
-            <IconButton
-              color="info"
-              onClick={() => openHistoryModal(params.row)}
-            >
-              <History />
-            </IconButton>
-          </Grid>
-        </Grid>
-    }
-  ];
+        ),
+      },
+    ],
+    [canDelete]
+  );
 
-  // Handle no suppliers case
-  if (!supplierList || supplierList.length === 0) {
-    return <div>No suppliers available</div>;
+  /* --------------------------------- render --------------------------------- */
+  if (!supplierList?.length) {
+    return (
+      <Box
+        sx={{
+          margin: 3,
+          bgcolor: "white",
+          borderRadius: 2,
+          padding: 3,
+          width: "auto",
+        }}
+      >
+        No suppliers available
+      </Box>
+    );
   }
 
   return (
@@ -166,58 +231,66 @@ const SupplierList = ({ suppliers, refreshSuppliers }) => {
         bgcolor: "white",
         borderRadius: 2,
         padding: 3,
-        width: "auto"
+        width: "auto",
       }}
     >
-      <DataGrid
-        sx={{ borderLeft: 0, borderRight: 0, borderRadius: 0 }}
-        rows={supplierList || []} // Ensure supplierList is at least an empty array
-        columns={columns}
-        getRowId={row => row._id || Math.random()} // Fallback for row._id
-        initialState={{
-          pagination: {
-            paginationModel: { page: 0, pageSize: 10 }
-          }
-        }}
-        pageSizeOptions={[15, 20, 30]}
-        rowSelection={false}
-      />
+   <DataGrid
+  sx={{ borderLeft: 0, borderRight: 0, borderRadius: 0 }}
+  rows={supplierList}
+  columns={columns}
+  getRowId={(row) => row._id}
+  autoHeight
+ density="compact"
+ rowHeight={44}
+  initialState={{
+    pagination: { paginationModel: { page: 0, pageSize: 10 } },
+    sorting: { sortModel: [{ field: "username", sort: "asc" }] },
+  }}
+  pageSizeOptions={[10, 15, 20, 30, 50, 100]}
+  disableRowSelectionOnClick
+/>
+
 
       {/* Add Balance Modal */}
-      {isAddModalOpen &&
+      {isAddModalOpen && selectedSupplier && (
         <AddSupplierBalanceModal
           open={isAddModalOpen}
           onClose={closeModals}
           supplier={selectedSupplier}
-          onSuccess={handleBalanceUpdate} // Update supplier list after adding balance
-        />}
+          // IMPORTANT: Have the modal call onSuccess(updatedSupplierFromAPI)
+          onSuccess={handleBalanceUpdate}
+        />
+      )}
 
       {/* Minus Balance Modal */}
-      {isMinusModalOpen &&
+      {isMinusModalOpen && selectedSupplier && (
         <MinusSupplierBalanceModal
           open={isMinusModalOpen}
           onClose={closeModals}
           supplier={selectedSupplier}
-          onSuccess={handleBalanceUpdate} // Update supplier list after subtracting balance
-        />}
+          onSuccess={handleBalanceUpdate}
+        />
+      )}
 
       {/* Confirm Delete Modal */}
-      {isDeleteModalOpen &&
+      {isDeleteModalOpen && selectedSupplier && (
         <ConfirmDeleteModal
           open={isDeleteModalOpen}
           onClose={closeModals}
           entry={selectedSupplier}
           entryType="supplier"
-          onSuccess={() => handleDeleteSuccess(selectedSupplier._id)} // Update UI after deletion
-        />}
+          onSuccess={() => handleDeleteSuccess(selectedSupplier._id)}
+        />
+      )}
 
       {/* Transaction History Modal */}
-      {isHistoryModalOpen &&
+      {isHistoryModalOpen && selectedSupplier && (
         <SupplierTransactionHistoryModal
           open={isHistoryModalOpen}
           onClose={closeModals}
           supplier={selectedSupplier}
-        />}
+        />
+      )}
     </Box>
   );
 };

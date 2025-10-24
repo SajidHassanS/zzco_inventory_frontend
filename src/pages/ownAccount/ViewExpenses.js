@@ -27,7 +27,14 @@ import { useDispatch, useSelector } from "react-redux";
 import { getBanks } from "../../redux/features/Bank/bankSlice";
 import axios from "axios";
 import CustomTable from "../../components/CustomTable/CustomTable";
-
+// utils (top of file)
+const toLocalYMD = (d = new Date()) => {
+  const dt = new Date(d);
+  const yyyy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
 const ITEMS_PER_PAGE = 10;
 
 const KIND_LABEL = {
@@ -61,10 +68,7 @@ const ViewExpenses = () => {
   const [cashData, setCashData] = useState({ totalBalance: 0, allEntries: [] });
   const [bankTxns, setBankTxns] = useState([]);
 
-  // UI-state
-  const [selectedDate, setSelectedDate] = useState(
-    new Date().toISOString().split("T")[0]
-  );
+const [selectedDate, setSelectedDate] = useState(toLocalYMD());
   const [filteredEntries, setFilteredEntries] = useState([]);
   const [runningBalance, setRunningBalance] = useState(0);
 
@@ -92,7 +96,7 @@ const ViewExpenses = () => {
     expenseName: "",
     amount: "",
     description: "",
-    expenseDate: new Date().toISOString().split("T")[0],
+   expenseDate: toLocalYMD(),
     paymentMethod: "",
     bankID: "",
     chequeDate: "",
@@ -103,6 +107,73 @@ const ViewExpenses = () => {
   const RAW = process.env.REACT_APP_BACKEND_URL || "";
   const BASE = RAW.endsWith("/") ? RAW : `${RAW}/`;
   const API_URL = `${BASE}api`;
+// state
+const [cashDescById, setCashDescById] = useState({});
+
+// helper: pick the best description from a transaction object
+const pickTxnDesc = (tx) => {
+  const fields = [
+    tx?.description, tx?.note, tx?.details, tx?.remark, tx?.narration,
+    tx?.meta?.description, tx?.source?.description, tx?.reference?.description,
+    tx?.related?.description, tx?.title, tx?.message, tx?.memo
+  ];
+  for (const v of fields) {
+    if (v !== undefined && v !== null) {
+      const s = String(v).trim();
+      if (s) return s;
+    }
+  }
+  return "-";
+};
+useEffect(() => {
+  const day = selectedDate;
+  // find entries that fall on this day
+  const todays = (cashData.allEntries || [])
+    .map(c => {
+      const when = c.effectiveDate || c.createdAt || c.date || c.updatedAt;
+      return when ? { id: c._id, _ts: new Date(when) } : null;
+    })
+    .filter(Boolean)
+    .filter(c => toLocalYMD(c._ts) === day);
+
+  if (!todays.length) {
+    setCashDescById({});
+    return;
+  }
+
+  let cancelled = false;
+
+  (async () => {
+    try {
+      const results = await Promise.all(
+        todays.map(t =>
+          axios
+            .get(`${API_URL}/cash/${t.id}/transactions`, { withCredentials: true })
+            .then(({ data }) => ({ id: t.id, txns: Array.isArray(data) ? data : [] }))
+            .catch(() => ({ id: t.id, txns: [] }))
+        )
+      );
+
+      const map = {};
+      for (const { id, txns } of results) {
+        // keep only txns whose date is the selected day
+        const sameDay = txns
+          .map(tx => ({ ...tx, _d: new Date(tx.date || tx.createdAt || 0) }))
+          .filter(tx => toLocalYMD(tx._d) === day)
+          .sort((a, b) => b._d - a._d); // newest first
+
+        if (sameDay.length) {
+          map[id] = pickTxnDesc(sameDay[0]); // latest txn’s description for that cash entry
+        }
+      }
+      if (!cancelled) setCashDescById(map);
+    } catch (e) {
+      if (!cancelled) setCashDescById({});
+    }
+  })();
+
+  return () => { cancelled = true; };
+}, [API_URL, cashData.allEntries, selectedDate]);
 
   /* -------------------------------- effects -------------------------------- */
   useEffect(() => {
@@ -183,23 +254,52 @@ const ViewExpenses = () => {
       setEntries([]);
     }
   };
+const getCashDescription = (c) => {
+  // try the cached txn description first
+  const descFromTx = cashDescById[c._id];
+  if (descFromTx) return descFromTx;
+
+  // fallbacks if your cash doc itself has something
+  const fields = [
+    c?.description, c?.note, c?.details, c?.remark, c?.narration,
+    c?.meta?.description, c?.source?.description, c?.reference?.description,
+    c?.related?.description, c?.productName, c?.title, c?.message, c?.memo
+  ];
+  for (const v of fields) {
+    if (v !== undefined && v !== null) {
+      const s = String(v).trim();
+      if (s) return s;
+    }
+  }
+  return "-";
+};
+
+
 
   /* ------------------------------- fetch cash -------------------------------- */
-  const fetchCash = async () => {
-    try {
-      const { data } = await axios.get(`${API_URL}/cash/all`, {
-        withCredentials: true,
-      });
+const fetchCash = async () => {
+  try {
+    const { data } = await axios.get(`${API_URL}/cash/all`, { withCredentials: true });
 
-      const totalBalance = Number(data?.totalBalance ?? 0);
-      const allEntries = Array.isArray(data?.allEntries) ? data.allEntries : [];
+    let totalBalance = 0;
+    let allEntries = [];
 
-      setCashData({ totalBalance, allEntries });
-    } catch (e) {
-      console.error("❌ Failed to fetch cash from /api/cash/all", e?.response?.data || e);
-      setCashData({ totalBalance: 0, allEntries: [] });
+    if (Array.isArray(data)) {
+      allEntries = data;
+      // If docs have "balance"/"amount", sum a safe numeric field for a total
+      totalBalance = data.reduce((sum, c) => sum + Number(c?.balance ?? 0), 0);
+    } else {
+      totalBalance = Number(data?.totalBalance ?? 0);
+      allEntries  = Array.isArray(data?.allEntries) ? data.allEntries : [];
     }
-  };
+
+    setCashData({ totalBalance, allEntries });
+  } catch (e) {
+    console.error("❌ Failed to fetch cash from /api/cash/all", e?.response?.data || e);
+    setCashData({ totalBalance: 0, allEntries: [] });
+  }
+};
+
 
   /* --------------------------- fetch bank transactions ----------------------- */
   const fetchBankTransactions = async () => {
@@ -241,7 +341,7 @@ const ViewExpenses = () => {
     if (name === "paymentMethod" && (value === "cash" || value === "credit")) {
       setExpense((prev) => ({
         ...prev,
-        expenseDate: new Date().toISOString().split("T")[0],
+        expenseDate: toLocalYMD(),
         chequeDate: "",
         bankID: "",
         image: null,
@@ -264,7 +364,7 @@ const ViewExpenses = () => {
       expenseName: "",
       amount: "",
       description: "",
-      expenseDate: new Date().toISOString().split("T")[0],
+  expenseDate: toLocalYMD(),
       paymentMethod: "",
       bankID: "",
       chequeDate: "",
@@ -314,7 +414,7 @@ const ViewExpenses = () => {
     fd.append("expenseName", name);
     fd.append("amount", String(amt));
     fd.append("description", desc);
-    fd.append("expenseDate", expense.expenseDate || new Date().toISOString().slice(0, 10));
+  fd.append("expenseDate", expense.expenseDate || toLocalYMD());
     fd.append("paymentMethod", method || "cash");
     if (isBank) fd.append("bankID", bankId);
     if (method === "cheque" && expense.chequeDate) fd.append("chequeDate", expense.chequeDate);
@@ -370,7 +470,7 @@ const ViewExpenses = () => {
         expenseName: "",
         amount: "",
         description: "",
-        expenseDate: new Date().toISOString().split("T")[0],
+       expenseDate: toLocalYMD(),
         paymentMethod: "",
         bankID: "",
         chequeDate: "",
@@ -381,13 +481,8 @@ const ViewExpenses = () => {
   };
 
   /* -------------------------------- helpers --------------------------------- */
-  const toLocalYMD = (d) => {
-    const dt = new Date(d);
-       const yyyy = dt.getFullYear();
-    const mm = String(dt.getMonth() + 1).padStart(2, "0");
-    const dd = String(dt.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
-  };
+
+
 
   // running balance only over monetary rows
   const calculateRunningBalance = (entriesList) => {
@@ -543,7 +638,7 @@ const ViewExpenses = () => {
     let bal = 0;
     const out = asc.map((c) => {
       const type = toPM(c.type);
-      const amt = Math.abs(toNum(c.balance));
+    const amt = Math.abs(toNum(c.amount ?? c.balance));
       const credit = CREDIT_TYPES.has(type) ? amt : 0;
       const debit  = DEBIT_TYPES.has(type) ? amt : 0;
       bal += credit - debit;
@@ -552,7 +647,8 @@ const ViewExpenses = () => {
         id: c._id,
         date: c._ts,
         type,
-        description: c.description || "-",
+      description: getCashDescription(c),
+
         debit,
         credit,
         running: bal,

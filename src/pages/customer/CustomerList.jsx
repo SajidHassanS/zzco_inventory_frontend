@@ -1,13 +1,50 @@
-import React, { useState } from "react";
+// src/pages/Customer/CustomerList.jsx
+import React, { useMemo, useState, useEffect } from "react";
 import { Avatar, Box, Grid, IconButton } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
 import { Add, Remove, Delete, History } from "@mui/icons-material";
 import { useSelector } from "react-redux";
-import { selectCanDelete } from "../../redux/features/auth/authSlice"; // Import the privilege selector
+import { selectCanDelete } from "../../redux/features/auth/authSlice";
 import AddBalanceModal from "../../components/Models/AddBalanceModal";
 import MinusBalanceModal from "../../components/Models/MinusBalanceModal";
 import DeleteCustomerModal from "../../components/Models/DeleteCustomerModal";
 import TransactionHistoryModal from "../../components/Models/TransactionHistoryModal";
+
+/* ---------- helpers ---------- */
+const toNum = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+/** Convert possible Mongoose document into a plain JSON object */
+const toPlain = (c) => {
+  if (!c) return c;
+  if (typeof c.toObject === "function") return c.toObject();
+  try {
+    return JSON.parse(JSON.stringify(c));
+  } catch {
+    return c;
+  }
+};
+
+/** Fallback parser for descriptions like: "Sale: 10 x house @ 200 = 2000" */
+const parseQtyFromDesc = (desc) => {
+  const m = String(desc || "").match(/(\d+)\s*[x×]\s/i);
+  return m ? Number(m[1]) : 0;
+};
+
+/** Sum quantities from a customer's transactionHistory (credit rows only) */
+const getTotalQtySold = (txs) => {
+  if (!Array.isArray(txs)) return 0;
+  return txs.reduce((sum, t) => {
+    const isCredit = String(t?.type || "").toLowerCase() === "credit";
+    if (!isCredit) return sum;
+
+    // prefer explicit field; fallback to parsing description (for legacy rows)
+    const qty = toNum(t?.quantity) || parseQtyFromDesc(t?.description);
+    return sum + (qty > 0 ? qty : 0);
+  }, 0);
+};
 
 const CustomerList = ({ customers, refreshCustomers }) => {
   const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -20,24 +57,22 @@ const CustomerList = ({ customers, refreshCustomers }) => {
   const userRole = localStorage.getItem("userRole");
 
   // Unconditionally retrieve delete permission
-  const hasDeletePermission = useSelector(state =>
+  const hasDeletePermission = useSelector((state) =>
     selectCanDelete(state, "deleteCustomer")
   );
 
   // Determine if the delete action should be enabled
   const canDeleteCustomer = userRole === "Admin" || hasDeletePermission;
 
-  const openAddModal = customer => {
+  const openAddModal = (customer) => {
     setSelectedCustomer(customer);
     setAddModalOpen(true);
   };
-
-  const openMinusModal = customer => {
+  const openMinusModal = (customer) => {
     setSelectedCustomer(customer);
     setMinusModalOpen(true);
   };
-
-  const openDeleteModal = customer => {
+  const openDeleteModal = (customer) => {
     if (!canDeleteCustomer) {
       alert("You do not have permission to delete this customer.");
       return;
@@ -45,12 +80,10 @@ const CustomerList = ({ customers, refreshCustomers }) => {
     setSelectedCustomer(customer);
     setDeleteModalOpen(true);
   };
-
-  const openHistoryModal = customer => {
+  const openHistoryModal = (customer) => {
     setSelectedCustomer(customer);
     setHistoryModalOpen(true);
   };
-
   const closeModals = () => {
     setAddModalOpen(false);
     setMinusModalOpen(false);
@@ -59,41 +92,74 @@ const CustomerList = ({ customers, refreshCustomers }) => {
     setSelectedCustomer(null);
   };
 
+  // Optional: quick sanity log to verify data shape
+  useEffect(() => {
+    if (customers?.length) {
+      const first = toPlain(customers[0]);
+      // console.log("First customer (plain):", first);
+      // console.log("Tx history:", first?.transactionHistory);
+    }
+  }, [customers]);
+
+  // augment rows with a derived qtySold field (normalize to plain objects first)
+  const rows = useMemo(
+    () =>
+      (customers || []).map((c) => {
+        const p = toPlain(c);
+        return {
+          ...p,
+          qtySold: getTotalQtySold(p?.transactionHistory),
+        };
+      }),
+    [customers]
+  );
+
   const columns = [
     {
       field: "avatar",
       headerName: "Avatar",
-      width: 100,
-      renderCell: params =>
+      width: 90,
+      sortable: false,
+      renderCell: (params) => (
         <Avatar
           src={params.value || "/default-avatar.png"}
           alt={params.row.username}
         />
+      ),
     },
     { field: "_id", headerName: "ID", width: 220 },
-    { field: "username", headerName: "Username", width: 150 },
-
-    { field: "phone", headerName: "Phone", width: 120 },
-    { field: "balance", headerName: "Balance", width: 120 },
+    { field: "username", headerName: "Username", width: 160 },
+    { field: "phone", headerName: "Phone", width: 140 },
+    {
+      field: "balance",
+      headerName: "Balance",
+      width: 120,
+      valueGetter: (params) => toNum(params.row.balance),
+      valueFormatter: (params) => toNum(params.value).toFixed(2),
+      type: "number",
+    },
+    // Qty Sold (sum of credit rows' quantity; parses legacy descriptions)
+    {
+      field: "qtySold",
+      headerName: "Qty Sold",
+      width: 110,
+      type: "number",
+      valueGetter: (params) => toNum(params.row.qtySold),
+    },
     {
       field: "action",
       headerName: "Action",
-      width: 180,
-      renderCell: params =>
-        <Grid container spacing={1}>
+      width: 200,
+      sortable: false,
+      renderCell: (params) => (
+        <Grid container spacing={1} wrap="nowrap">
           <Grid item>
-            <IconButton
-              color="primary"
-              onClick={() => openAddModal(params.row)}
-            >
+            <IconButton color="primary" onClick={() => openAddModal(params.row)}>
               <Add />
             </IconButton>
           </Grid>
           <Grid item>
-            <IconButton
-              color="secondary"
-              onClick={() => openMinusModal(params.row)}
-            >
+            <IconButton color="secondary" onClick={() => openMinusModal(params.row)}>
               <Remove />
             </IconButton>
           </Grid>
@@ -101,21 +167,19 @@ const CustomerList = ({ customers, refreshCustomers }) => {
             <IconButton
               color="error"
               onClick={() => openDeleteModal(params.row)}
-              disabled={!canDeleteCustomer} // Disable button if no privilege
+              disabled={!canDeleteCustomer}
             >
               <Delete />
             </IconButton>
           </Grid>
           <Grid item>
-            <IconButton
-              color="info"
-              onClick={() => openHistoryModal(params.row)}
-            >
+            <IconButton color="info" onClick={() => openHistoryModal(params.row)}>
               <History />
             </IconButton>
           </Grid>
         </Grid>
-    }
+      ),
+    },
   ];
 
   return (
@@ -125,25 +189,21 @@ const CustomerList = ({ customers, refreshCustomers }) => {
         bgcolor: "white",
         borderRadius: 2,
         padding: 3,
-        width: "auto"
+        width: "auto",
       }}
     >
       <DataGrid
-        sx={{
-          borderLeft: 0,
-          borderRight: 0,
-          borderRadius: 0
-        }}
-        rows={customers}
+        sx={{ borderLeft: 0, borderRight: 0, borderRadius: 0 }}
+        rows={rows}
         columns={columns}
-        getRowId={row => row._id}
+        getRowId={(row) => row._id}
         initialState={{
-          pagination: {
-            paginationModel: { page: 0, pageSize: 10 }
-          }
+          pagination: { paginationModel: { page: 0, pageSize: 10 } },
+          sorting: { sortModel: [{ field: "qtySold", sort: "desc" }] },
         }}
-        pageSizeOptions={[15, 20, 30]}
+        pageSizeOptions={[10, 15, 20, 30]}
         rowSelection={false}
+        disableRowSelectionOnClick
       />
 
       {/* Add Balance Modal */}
@@ -154,7 +214,7 @@ const CustomerList = ({ customers, refreshCustomers }) => {
         onSuccess={refreshCustomers}
       />
 
-      {/* Minus Balance Modal */} 
+      {/* Minus Balance Modal */}
       <MinusBalanceModal
         open={isMinusModalOpen}
         onClose={closeModals}
@@ -167,7 +227,7 @@ const CustomerList = ({ customers, refreshCustomers }) => {
         open={isDeleteModalOpen}
         onClose={closeModals}
         customer={selectedCustomer}
-        onSuccess={refreshCustomers} // Call to refresh the customer list
+        onSuccess={refreshCustomers}
       />
 
       {/* Transaction History Modal */}

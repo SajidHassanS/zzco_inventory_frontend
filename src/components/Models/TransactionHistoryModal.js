@@ -5,6 +5,17 @@ import CustomTable from "../CustomTable/CustomTable";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
+const toNum = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+
+// Fallback: parse "Sale: 10 x house @ 200 = 2000"
+function parseQtyUnitFromDesc(desc) {
+  const s = String(desc || "");
+  // capture: <qty> x ... @ <unit>
+  const m = s.match(/(\d+)\s*[x×]\s.*?@\s*([0-9]+(?:\.[0-9]+)?)/i);
+  if (!m) return { qty: null, unit: null };
+  return { qty: Number(m[1]), unit: Number(m[2]) };
+}
+
 const TransactionHistoryModal = ({ open, onClose, customer }) => {
   const [transactions, setTransactions] = useState([]);
   const [page, setPage] = useState(0);
@@ -29,15 +40,38 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
           : [];
 
         let balance = 0;
+
         const ledger = history.map((t) => {
           const type = String(t?.type || "").toLowerCase();
-          const amt = Number(t?.amount || 0);
-          const debit = type === "debit" ? amt : 0;
-          const credit = type === "credit" ? amt : 0;
+
+          // prefer explicit fields if present
+          let qty = toNum(t?.quantity);
+          let unitPrice =
+            t?.unitPrice != null ? toNum(t.unitPrice) : null;
+
+          // parse from description if needed (old rows)
+          if (!qty || !unitPrice) {
+            const { qty: q2, unit: u2 } = parseQtyUnitFromDesc(t?.description);
+            if (!qty && q2) qty = q2;
+            if (!unitPrice && u2) unitPrice = u2;
+          }
+
+          // compute total: prefer total/amount, else qty*unit
+          let lineTotal = toNum(t?.total ?? t?.amount);
+          if (!lineTotal && qty && unitPrice != null) {
+            lineTotal = qty * unitPrice;
+          }
+
+          const debit = type === "debit" ? lineTotal : 0;
+          const credit = type === "credit" ? lineTotal : 0;
           balance += credit - debit;
 
           return {
             ...t,
+            quantity: qty || null,
+            unitPrice: unitPrice != null ? unitPrice : null,
+            lineTotal,
+
             debit,
             credit,
             runningBalance: balance,
@@ -52,89 +86,74 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
     };
 
     fetchTransactions();
-  }, [open, customer?._id, API_URL]);
+  }, [open, customer?._id]);
 
-  // PDF export (now includes Description)
+  // PDF export (includes Qty/Unit/Line Total)
   const downloadPDF = () => {
     const doc = new jsPDF();
     doc.text(`Ledger for ${customer?.username || "-"}`, 14, 10);
 
-    const tableColumn = [
+    const head = [
       "Date",
       "Description",
       "Payment Type",
+      "Qty",
+      "Unit Price",
+      "Line Total",
       "Debit",
       "Credit",
       "Cheque Date",
       "Running Balance",
     ];
 
-    const tableRows = transactions.map((tr) => [
+    const body = transactions.map((tr) => [
       tr?.date ? new Date(tr.date).toLocaleDateString() : "-",
-      (tr?.description || "-"),
-      (tr?.paymentMethod || "-"),
-      Number(tr?.debit ?? 0).toFixed(2),
-      Number(tr?.credit ?? 0).toFixed(2),
+      tr?.description || "-",
+      tr?.paymentMethod || "-",
+      tr?.quantity ?? "-",
+      tr?.unitPrice != null ? toNum(tr.unitPrice).toFixed(2) : "-",
+      toNum(tr?.lineTotal).toFixed(2),
+      toNum(tr?.debit).toFixed(2),
+      toNum(tr?.credit).toFixed(2),
       tr?.chequeDate ? new Date(tr.chequeDate).toLocaleDateString() : "-",
-      Number(tr?.runningBalance ?? 0).toFixed(2),
+      toNum(tr?.runningBalance).toFixed(2),
     ]);
 
-    autoTable(doc, { head: [tableColumn], body: tableRows, startY: 20 });
-
+    autoTable(doc, { head: [head], body, startY: 20 });
     const endY = doc.lastAutoTable?.finalY ?? 20;
-    doc.text(`Total Balance: ${Number(totalBalance || 0).toFixed(2)}`, 14, endY + 10);
+    doc.text(`Total Balance: ${toNum(totalBalance).toFixed(2)}`, 14, endY + 10);
     doc.save(`Customer_Transaction_History_${customer?.username || "customer"}.pdf`);
   };
 
-  // Table columns (added Description)
+  // Table columns (adds Qty/Unit/Line Total)
   const columns = [
     {
       field: "date",
       headerName: "Date",
       renderCell: (row) => (row?.date ? new Date(row.date).toLocaleDateString() : "-"),
     },
-    {
-      field: "description",
-      headerName: "Description",
-      renderCell: (row) => row?.description || "-",
-    },
+    { field: "description", headerName: "Description", renderCell: (row) => row?.description || "-" },
     { field: "paymentMethod", headerName: "Payment Type" },
-    {
-      field: "debit",
-      headerName: "Debit",
-      renderCell: (row) => (
-        <span style={{ color: "red" }}>
-          {Number(row?.debit ?? 0).toFixed(2)}
-        </span>
-      ),
-    },
-    {
-      field: "credit",
-      headerName: "Credit",
-      renderCell: (row) => (
-        <span style={{ color: "green" }}>
-          {Number(row?.credit ?? 0).toFixed(2)}
-        </span>
-      ),
-    },
+
+    { field: "quantity", headerName: "Qty", renderCell: (row) => (row?.quantity != null ? row.quantity : "-") },
+    { field: "unitPrice", headerName: "Unit Price", renderCell: (row) => (row?.unitPrice != null ? toNum(row.unitPrice).toFixed(2) : "-") },
+    { field: "lineTotal", headerName: "Line Total", renderCell: (row) => toNum(row?.lineTotal).toFixed(2) },
+
+    { field: "debit", headerName: "Debit", renderCell: (row) => <span style={{ color: "red" }}>{toNum(row?.debit).toFixed(2)}</span> },
+    { field: "credit", headerName: "Credit", renderCell: (row) => <span style={{ color: "green" }}>{toNum(row?.credit).toFixed(2)}</span> },
     {
       field: "chequeDate",
       headerName: "Cheque Date",
-      renderCell: (row) =>
-        row?.chequeDate ? new Date(row.chequeDate).toLocaleDateString() : "-",
+      renderCell: (row) => (row?.chequeDate ? new Date(row.chequeDate).toLocaleDateString() : "-"),
     },
-    {
-      field: "runningBalance",
-      headerName: "Running Balance",
-      renderCell: (row) => <span>{Number(row?.runningBalance ?? 0).toFixed(2)}</span>,
-    },
+    { field: "runningBalance", headerName: "Running Balance", renderCell: (row) => toNum(row?.runningBalance).toFixed(2) },
   ];
 
   return (
     <Modal open={open} onClose={onClose}>
       <Box
         sx={{
-          width: 900,
+          width: 1100,
           p: 3,
           mx: "auto",
           mt: 5,
@@ -154,11 +173,8 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
         />
 
         <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mt: 2 }}>
-          <Typography
-            variant="subtitle1"
-            sx={{ fontWeight: "bold", color: totalBalance >= 0 ? "green" : "red" }}
-          >
-            Total Balance: {Number(totalBalance || 0).toFixed(2)}
+          <Typography variant="subtitle1" sx={{ fontWeight: "bold", color: totalBalance >= 0 ? "green" : "red" }}>
+            Total Balance: {toNum(totalBalance).toFixed(2)}
           </Typography>
 
           <Box>

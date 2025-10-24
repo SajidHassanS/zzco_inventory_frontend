@@ -332,16 +332,16 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     {
       field: "createdAt",
       headerName: "Date",
-      valueGetter: (params) =>
-        pickWhen(params.row)
-          ? new Date(pickWhen(params.row)).toISOString().slice(0, 10)
-          : "-",
+     valueGetter: (row) =>
+        pickWhen(row)
+          ? new Date(pickWhen(row)).toISOString().slice(0, 10)
+         : "-",
     },
     {
       field: "amountDisplay",
       headerName: "Amount",
       align: "right",
-      renderCell: (row) => Math.abs(pickAmount(row)).toFixed(2),
+     renderCell: (row) => Math.abs(pickAmount(row)).toFixed(2),
     },
     {
       field: "type",
@@ -365,7 +365,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     {
       field: "description",
       headerName: "Description",
-      renderCell: (row) => row.description || "-",
+ renderCell: (row) => bestDescription(row, /* isBankTx */ false),
     },
   ];
 
