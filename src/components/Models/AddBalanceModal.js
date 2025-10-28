@@ -28,7 +28,7 @@ const initialState = {
 
 const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
   const [amount, setAmount] = useState(initialState.amount);
-  const [paymentMethod, setPaymentMethod] = useState(initialState.paymentMethod); // "cash" | "online" | "cheque"
+  const [paymentMethod, setPaymentMethod] = useState(initialState.paymentMethod); // "cash" | "online" | "cheque" | "credit"
   const [chequeDate, setChequeDate] = useState(initialState.chequeDate);
   const [description, setDescription] = useState(initialState.description);
   const [selectedBank, setSelectedBank] = useState(initialState.selectedBank);
@@ -42,7 +42,7 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
   const API_URL = `${BASE}api/customers`;
 
   const dispatch = useDispatch();
-  const banks = useSelector((state) => state.bank.banks);
+  const banks = useSelector((state) => state.bank.banks || []);
 
   useEffect(() => {
     if (open) {
@@ -72,16 +72,21 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
     if (!paymentMethod) {
       formErrors.paymentMethod = "Payment method is required";
     }
-    if (paymentMethod === "online" && !selectedBank) {
-      formErrors.selectedBank = "Bank selection is required for online payment";
+
+    // Only require bank/image for online/cheque; only require chequeDate for cheque
+    if (paymentMethod === "online" || paymentMethod === "cheque") {
+      if (!selectedBank) {
+        formErrors.selectedBank = "Bank selection is required for online/cheque payment";
+      }
+      if (!image) {
+        formErrors.image = "Image upload is required for online or cheque payment";
+      }
     }
     if (paymentMethod === "cheque" && !chequeDate) {
       formErrors.chequeDate = "Cheque date is required for cheque payment";
     }
-    if ((paymentMethod === "online" || paymentMethod === "cheque") && !image) {
-      formErrors.image = "Image upload is required for online or cheque payment";
-    }
 
+    // No extra requirements for "credit"
     setErrors(formErrors);
     return Object.keys(formErrors).length === 0;
   };
@@ -102,19 +107,19 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
 
       const cleanDesc =
         (description && description.trim()) ||
-        `Payment received from ${customer?.username || customer?.name || "customer"}`;
+        `Payout to ${customer?.username || customer?.name || "customer"}`;
 
-      // backend will auto-pick Cash doc; we do NOT send cashId
+      // Build payload. For credit, send only ledger info (no bank/cheque/image).
       const base = {
         amount: amt,
-        paymentMethod: method, // "cash" | "online" | "cheque"
+        paymentMethod: method, // "cash" | "online" | "cheque" | "credit"
         description: cleanDesc,
-        ...(method === "online" ? { bankId: selectedBank } : {}),
+        ...(method === "online" || method === "cheque" ? { bankId: selectedBank } : {}),
         ...(method === "cheque" ? { chequeDate } : {}),
       };
 
       let resp;
-      if (image) {
+      if (image && (method === "online" || method === "cheque")) {
         const fd = new FormData();
         Object.entries(base).forEach(([k, v]) => fd.append(k, v));
         fd.append("image", image);
@@ -200,14 +205,20 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           fullWidth
           margin="normal"
           error={!!errors.paymentMethod}
-          helperText={errors.paymentMethod}
+          helperText={
+            errors.paymentMethod ||
+            (paymentMethod === "credit"
+              ? "Credit = ledger-only (no bank/cash movement)"
+              : "")
+          }
         >
           <MenuItem value="cash">Cash</MenuItem>
           <MenuItem value="online">Online</MenuItem>
           <MenuItem value="cheque">Cheque</MenuItem>
+          <MenuItem value="credit">Credit</MenuItem>
         </TextField>
 
-        {paymentMethod === "online" && (
+        {(paymentMethod === "online" || paymentMethod === "cheque") && (
           <TextField
             label="Select Bank"
             select
@@ -277,7 +288,7 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           margin="normal"
           multiline
           rows={2}
-          placeholder={`e.g. Payment received from ${customer?.username || customer?.name || "customer"}`}
+          placeholder={`e.g. Payout to ${customer?.username || customer?.name || "customer"}`}
         />
 
         <Button

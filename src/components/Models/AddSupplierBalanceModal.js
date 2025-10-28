@@ -7,7 +7,7 @@ import { toast } from "react-toastify";
 
 const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
   const [amount, setAmount] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState(""); // cash | online | cheque | credit
   const [chequeDate, setChequeDate] = useState("");
   const [description, setDescription] = useState("");
   const [selectedBank, setSelectedBank] = useState("");
@@ -18,34 +18,36 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
 
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
   const dispatch = useDispatch();
-  const banks = useSelector((state) => state.bank.banks);
+  const banks = useSelector((state) => state.bank.banks || []);
 
   useEffect(() => {
-    dispatch(getBanks());
-  }, [dispatch]);
+    if (open) dispatch(getBanks());
+  }, [dispatch, open]);
 
   const SUPPLIER_API_URL = `${BACKEND_URL}api/suppliers`;
   const CASH_API_URL = `${BACKEND_URL}api/cash`;
 
   const validateForm = () => {
     const formErrors = {};
-
     const n = Number(amount);
+
     if (!amount || !Number.isFinite(n) || n <= 0) {
       formErrors.amount = "Amount must be a positive number";
     }
     if (!paymentMethod) {
       formErrors.paymentMethod = "Payment method is required";
     }
-    if (paymentMethod === "online" && !selectedBank) {
-      formErrors.selectedBank = "Bank selection is required for online payment";
+
+    // Only require these for online/cheque
+    if (paymentMethod === "online" || paymentMethod === "cheque") {
+      if (!selectedBank) formErrors.selectedBank = "Bank selection is required for online/cheque";
+      if (!image) formErrors.image = "Image upload is required for online/cheque";
     }
     if (paymentMethod === "cheque" && !chequeDate) {
-      formErrors.chequeDate = "Cheque date is required for cheque payment";
+      formErrors.chequeDate = "Cheque date is required for cheque";
     }
-    if ((paymentMethod === "online" || paymentMethod === "cheque") && !image) {
-      formErrors.image = "Image upload is required for online or cheque payment";
-    }
+
+    // credit: no extra requirements
 
     setErrors(formErrors);
     return Object.keys(formErrors).length === 0;
@@ -56,42 +58,37 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
     if (loading) return;
     setLoading(true);
 
-    if (!supplier?._id) {
-      toast.error("Supplier data is missing or invalid");
-      setLoading(false);
-      return;
-    }
-    if (!validateForm()) {
-      setLoading(false);
-      return;
-    }
-
-    const validAmount = Number(amount);
-    if (!Number.isFinite(validAmount)) {
-      setErrors((prev) => ({ ...prev, amount: "Invalid amount" }));
-      setLoading(false);
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("amount", validAmount);
-    formData.append("paymentMethod", paymentMethod);     // controller normalizes case
-    formData.append("description", description?.trim() || "");
-    formData.append("desc", description?.trim() || "");  // safety: controller accepts desc too
-    // optional name (if you want it in productName)
-    formData.append("name", supplier?.username || "");
-
-    if (paymentMethod === "online" || paymentMethod === "cheque") {
-      formData.append("bankId", selectedBank);
-      if (image) formData.append("image", image);
-    }
-    if (paymentMethod === "cheque") {
-      formData.append("chequeDate", chequeDate);
-      formData.append("status", "pending");
-    }
-
     try {
-      // 1) Add supplier transaction with your dynamic description
+      if (!supplier?._id) {
+        toast.error("Supplier data is missing or invalid");
+        return;
+      }
+      if (!validateForm()) return;
+
+      const validAmount = Number(amount);
+      if (!Number.isFinite(validAmount)) {
+        setErrors((prev) => ({ ...prev, amount: "Invalid amount" }));
+        return;
+      }
+
+      // Build form data for supplier transaction
+      const formData = new FormData();
+      formData.append("amount", validAmount);
+      formData.append("paymentMethod", (paymentMethod || "").toLowerCase()); // controller normalizes
+      formData.append("description", description?.trim() || "");
+      formData.append("desc", description?.trim() || ""); // alias
+      formData.append("name", supplier?.username || "");
+
+      if (paymentMethod === "online" || paymentMethod === "cheque") {
+        formData.append("bankId", selectedBank);
+        if (image) formData.append("image", image);
+      }
+      if (paymentMethod === "cheque") {
+        formData.append("chequeDate", chequeDate);
+        formData.append("status", "pending");
+      }
+
+      // 1) Create supplier-side transaction (source of truth)
       const supplierRes = await axios.post(
         `${SUPPLIER_API_URL}/${supplier._id}/transaction`,
         formData,
@@ -104,45 +101,53 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
 
       toast.success(supplierRes.data.message || "Transaction added successfully");
 
-      // 2) Mirror it into the correct ledger with the SAME description
-      let deductionResponse;
+      // 2) Mirror to cash/bank ledgers where applicable
+      let ledgerRes;
 
       if (paymentMethod === "cash") {
-        // cash: record as a deduct (money left you)
-        deductionResponse = await axios.post(
+        // Paying supplier with cash -> cash deduct
+        ledgerRes = await axios.post(
           `${CASH_API_URL}/add`,
           {
             balance: validAmount,
             type: "deduct",
-            description: description?.trim() || `Cash payment to supplier ${supplier.username}`,
+            description:
+              description?.trim() ||
+              `Cash payment to supplier ${supplier.username}`,
           },
           { withCredentials: true }
         );
       } else if (paymentMethod === "online") {
-        // bank: subtract from bank with same description
-        deductionResponse = await axios.post(
+        // Paying supplier online -> bank subtract
+        ledgerRes = await axios.post(
           `${BACKEND_URL}api/banks/${selectedBank}/transaction`,
           {
             amount: validAmount,
             type: "subtract",
-            description: description?.trim() || `Online payment to supplier ${supplier.username}`,
+            description:
+              description?.trim() ||
+              `Online payment to supplier ${supplier.username}`,
           },
           { withCredentials: true }
         );
       } else if (paymentMethod === "cheque") {
-        // cheque: do not deduct yet (pending)
-        toast.info("Cheque added as pending. It will be deducted once cleared.");
+        // Cheque recorded as pending; bank will move on clearance
+        toast.info("Cheque added as pending. It will deduct once cleared.");
+      } else if (paymentMethod === "credit") {
+        // Credit = ledger-only (supplier balance), no cash/bank movement
+        toast.info("Credit recorded (no immediate cash/bank movement).");
       }
 
       if (
         paymentMethod === "cheque" ||
-        deductionResponse?.status === 200 ||
-        deductionResponse?.status === 201
+        paymentMethod === "credit" ||
+        ledgerRes?.status === 200 ||
+        ledgerRes?.status === 201
       ) {
-        if (paymentMethod !== "cheque") {
+        if (paymentMethod === "cash" || paymentMethod === "online") {
           toast.success("Payment recorded in ledger");
         }
-        // 3) Bubble new supplier balance up
+        // 3) Notify parent with updated supplier balance (if returned)
         const updatedSupplier = {
           ...supplier,
           balance: supplierRes?.data?.supplier?.balance ?? supplier.balance,
@@ -150,7 +155,7 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
         onSuccess?.(updatedSupplier);
         onClose?.();
 
-        // reset form for next time
+        // reset form
         setAmount("");
         setPaymentMethod("");
         setChequeDate("");
@@ -225,11 +230,17 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
           fullWidth
           margin="normal"
           error={!!errors.paymentMethod}
-          helperText={errors.paymentMethod}
+          helperText={
+            errors.paymentMethod ||
+            (paymentMethod === "credit"
+              ? "Credit = supplier ledger only (no bank/cash movement now)"
+              : "")
+          }
         >
           <MenuItem value="cash">Cash</MenuItem>
           <MenuItem value="online">Online</MenuItem>
           <MenuItem value="cheque">Cheque</MenuItem>
+          <MenuItem value="credit">Credit</MenuItem>
         </TextField>
 
         {(paymentMethod === "online" || paymentMethod === "cheque") && (
@@ -296,6 +307,11 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
           margin="normal"
           multiline
           rows={2}
+          placeholder={
+            paymentMethod === "credit"
+              ? "e.g. Credit note / adjust supplier ledger"
+              : `e.g. Payment to supplier ${supplier?.username || ""}`
+          }
         />
 
         <Button

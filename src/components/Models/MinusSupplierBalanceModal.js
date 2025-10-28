@@ -5,6 +5,9 @@ import { useSelector, useDispatch } from "react-redux";
 import { getBanks } from "../../redux/features/Bank/bankSlice";
 import { toast } from "react-toastify";
 
+// Normalize BACKEND_URL to always have a trailing slash
+const withSlash = (u = "") => (u.endsWith("/") ? u : `${u}/`);
+
 // Format number into "lac" with sign, e.g., -420000 => "-4.20 lac"
 function formatLac(value) {
   const num = Number(value || 0);
@@ -15,7 +18,7 @@ function formatLac(value) {
 
 const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
   const [amount, setAmount] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState(""); // "cash" | "online" | "cheque" | "credit"
   const [chequeDate, setChequeDate] = useState("");
   const [description, setDescription] = useState("");
   const [selectedBank, setSelectedBank] = useState("");
@@ -24,13 +27,15 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
-  const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+  const RAW_BACKEND = process.env.REACT_APP_BACKEND_URL || "";
+  const BACKEND_URL = withSlash(RAW_BACKEND);
+
   const dispatch = useDispatch();
-  const banks = useSelector((state) => state.bank.banks);
+  const banks = useSelector((state) => state.bank.banks || []);
 
   useEffect(() => {
-    dispatch(getBanks());
-  }, [dispatch]);
+    if (open) dispatch(getBanks());
+  }, [dispatch, open]);
 
   const API_URL = `${BACKEND_URL}api/suppliers`;
   const CASH_API_URL = `${BACKEND_URL}api/cash`;
@@ -47,8 +52,10 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
     if (!paymentMethod) {
       formErrors.paymentMethod = "Payment method is required";
     }
-    if (paymentMethod === "online" && !selectedBank) {
-      formErrors.selectedBank = "Bank selection is required for online payment";
+
+    // Only enforce bank/image/cheque for online/cheque
+    if ((paymentMethod === "online" || paymentMethod === "cheque") && !selectedBank) {
+      formErrors.selectedBank = "Bank selection is required for online or cheque payment";
     }
     if (paymentMethod === "cheque" && !chequeDate) {
       formErrors.chequeDate = "Cheque date is required for cheque payment";
@@ -56,6 +63,7 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
     if ((paymentMethod === "online" || paymentMethod === "cheque") && !image) {
       formErrors.image = "Image upload is required for online or cheque payment";
     }
+    // credit: no extra fields required
 
     setErrors(formErrors);
     return Object.keys(formErrors).length === 0;
@@ -80,16 +88,21 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
         return;
       }
 
+      const method = (paymentMethod || "").toLowerCase().trim();
       const cleanDesc = (description || "").trim();
 
-      // 1) Tell backend to subtract (this may push balance further negative)
+      // 1) Tell backend to subtract supplier balance
       const formData = new FormData();
       formData.append("balance", numericAmount.toString());
-      formData.append("paymentMethod", (paymentMethod || "").toLowerCase());
-      formData.append("description", cleanDesc);  // ✅ explicit dynamic text
-      formData.append("desc", cleanDesc);         // ✅ send alias too
-      formData.append("bankId", selectedBank || "");
-      formData.append("chequeDate", chequeDate || "");
+      formData.append("paymentMethod", method);
+      formData.append("description", cleanDesc);
+      formData.append("desc", cleanDesc); // some backends read 'desc'
+      if (method === "online" || method === "cheque") {
+        formData.append("bankId", selectedBank); // MUST be an ObjectId string
+      }
+      if (method === "cheque") {
+        formData.append("chequeDate", chequeDate || "");
+      }
       if (image) formData.append("image", image);
 
       const supplierRes = await axios.post(
@@ -100,37 +113,46 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
 
       toast.success(supplierRes.data?.message || "Balance subtracted from supplier");
 
-      // 2) Record in the correct ledger with the SAME description
+      // 2) Ledger entry (cash/bank). For cheque we only record pending; bank updates on clearance.
       let ledgerRes;
-
-      if (paymentMethod === "cash") {
-        // money received -> cash add
+      if (method === "cash") {
+        // money in → cash add
         ledgerRes = await axios.post(
           `${CASH_API_URL}/add`,
           {
             balance: numericAmount,
             type: "add",
-            description: cleanDesc || `Payment received from supplier ${supplier.username}`, // fallback
+            description:
+              cleanDesc || `Payment received from supplier ${supplier?.username || ""}`.trim(),
           },
           { withCredentials: true }
         );
-      } else if (paymentMethod === "online") {
-        // money received -> bank add
+      } else if (method === "online") {
+        // money in → bank add now
         ledgerRes = await axios.post(
           `${BACKEND_URL}api/banks/${selectedBank}/transaction`,
           {
             amount: numericAmount,
             type: "add",
-            description: cleanDesc || `Online payment received from supplier ${supplier.username}`, // fallback
+            description:
+              cleanDesc || `Online payment received from supplier ${supplier?.username || ""}`.trim(),
           },
           { withCredentials: true }
         );
-      } else if (paymentMethod === "cheque") {
-        // cheque stays pending – bank/cash will increase on clearance
+      } else if (method === "cheque") {
+        // pending — bank will increase when cheque is cleared
         toast.info("Cheque recorded as pending. Cash/Bank will increase when the cheque is cleared.");
+      } else if (method === "credit") {
+        // credit note / ledger-only decrease; no cash/bank movement
+        toast.info("Credit recorded (no immediate cash/bank movement).");
       }
 
-      if (paymentMethod === "cheque" || ledgerRes?.status === 200 || ledgerRes?.status === 201) {
+      if (
+        method === "cheque" ||
+        method === "credit" ||
+        ledgerRes?.status === 200 ||
+        ledgerRes?.status === 201
+      ) {
         onSuccess?.(supplierRes.data?.supplier || supplier);
         onClose?.();
 
@@ -150,7 +172,7 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
       const apiMsg = error?.response?.data?.message;
       if (apiMsg) toast.error(apiMsg);
       else toast.error("Failed to post transaction.");
-      console.error("Error:", error?.response?.data || error.message);
+      console.error("Supplier minus error:", error?.response?.data || error.message);
     } finally {
       setLoading(false);
     }
@@ -177,9 +199,11 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
     !amount ||
     parseFloat(amount) <= 0 ||
     !paymentMethod ||
-    (paymentMethod === "online" && !selectedBank) ||
-    (paymentMethod === "cheque" && !chequeDate) ||
-    ((paymentMethod === "online" || paymentMethod === "cheque") && !image);
+    (
+      (paymentMethod === "online" || paymentMethod === "cheque") &&
+      (!selectedBank || (paymentMethod === "cheque" && !chequeDate) || !image)
+    );
+  // Note: credit does not impose extra requirements
 
   return (
     <Modal open={open} onClose={onClose}>
@@ -226,18 +250,35 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
           label="Payment Method"
           select
           value={paymentMethod}
-          onChange={(e) => setPaymentMethod(e.target.value)}
+          onChange={(e) => {
+            const v = e.target.value;
+            setPaymentMethod(v);
+            // reset dependent fields on method switch
+            setSelectedBank("");
+            if (v !== "cheque") setChequeDate("");
+            if (v === "credit") {
+              // wipe bank/image for clarity
+              setImage(null);
+              setImagePreview("");
+            }
+          }}
           fullWidth
           margin="normal"
           error={!!errors.paymentMethod}
-          helperText={errors.paymentMethod}
+          helperText={
+            errors.paymentMethod ||
+            (paymentMethod === "credit"
+              ? "Credit = supplier ledger only (no bank/cash movement now)"
+              : "")
+          }
         >
           <MenuItem value="cash">Cash</MenuItem>
           <MenuItem value="online">Online</MenuItem>
           <MenuItem value="cheque">Cheque</MenuItem>
+          <MenuItem value="credit">Credit</MenuItem>
         </TextField>
 
-        {paymentMethod === "online" && (
+        {(paymentMethod === "online" || paymentMethod === "cheque") && (
           <TextField
             label="Select Bank"
             select
@@ -248,11 +289,17 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
             error={!!errors.selectedBank}
             helperText={errors.selectedBank}
           >
-            {banks.map((bank) => (
-              <MenuItem key={bank._id} value={bank._id}>
-                {bank.bankName}
+            {banks.length ? (
+              banks.map((bank) => (
+                <MenuItem key={bank._id} value={bank._id}>
+                  {bank.bankName}
+                </MenuItem>
+              ))
+            ) : (
+              <MenuItem value="" disabled>
+                No banks found
               </MenuItem>
-            ))}
+            )}
           </TextField>
         )}
 
@@ -301,15 +348,14 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
           margin="normal"
           multiline
           rows={2}
+          placeholder={
+            paymentMethod === "credit"
+              ? "e.g. Credit note / write-off / adjustment"
+              : `e.g. Payment received from supplier ${supplier?.username || ""}`
+          }
         />
 
-        <Button
-          variant="contained"
-          color="primary"
-          type="submit"
-          fullWidth
-          disabled={disableSubmit}
-        >
+        <Button variant="contained" color="primary" type="submit" fullWidth disabled={disableSubmit}>
           {loading ? "Submitting..." : "Subtract Balance"}
         </Button>
       </Box>

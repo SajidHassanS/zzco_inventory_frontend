@@ -21,7 +21,7 @@ const normBase = (raw) => {
 
 const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
   const [amount, setAmount] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState(""); // "cash" | "online" | "cheque"
+  const [paymentMethod, setPaymentMethod] = useState(""); // "cash" | "online" | "cheque" | "credit"
   const [chequeDate, setChequeDate] = useState("");
   const [description, setDescription] = useState("");
   const [selectedBank, setSelectedBank] = useState("");
@@ -35,7 +35,7 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
   const API_URL = `${BASE}api/customers`;
 
   const dispatch = useDispatch();
-  const banks = useSelector((state) => state.bank.banks);
+  const banks = useSelector((state) => state.bank.banks || []);
 
   useEffect(() => {
     if (open) {
@@ -55,16 +55,21 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
     if (!paymentMethod) {
       formErrors.paymentMethod = "Payment method is required";
     }
-    if (paymentMethod === "online" && !selectedBank) {
-      formErrors.selectedBank = "Bank selection is required for online payment";
+
+    // Only require bank/image for online/cheque; only require chequeDate for cheque
+    if (paymentMethod === "online" || paymentMethod === "cheque") {
+      if (!selectedBank) {
+        formErrors.selectedBank = "Bank selection is required for online/cheque payment";
+      }
+      if (!image) {
+        formErrors.image = "Image is required for online or cheque payment";
+      }
     }
     if (paymentMethod === "cheque" && !chequeDate) {
       formErrors.chequeDate = "Cheque date is required for cheque payment";
     }
-    if ((paymentMethod === "online" || paymentMethod === "cheque") && !image) {
-      formErrors.image = "Image is required for online or cheque payment";
-    }
 
+    // No extra requirements for "credit"
     setErrors(formErrors);
     return Object.keys(formErrors).length === 0;
   };
@@ -85,18 +90,19 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
 
       const cleanDesc =
         (description && description.trim()) ||
-        `Payout to ${customer?.username || customer?.name || "customer"}`;
+        `Payment received from ${customer?.username || customer?.name || "customer"}`;
 
+      // Build payload. For credit, we send only the basics.
       const base = {
         amount: amt,
-        paymentMethod: method, // "cash" | "online" | "cheque"
+        paymentMethod: method, // "cash" | "online" | "cheque" | "credit"
         description: cleanDesc,
-        ...(method === "online" ? { bankId: selectedBank } : {}),
+        ...(method === "online" || method === "cheque" ? { bankId: selectedBank } : {}),
         ...(method === "cheque" ? { chequeDate } : {}),
       };
 
       let resp;
-      if (image) {
+      if (image && (method === "online" || method === "cheque")) {
         const fd = new FormData();
         Object.entries(base).forEach(([k, v]) => fd.append(k, v));
         fd.append("image", image);
@@ -107,6 +113,7 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           { withCredentials: true } // don't set content-type manually
         );
       } else {
+        // cash or credit, or online/cheque without image (shouldn't happen due to validation)
         resp = await axios.post(
           `${API_URL}/minus-customer-balance/${customer._id}`,
           base,
@@ -172,6 +179,7 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           error={!!errors.amount}
           helperText={errors.amount}
           inputProps={{ min: 0, step: "0.01" }}
+          disabled={loading}
         />
 
         <TextField
@@ -182,14 +190,21 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           fullWidth
           margin="normal"
           error={!!errors.paymentMethod}
-          helperText={errors.paymentMethod}
+          helperText={
+            errors.paymentMethod ||
+            (paymentMethod === "credit"
+              ? "Credit = ledger-only (no bank/cash movement)"
+              : "")
+          }
+          disabled={loading}
         >
           <MenuItem value="cash">Cash</MenuItem>
           <MenuItem value="online">Online</MenuItem>
           <MenuItem value="cheque">Cheque</MenuItem>
+          <MenuItem value="credit">Credit</MenuItem>
         </TextField>
 
-        {paymentMethod === "online" && (
+        {(paymentMethod === "online" || paymentMethod === "cheque") && (
           <TextField
             label="Select Bank"
             select
@@ -199,6 +214,7 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
             margin="normal"
             error={!!errors.selectedBank}
             helperText={errors.selectedBank}
+            disabled={loading}
           >
             {banks?.length ? (
               banks.map((bank) => (
@@ -225,6 +241,7 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
             InputLabelProps={{ shrink: true }}
             error={!!errors.chequeDate}
             helperText={errors.chequeDate}
+            disabled={loading}
           />
         )}
 
@@ -240,6 +257,7 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
               InputLabelProps={{ shrink: true }}
               error={!!errors.image}
               helperText={errors.image}
+              disabled={loading}
             />
             {imagePreview && (
               <img
@@ -259,7 +277,16 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           margin="normal"
           multiline
           rows={2}
-          placeholder={`e.g. Payout to ${customer?.username || customer?.name || "customer"}`}
+          placeholder={
+            paymentMethod === "credit"
+              ? `e.g. Credit adjustment for ${
+                  customer?.username || customer?.name || "customer"
+                }`
+              : `e.g. Payment received from ${
+                  customer?.username || customer?.name || "customer"
+                }`
+          }
+          disabled={loading}
         />
 
         <Button
