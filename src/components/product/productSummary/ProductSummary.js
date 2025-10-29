@@ -26,8 +26,12 @@ const outOfStockIcon = <BsCartX size={40} color="#fff" />;
 const bankIcon = <BsBank2 size={40} color="#fff" />;
 const cashIcon = <FaMoneyBillWave size={40} color="#fff" />;
 
+// helpers
 export const formatNumbers = (x) =>
   x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+// normalize to compare case-insensitively
+const norm = (s) => (s ?? "").toString().trim().toLowerCase();
 
 const ProductSummary = ({ products, bank, cashs }) => {
   const dispatch = useDispatch();
@@ -45,6 +49,19 @@ const ProductSummary = ({ products, bank, cashs }) => {
     () => localStorage.getItem("userRole") === "Manager",
     []
   );
+
+  // ✅ unique count by (name, category)
+  const uniqueProductCount = useMemo(() => {
+    const keys = new Set();
+    (products || []).forEach((p) => {
+      const name = norm(p?.name);
+      // handle both string category and object category { name: '...' }
+      const cat =
+        typeof p?.category === "object" ? norm(p?.category?.name) : norm(p?.category);
+      keys.add(`${name}::${cat}`);
+    });
+    return keys.size;
+  }, [products]);
 
   useEffect(() => {
     dispatch(CALC_STORE_VALUE(products));
@@ -64,25 +81,20 @@ const ProductSummary = ({ products, bank, cashs }) => {
       : Number(bank?.availableBalance ?? bank?.balance ?? bank?.totalBalance ?? 0);
   }, [bank]);
 
-  // CASH total — match BankList/ledger math
+  // CASH total — compute from entries if provided
   const totalCashAmount = useMemo(() => {
-    // 1) If the server already sent the computed available figure, use it
     const avail = Number(cashs?.availableBalance);
     if (Number.isFinite(avail)) return avail;
 
-    // 2) Otherwise compute from the ledger by summing signed deltas
     const entries = Array.isArray(cashs?.allEntries) ? [...cashs.allEntries] : [];
     if (entries.length) {
       entries.sort(
         (a, b) =>
           new Date(a.createdAt || a.date) - new Date(b.createdAt || b.date)
       );
-      // DO NOT trust last.totalBalance; derive from deltas so sales and
-      // other cash movements are reflected even if a row has a wrong totalBalance.
       return entries.reduce((sum, row) => sum + (Number(row.balance) || 0), 0);
     }
 
-    // 3) Fallback if no entries provided
     return Number(cashs?.totalBalance ?? 0);
   }, [cashs]);
 
@@ -97,13 +109,29 @@ const ProductSummary = ({ products, bank, cashs }) => {
       <h3 className="--mt">Inventory Stats</h3>
 
       <div className="info-summary">
-        <InfoBox icon={productIcon} title="Total Products" count={products.length} bgColor="card1" />
+        {/* ✅ Show unique count (name + category) */}
+        <InfoBox
+          icon={productIcon}
+          title="Total Products"
+          count={uniqueProductCount}
+          bgColor="card1"
+        />
 
         <div onClick={openModal}>
-          <InfoBox icon={outOfStockIcon} title="Out of Stock" count={outOfStock} bgColor="card3" />
+          <InfoBox
+            icon={outOfStockIcon}
+            title="Out of Stock"
+            count={outOfStock}
+            bgColor="card3"
+          />
         </div>
 
-        <InfoBox icon={categoryIcon} title="All Categories" count={category.length} bgColor="card4" />
+        <InfoBox
+          icon={categoryIcon}
+          title="All Categories"
+          count={category.length}
+          bgColor="card4"
+        />
 
         {!isManager && (
           <>

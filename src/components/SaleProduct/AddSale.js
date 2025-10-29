@@ -21,6 +21,18 @@ import { getBanks } from "../../redux/features/Bank/bankSlice";
 import { getWarehouses } from "../../redux/features/WareHouse/warehouseSlice";
 import { toast, ToastContainer } from "react-toastify";
 import axios from "axios";
+const supplierNameOf = (p) =>
+  p?.supplier?.username || p?.supplier?.name || "Unknown supplier";
+
+const shippingLabelOf = (p) =>
+  String(p?.shippingType || "").toLowerCase() === "local"
+    ? "Local"
+    : "International";
+
+const formatPrice = (n) => {
+  const num = Number(n) || 0;
+  return new Intl.NumberFormat("en-PK").format(num); // Rs formatting
+};
 
 export default function AddSale({
   addSaleModalSetting,
@@ -280,23 +292,32 @@ export default function AddSale({
               <Grid item xs={12} sm={6}>
                 <FormControl fullWidth margin="normal" error={!!errors.productID} disabled={submitting}>
                   <InputLabel id="productID-label">Product Name</InputLabel>
-                  <Select
-                    labelId="productID-label"
-                    id="productID"
-                    name="productID"
-                    value={sale.productID}
-                    onChange={handleInputChange}
-                    label="Product Name"
-                  >
-                    <MenuItem value="">
-                      <em>Select Product</em>
-                    </MenuItem>
-                    {products.map((product) => (
-                      <MenuItem key={product._id} value={product._id}>
-                        {product.name}
-                      </MenuItem>
-                    ))}
-                  </Select>
+                 <Select
+  labelId="productID-label"
+  id="productID"
+  name="productID"
+  value={sale.productID}
+  onChange={handleInputChange}
+  label="Product Name"
+  // 👇 ensure the closed select shows the full label, not just name
+  renderValue={(selectedId) => {
+    if (!selectedId) return "";
+    const p = products.find((x) => x._id === selectedId);
+    if (!p) return "";
+    return `${p.name} — ${supplierNameOf(p)} — ${shippingLabelOf(p)} — ${formatPrice(p.price)}`;
+  }}
+>
+  <MenuItem value="">
+    <em>Select Product</em>
+  </MenuItem>
+
+  {products.map((p) => (
+    <MenuItem key={p._id} value={p._id}>
+      {`${p.name} — ${supplierNameOf(p)} — ${shippingLabelOf(p)} — ${formatPrice(p.price)}`}
+    </MenuItem>
+  ))}
+</Select>
+
                 </FormControl>
               </Grid>
 
