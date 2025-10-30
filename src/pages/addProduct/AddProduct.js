@@ -1,10 +1,10 @@
-// ✅ Only diff: added useRef and a few guards / disabled props
+// ✅ Updated: Added isOwnInventory toggle for optional supplier/payment
 import React, { Fragment, useEffect, useState, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import Loader from "../../components/loader/Loader";
-import { getProducts } from "../../redux/features/product/productSlice"; // Import getProducts
+import { getProducts } from "../../redux/features/product/productSlice";
 import { getCash } from "../../redux/features/cash/cashSlice";
 
 import ProductForm from "../../components/product/productForm/ProductForm";
@@ -12,8 +12,8 @@ import {
   createProduct,
   selectIsLoading
 } from "../../redux/features/product/productSlice";
-import Modal from "@mui/material/Modal"; // Import the Modal component
-import Supplier from "../Supplier/Supplier"; // Import the Supplier component
+import Modal from "@mui/material/Modal";
+import Supplier from "../Supplier/Supplier";
 import { getWarehouses } from "../../redux/features/WareHouse/warehouseSlice";
 import { getBanks } from "../../redux/features/Bank/bankSlice";
 import { getSuppliers } from "../../redux/features/supplier/supplierSlice";
@@ -35,12 +35,15 @@ import {
   FormControl,
   InputLabel,
   Select,
-  Table, // Add this import
-  TableHead, // Add this import
-  TableBody, // Add this import
-  TableRow, // Add this import
+  Table,
+  TableHead,
+  TableBody,
+  TableRow,
   TableCell,
-  CircularProgress,                // ✅ for small spinner
+  CircularProgress,
+  FormControlLabel,
+  Switch,
+  Alert,
 } from "@mui/material";
 import { styled } from "@mui/material/styles";
 import AddSupplierModal from "../../components/Models/addSupplierModel";
@@ -73,25 +76,24 @@ const initialState = {
 const AddProduct = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const products = useSelector(state => state.product.products); // Fetch existing products
-  const [showStepper, setShowStepper] = useState(false); // State to control stepper visibility
-  const [openModal, setOpenModal] = useState(false); // State to control the modal visibility
+  const products = useSelector(state => state.product.products);
+  const [showStepper, setShowStepper] = useState(false);
+  const [openModal, setOpenModal] = useState(false);
 
-  useEffect(
-    () => {
-      dispatch(getProducts()); // Fetch products on component mount
-    },
-    [dispatch]
-  );
+  useEffect(() => {
+    dispatch(getProducts());
+  }, [dispatch]);
+
   const handleAddProductClick = () => {
-    setOpenModal(true); // Show the modal when button is clicked
-    setActiveStep(0); // Reset to the first step
+    setOpenModal(true);
+    setActiveStep(0);
   };
+
   const [product, setProduct] = useState(initialState);
   const [productImage, setProductImage] = useState("");
-  const [paymentProofImage, setPaymentProofImage] = useState(null); // <-- NEW
+  const [paymentProofImage, setPaymentProofImage] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
-  const [paymentImagePreview, setPaymentImagePreview] = useState(null); // <-- NEW
+  const [paymentImagePreview, setPaymentImagePreview] = useState(null);
   const [description, setDescription] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [chequeDate, setChequeDate] = useState("");
@@ -100,8 +102,12 @@ const AddProduct = () => {
   const [shippingType, setShippingType] = useState("local");
   const [supplier, setSupplier] = useState({ id: "", name: "" });
   const [activeStep, setActiveStep] = useState(0);
-  const [openSupplierModal, setOpenSupplierModal] = useState(false); // State to control the supplier modal
-  const [openWareHouseModal, setOpenWareHosueModal] = useState(false); // State to control the supplier modal
+  
+  // ✅ NEW: Track if this is own inventory (no supplier/payment)
+  const [isOwnInventory, setIsOwnInventory] = useState(false);
+  
+  const [openSupplierModal, setOpenSupplierModal] = useState(false);
+  const [openWareHouseModal, setOpenWareHosueModal] = useState(false);
   const handleOpenModal = () => setOpenSupplierModal(true);
   const handleCloseModal = () => setOpenSupplierModal(false);
   const handleOpenModalwarehouse = () => setOpenWareHosueModal(true);
@@ -113,20 +119,17 @@ const AddProduct = () => {
   const [openImageModal, setOpenImageModal] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
 
-  // ✅ submit guards
   const [submitting, setSubmitting] = useState(false);
   const inflightRef = useRef(false);
 
-  useEffect(
-    () => {
-      dispatch(getBanks());
-      dispatch(getWarehouses());
-      dispatch(getSuppliers());
-    },
-    [dispatch]
-  );
-  const handleOpenSupplierModal = () => setOpenSupplierModal(true); // Function to open the supplier modal
-  const handleCloseSupplierModal = () => setOpenSupplierModal(false); // Function to close the supplier modal
+  useEffect(() => {
+    dispatch(getBanks());
+    dispatch(getWarehouses());
+    dispatch(getSuppliers());
+  }, [dispatch]);
+
+  const handleOpenSupplierModal = () => setOpenSupplierModal(true);
+  const handleCloseSupplierModal = () => setOpenSupplierModal(false);
 
   const handleProductImageChange = (e) => {
     const file = e.target.files[0];
@@ -146,7 +149,6 @@ const AddProduct = () => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    // Coerce known numeric fields to numbers, keep others as-is
     if (name === "price" || name === "quantity") {
       const num = value === "" ? "" : Number(value);
       setProduct((p) => ({ ...p, [name]: num }));
@@ -163,7 +165,7 @@ const AddProduct = () => {
   const handleSupplierChange = event => {
     const selectedSupplier = suppliers.find(s => s._id === event.target.value);
     if (selectedSupplier) {
-      setSupplier({ id: selectedSupplier._id, name: selectedSupplier.username  });
+      setSupplier({ id: selectedSupplier._id, name: selectedSupplier.username });
     }
   };
 
@@ -176,15 +178,16 @@ const AddProduct = () => {
   };
 
   const handleNext = () => {
-    if (submitting) return;           // ✅ block step changes while submitting
+    if (submitting) return;
     setActiveStep(prevActiveStep => prevActiveStep + 1);
   };
 
   const handleBack = () => {
-    if (submitting) return;           // ✅
+    if (submitting) return;
     setActiveStep(prevActiveStep => prevActiveStep - 1);
   };
 
+  // ✅ UPDATED: Only record supplier transaction if NOT own inventory
   const recordSupplierTransaction = async () => {
     if (!supplier.id || !product.price || !product.quantity) {
       toast.error("Supplier, price, or quantity missing.");
@@ -192,9 +195,12 @@ const AddProduct = () => {
     }
 
     const price = Number(product.price) || 0;
-    const qty   = Number(product.quantity) || 0;
+    const qty = Number(product.quantity) || 0;
     const transactionAmount = price * qty;
-    if (transactionAmount <= 0) { toast.error("Invalid price/quantity"); return; }
+    if (transactionAmount <= 0) {
+      toast.error("Invalid price/quantity");
+      return;
+    }
 
     const transactionData = new FormData();
     transactionData.append("name", product.name);
@@ -229,8 +235,8 @@ const AddProduct = () => {
         toast.success("Supplier transaction recorded.");
         const quantity = product?.quantity || 0;
         const name = product?.name || "Unknown Product";
-        const supplierName = supplier?.name || supplier?.username|| "Unknown Supplier";
-        // ✅ Now handle payment method-wise deduction
+        const supplierName = supplier?.name || supplier?.username || "Unknown Supplier";
+
         if (paymentMethod === "cash") {
           await axios.post(`${BACKEND_URL}api/cash/add`, {
             balance: transactionAmount,
@@ -277,32 +283,46 @@ const AddProduct = () => {
       }
     }
 
-    formData.append("paymentMethod", paymentMethod);
-    formData.append("chequeDate", chequeDate);
-    formData.append("bank", selectedBank);
-    formData.append("supplier", supplier.id);
+    // ✅ Only append supplier and payment fields if NOT own inventory
+    if (!isOwnInventory) {
+      formData.append("paymentMethod", paymentMethod);
+      formData.append("chequeDate", chequeDate);
+      formData.append("bank", selectedBank);
+      formData.append("supplier", supplier.id);
+    }
 
     if (productImage) {
-      formData.append("image", productImage); // ✅ IMPORTANT: field name must be 'file'
+      formData.append("image", productImage);
     }
 
     const res = await dispatch(createProduct(formData));
     if (res.payload && !res.error) {
-      toast.success("Product added successfully");
+      toast.success(isOwnInventory ? "Own inventory added successfully" : "Product added successfully");
       return true;
     }
     return false;
   };
 
   const handleSubmit = async () => {
-    // ✅ HARD GUARD: don’t allow re-entry
     if (submitting || inflightRef.current) return;
 
-    const qty  = Number(product.quantity) || 0;
+    const qty = Number(product.quantity) || 0;
     const price = Number(product.price) || 0;
     if (qty <= 0 || price <= 0) {
       toast.error("Quantity and Price must be greater than 0.");
       return;
+    }
+
+    // ✅ Validate supplier/payment only if NOT own inventory
+    if (!isOwnInventory) {
+      if (!supplier.id) {
+        toast.error("Please select a supplier for purchases.");
+        return;
+      }
+      if (!paymentMethod) {
+        toast.error("Please select a payment method for purchases.");
+        return;
+      }
     }
 
     try {
@@ -312,7 +332,10 @@ const AddProduct = () => {
       const ok = await saveProduct();
       if (!ok) return;
 
-      await recordSupplierTransaction();
+      // ✅ Only record supplier transaction if NOT own inventory
+      if (!isOwnInventory) {
+        await recordSupplierTransaction();
+      }
 
       await Promise.all([
         dispatch(getProducts()).unwrap(),
@@ -320,7 +343,7 @@ const AddProduct = () => {
         dispatch(getCash()).unwrap(),
       ]);
 
-      setOpenModal(false);              // close the wizard nicely
+      setOpenModal(false);
       navigate("/dashboard");
     } catch (err) {
       console.error("Submit failed:", err);
@@ -338,6 +361,25 @@ const AddProduct = () => {
           <StyledCard>
             <CardContent>
               <Grid container spacing={3}>
+                {/* ✅ NEW: Toggle for Own Inventory */}
+                <Grid item xs={12}>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={isOwnInventory}
+                        onChange={(e) => setIsOwnInventory(e.target.checked)}
+                        disabled={submitting}
+                      />
+                    }
+                    label="This is my own inventory (no supplier/payment needed)"
+                  />
+                  {isOwnInventory && (
+                    <Alert severity="info" sx={{ mt: 1 }}>
+                      You're adding your own inventory. Supplier and payment details won't be required, and no financial transactions will be recorded.
+                    </Alert>
+                  )}
+                </Grid>
+
                 <Grid item xs={12} sm={6}>
                   <TextField
                     fullWidth
@@ -345,7 +387,7 @@ const AddProduct = () => {
                     name="name"
                     value={product.name}
                     onChange={handleInputChange}
-                    disabled={submitting}            // ✅
+                    disabled={submitting}
                   />
                 </Grid>
                 <Grid item xs={12} sm={6}>
@@ -438,7 +480,7 @@ const AddProduct = () => {
                     </Select>
                   </FormControl>
                 </Grid>
-                {shippingType === "local" &&
+                {shippingType === "local" && (
                   <Grid item xs={12} sm={6}>
                     <FormControl fullWidth disabled={submitting}>
                       <InputLabel>Warehouse</InputLabel>
@@ -447,11 +489,11 @@ const AddProduct = () => {
                         onChange={e => setSelectedWarehouse(e.target.value)}
                         label="Warehouse"
                       >
-                        {warehouses.map(warehouse =>
+                        {warehouses.map(warehouse => (
                           <MenuItem key={warehouse._id} value={warehouse._id}>
                             {warehouse.name}
                           </MenuItem>
-                        )}
+                        ))}
                         <MenuItem
                           value="addNew"
                           onClick={handleOpenModalwarehouse}
@@ -461,112 +503,111 @@ const AddProduct = () => {
                         </MenuItem>
                       </Select>
                     </FormControl>
-                  </Grid>}
-                <Grid item xs={12} sm={6}>
-                  <FormControl fullWidth disabled={submitting}>
-                    <InputLabel>Payment Method</InputLabel>
-                    <Select
-                      value={paymentMethod}
-                      onChange={e => setPaymentMethod(e.target.value)}
-                      label="Payment Method"
-                    >
-                      <MenuItem value="cash">Cash</MenuItem>
-                      <MenuItem value="cheque">Cheque</MenuItem>
-                      <MenuItem value="online">Online</MenuItem>
-                      <MenuItem value="credit">Credit</MenuItem>
-                    </Select>
-                  </FormControl>
-                </Grid>
-                {paymentMethod === "cheque" &&
-                  <Grid item xs={12} sm={6}>
-                    <TextField
-                      fullWidth
-                      label="Cheque Date"
-                      type="date"
-                      value={chequeDate}
-                      onChange={e => setChequeDate(e.target.value)}
-                      InputLabelProps={{
-                        shrink: true
-                      }}
-                      disabled={submitting}
-                    />
-                  </Grid>}
-                {(paymentMethod === "cheque" || paymentMethod === "online") && (
-                  <Grid item xs={12}>
-                    <input
-                      accept="image/*"
-                      style={{ display: "none" }}
-                      id="payment-image-file"
-                      type="file"
-                      onChange={handlePaymentImageChange}
-                      disabled={submitting}
-                    />
-                    <label htmlFor="payment-image-file">
-                      <Button variant="contained" component="span" disabled={submitting}>
-                        Upload {paymentMethod === "cheque" ? "Cheque" : "Payment"} Image
-                      </Button>
-                    </label>
-                    {paymentImagePreview && (
-                      <img
-                        src={paymentImagePreview}
-                        alt="Preview"
-                        style={{
-                          marginTop: 10,
-                          maxWidth: "100%",
-                          maxHeight: 200
-                        }}
-                      />
-                    )}
                   </Grid>
                 )}
 
-                {(paymentMethod === "online" || paymentMethod === "cheque") &&
-                  <Grid item xs={12} sm={6}>
-                    <FormControl fullWidth disabled={submitting}>
-                      <InputLabel>Bank</InputLabel>
-                      <Select
-                        value={selectedBank}
-                        onChange={e => setSelectedBank(e.target.value)}
-                        label="Bank"
-                      >
-                        {banks.map(bank =>
-                          <MenuItem key={bank._id} value={bank._id}>
-                            {bank.bankName}
-                          </MenuItem>
+                {/* ✅ UPDATED: Show payment/supplier fields only if NOT own inventory */}
+                {!isOwnInventory && (
+                  <>
+                    <Grid item xs={12} sm={6}>
+                      <FormControl fullWidth disabled={submitting}>
+                        <InputLabel>Payment Method</InputLabel>
+                        <Select
+                          value={paymentMethod}
+                          onChange={e => setPaymentMethod(e.target.value)}
+                          label="Payment Method"
+                        >
+                          <MenuItem value="cash">Cash</MenuItem>
+                          <MenuItem value="cheque">Cheque</MenuItem>
+                          <MenuItem value="online">Online</MenuItem>
+                          <MenuItem value="credit">Credit</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+
+                    {paymentMethod === "cheque" && (
+                      <Grid item xs={12} sm={6}>
+                        <TextField
+                          fullWidth
+                          label="Cheque Date"
+                          type="date"
+                          value={chequeDate}
+                          onChange={e => setChequeDate(e.target.value)}
+                          InputLabelProps={{ shrink: true }}
+                          disabled={submitting}
+                        />
+                      </Grid>
+                    )}
+
+                    {(paymentMethod === "cheque" || paymentMethod === "online") && (
+                      <Grid item xs={12}>
+                        <input
+                          accept="image/*"
+                          style={{ display: "none" }}
+                          id="payment-image-file"
+                          type="file"
+                          onChange={handlePaymentImageChange}
+                          disabled={submitting}
+                        />
+                        <label htmlFor="payment-image-file">
+                          <Button variant="contained" component="span" disabled={submitting}>
+                            Upload {paymentMethod === "cheque" ? "Cheque" : "Payment"} Image
+                          </Button>
+                        </label>
+                        {paymentImagePreview && (
+                          <img
+                            src={paymentImagePreview}
+                            alt="Preview"
+                            style={{ marginTop: 10, maxWidth: "100%", maxHeight: 200 }}
+                          />
                         )}
-                      </Select>
-                    </FormControl>
-                  </Grid>}
-                <Grid
-                  item
-                  xs={12}
-                  sm={6}
-                  display="flex"
-                  flexDirection="row"
-                  justifyContent="space-between"
-                >
-                  <FormControl fullWidth disabled={submitting}>
-                    <InputLabel>Supplier</InputLabel>
-                    <Select
-                      value={supplier.id}
-                      onChange={handleSupplierChange}
-                      label="Supplier"
-                    >
-                      {suppliers.map(s =>
-                        <MenuItem key={s._id} value={s._id}>
-                          {s.username}
-                        </MenuItem>
-                      )}
-                      <MenuItem
-                        value="addNew"
-                        onClick={handleOpenModal}
-                        style={{ backgroundColor: "silver" }}
-                      >
-                        Add New Supplier
-                      </MenuItem>
-                    </Select>
-                  </FormControl>
-                </Grid>
+                      </Grid>
+                    )}
+
+                    {(paymentMethod === "online" || paymentMethod === "cheque") && (
+                      <Grid item xs={12} sm={6}>
+                        <FormControl fullWidth disabled={submitting}>
+                          <InputLabel>Bank</InputLabel>
+                          <Select
+                            value={selectedBank}
+                            onChange={e => setSelectedBank(e.target.value)}
+                            label="Bank"
+                          >
+                            {banks.map(bank => (
+                              <MenuItem key={bank._id} value={bank._id}>
+                                {bank.bankName}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      </Grid>
+                    )}
+
+                    <Grid item xs={12} sm={6} display="flex" flexDirection="row" justifyContent="space-between">
+                      <FormControl fullWidth disabled={submitting}>
+                        <InputLabel>Supplier</InputLabel>
+                        <Select
+                          value={supplier.id}
+                          onChange={handleSupplierChange}
+                          label="Supplier"
+                        >
+                          {suppliers.map(s => (
+                            <MenuItem key={s._id} value={s._id}>
+                              {s.username}
+                            </MenuItem>
+                          ))}
+                          <MenuItem
+                            value="addNew"
+                            onClick={handleOpenModal}
+                            style={{ backgroundColor: "silver" }}
+                          >
+                            Add New Supplier
+                          </MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                  </>
+                )}
               </Grid>
             </CardContent>
           </StyledCard>
@@ -578,27 +619,23 @@ const AddProduct = () => {
               <Typography variant="h6" gutterBottom>
                 Review your product details
               </Typography>
-              <Typography>
-                Name: {product.name}
-              </Typography>
-              <Typography>
-                Category: {product.category}
-              </Typography>
-              <Typography>
-                Price: ${product.price}
-              </Typography>
-              <Typography>
-                Description: {product.description}
-              </Typography>
-              <Typography>
-                Quantity: {product.quantity}
-              </Typography>
-              <Typography>
-                Shipping Type: {shippingType}
-              </Typography>
-              <Typography>
-                Payment Method: {paymentMethod}
-              </Typography>
+              <Typography>Name: {product.name}</Typography>
+              <Typography>Category: {product.category}</Typography>
+              <Typography>Price: ${product.price}</Typography>
+              <Typography>Description: {product.description}</Typography>
+              <Typography>Quantity: {product.quantity}</Typography>
+              <Typography>Shipping Type: {shippingType}</Typography>
+              {!isOwnInventory && (
+                <>
+                  <Typography>Payment Method: {paymentMethod}</Typography>
+                  <Typography>Supplier: {supplier.name}</Typography>
+                </>
+              )}
+              {isOwnInventory && (
+                <Alert severity="info" sx={{ mt: 2 }}>
+                  This is your own inventory - no supplier or payment will be recorded.
+                </Alert>
+              )}
             </CardContent>
           </StyledCard>
         );
@@ -618,7 +655,7 @@ const AddProduct = () => {
           Add Product
         </Button>
         <Typography variant="h4" gutterBottom align="center">
-          Existing Products{" "}
+          Existing Products
         </Typography>
         <Table>
           <TableHead>
@@ -628,12 +665,11 @@ const AddProduct = () => {
               <TableCell>Price</TableCell>
               <TableCell>Description</TableCell>
               <TableCell>Quantity</TableCell>
-
               <TableCell>Created Date</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {products.map(product =>
+            {products.map(product => (
               <TableRow key={product._id}>
                 <TableCell>{product.name}</TableCell>
                 <TableCell>{product.category}</TableCell>
@@ -642,16 +678,16 @@ const AddProduct = () => {
                 <TableCell>{product.quantity}</TableCell>
                 <TableCell>
                   {new Date(product.createdAt).toLocaleDateString()}
-                </TableCell>{" "}
+                </TableCell>
               </TableRow>
-            )}
+            ))}
           </TableBody>
         </Table>
       </StyledPaper>
 
       <Modal
         open={openModal}
-        onClose={submitting ? undefined : () => setOpenModal(false)}   // ✅ don't allow close mid-submit
+        onClose={submitting ? undefined : () => setOpenModal(false)}
         style={{
           display: "flex",
           alignItems: "center",
@@ -668,7 +704,6 @@ const AddProduct = () => {
             opacity: submitting ? 0.9 : 1,
           }}
         >
-          {/* Scrollable Section */}
           <Box sx={{ flex: 1, overflowY: "auto", p: 2 }}>
             <Stepper activeStep={activeStep} alternativeLabel>
               {steps.map((label) => (
@@ -681,7 +716,6 @@ const AddProduct = () => {
             <Box mt={4}>{getStepContent(activeStep)}</Box>
           </Box>
 
-          {/* Fixed Footer (Always Visible) */}
           <Box
             sx={{
               display: "flex",
@@ -716,8 +750,8 @@ const AddProduct = () => {
         open={openSupplierModal}
         handleClose={handleCloseModal}
         onSuccess={newSupplier => {
-          dispatch(getSuppliers()); // refresh suppliers
-          setSupplier({ id: newSupplier._id, name: newSupplier.username }); // auto-select new supplier
+          dispatch(getSuppliers());
+          setSupplier({ id: newSupplier._id, name: newSupplier.username });
         }}
       />
 
@@ -725,8 +759,8 @@ const AddProduct = () => {
         open={openWareHouseModal}
         onClose={handleCloseModalwarehouse}
         onSuccess={newWarehouse => {
-          dispatch(getWarehouses()); // refresh warehouse list
-          setSelectedWarehouse(newWarehouse._id); // auto-select the new one
+          dispatch(getWarehouses());
+          setSelectedWarehouse(newWarehouse._id);
         }}
       />
 
