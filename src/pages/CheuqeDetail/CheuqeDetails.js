@@ -16,6 +16,8 @@ import {
   Tooltip,
   Chip,
   Box,
+  TextField,
+  MenuItem,
 } from "@mui/material";
 import {
   getPendingCheques,
@@ -38,6 +40,15 @@ const ChequeDetails = () => {
   const [selectedImage, setSelectedImage] = useState(null);
   const [allCheques, setAllCheques] = useState([]);
 
+  // ✅ TRANSFER STATE
+  const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [selectedChequeForTransfer, setSelectedChequeForTransfer] = useState(null);
+  const [transferTo, setTransferTo] = useState("");
+  const [transferToId, setTransferToId] = useState("");
+  const [transferDescription, setTransferDescription] = useState("");
+  const [customers, setCustomers] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
+
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
   const API_URL = `${BACKEND_URL}api/cheques`;
 
@@ -45,6 +56,52 @@ const ChequeDetails = () => {
   useEffect(() => {
     dispatch(getPendingCheques({ status: "all" }));
   }, [dispatch]);
+
+// ✅ CHANGE THIS:
+useEffect(() => {
+  const fetchEntities = async () => {
+    try {
+      const baseUrl = BACKEND_URL.endsWith('/') ? BACKEND_URL : `${BACKEND_URL}/`;
+      
+      console.log('Fetching customers from:', `${baseUrl}api/customers/allcustomer`);
+      console.log('Fetching suppliers from:', `${baseUrl}api/suppliers`);
+
+      const [custResp, suppResp] = await Promise.all([
+        axios.get(`${baseUrl}api/customers/allcustomer`, { withCredentials: true }), // ✅ Add /allcustomer
+        axios.get(`${baseUrl}api/suppliers`, { withCredentials: true }),
+      ]);
+
+      console.log('Customers response:', custResp);
+      console.log('Suppliers response:', suppResp);
+
+      const customersData = Array.isArray(custResp.data) 
+        ? custResp.data 
+        : custResp.data?.customers || [];
+      
+      const suppliersData = Array.isArray(suppResp.data)
+        ? suppResp.data
+        : suppResp.data?.suppliers || [];
+
+      console.log('Customers count:', customersData.length);
+      console.log('Suppliers count:', suppliersData.length);
+
+      setCustomers(customersData);
+      setSuppliers(suppliersData);
+
+      if (suppliersData.length === 0) {
+        console.warn('⚠️ No suppliers found!');
+      }
+      if (customersData.length === 0) {
+        console.warn('⚠️ No customers found!');
+      }
+    } catch (err) {
+      console.error("❌ Error fetching entities:", err);
+      console.error("Error response:", err.response);
+      toast.error(err.response?.data?.message || "Failed to load customers/suppliers");
+    }
+  };
+  fetchEntities();
+}, [BACKEND_URL]);
 
   useEffect(() => {
     if (!Array.isArray(cheques)) return;
@@ -63,8 +120,8 @@ const ChequeDetails = () => {
 
       all.push(c);
       
-      // ✅ Only count PENDING and NOT CANCELLED cheques for today and upcoming
-      if (c.status === false && !c.cancelled) {
+      // ✅ Only count PENDING, NOT CANCELLED, and NOT TRANSFERRED cheques
+      if (c.status === false && !c.cancelled && !c.transferred) {
         if (dayDiff === 0) t.push(c);
         else if (dayDiff > 0 && dayDiff <= 7) u.push(c);
       }
@@ -75,18 +132,18 @@ const ChequeDetails = () => {
     setUpcomingCheques(u);
   }, [cheques]);
 
-  // Only allow selecting rows that are pending AND have a bank id AND not cancelled
+  // Only allow selecting rows that are pending AND have a bank id AND not cancelled AND not transferred
   const canSubmit = useMemo(() => {
     if (selectedCheques.length === 0) return false;
     return selectedCheques.every((id) => {
       const c = allCheques.find((x) => x._id === id);
-      return !!c?.bank && c?.status === false && !c?.cancelled;
+      return !!c?.bank && c?.status === false && !c?.cancelled && !c?.transferred;
     });
   }, [selectedCheques, allCheques]);
 
   const handleStatusChange = (chequeId, isChecked) => {
     const row = allCheques.find((x) => x._id === chequeId);
-    if (!row?.bank || row?.status === true || row?.cancelled) return;
+    if (!row?.bank || row?.status === true || row?.cancelled || row?.transferred) return;
     setSelectedCheques((prev) =>
       isChecked ? [...prev, chequeId] : prev.filter((id) => id !== chequeId)
     );
@@ -116,7 +173,6 @@ const ChequeDetails = () => {
     }
   };
 
-  // ✅ ADD CANCEL HANDLER
   const handleCancel = async (chequeId) => {
     if (!window.confirm("Are you sure you want to cancel this cheque? This will reverse the balance.")) {
       return;
@@ -138,9 +194,56 @@ const ChequeDetails = () => {
     }
   };
 
+  // ✅ FIX: Reset all fields when opening transfer modal
+  const handleTransferClick = (cheque) => {
+    setSelectedChequeForTransfer(cheque);
+    setTransferTo(""); // ✅ Clear dropdown
+    setTransferToId(""); // ✅ Clear entity selection
+    setTransferDescription(""); // ✅ Clear description
+    setTransferModalOpen(true);
+  };
+
+  const handleTransferSubmit = async () => {
+    if (!transferTo || !transferToId) {
+      toast.error("Please select transfer destination");
+      return;
+    }
+
+    try {
+      await axios.post(
+        `${API_URL}/transfer/${selectedChequeForTransfer._id}`,
+        {
+          transferTo,
+          transferToId,
+          description: transferDescription,
+        },
+        { withCredentials: true }
+      );
+
+      await dispatch(getPendingCheques({ status: "all" }));
+      setTransferModalOpen(false);
+      setTransferTo("");
+      setTransferToId("");
+      setTransferDescription("");
+      setSelectedChequeForTransfer(null);
+      toast.success("Cheque transferred successfully");
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.message || "Failed to transfer cheque";
+      console.error(msg);
+      toast.error(msg);
+    }
+  };
+
+  const handleCloseTransferModal = () => {
+    setTransferModalOpen(false);
+    setTransferTo("");
+    setTransferToId("");
+    setTransferDescription("");
+    setSelectedChequeForTransfer(null);
+  };
+
   const handleCloseModal = () => setSelectedImage(null);
 
-  // ✅ Fix pagination handlers
   const handlePageChange = (newPage) => {
     setPage(Math.max(0, Number(newPage) || 0));
   };
@@ -165,6 +268,8 @@ const ChequeDetails = () => {
         <>
           {row.cancelled ? (
             <Chip label="Cancelled" color="error" size="small" />
+          ) : row.transferred ? (
+            <Chip label="Transferred" color="info" size="small" />
           ) : row.status ? (
             <Chip label="Cleared" size="small" />
           ) : (
@@ -177,7 +282,7 @@ const ChequeDetails = () => {
       field: "statusChange",
       headerName: "Select",
       renderCell: (row) => {
-        const disabled = !row.bank || row.status === true || row.cancelled === true;
+        const disabled = !row.bank || row.status === true || row.cancelled === true || row.transferred === true;
         const box = (
           <Checkbox
             checked={selectedCheques.includes(row._id)}
@@ -189,6 +294,7 @@ const ChequeDetails = () => {
         if (!row.bank) tip = "Missing bank account — cannot cash out";
         if (row.status === true) tip = "Already cleared";
         if (row.cancelled === true) tip = "Cheque is cancelled";
+        if (row.transferred === true) tip = "Cheque is transferred";
         return tip ? (
           <Tooltip title={tip}>
             <span>{box}</span>
@@ -212,21 +318,30 @@ const ChequeDetails = () => {
           </Typography>
         ),
     },
-    // ✅ ADD ACTIONS COLUMN WITH CANCEL BUTTON
     {
       field: "actions",
       headerName: "Actions",
       renderCell: (row) => (
-        <Box>
-          {!row.cancelled && !row.status && (
-            <Button
-              variant="outlined"
-              color="error"
-              size="small"
-              onClick={() => handleCancel(row._id)}
-            >
-              Cancel
-            </Button>
+        <Box sx={{ display: "flex", gap: 1 }}>
+          {!row.cancelled && !row.status && !row.transferred && (
+            <>
+              <Button
+                variant="outlined"
+                color="error"
+                size="small"
+                onClick={() => handleCancel(row._id)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="outlined"
+                color="primary"
+                size="small"
+                onClick={() => handleTransferClick(row)}
+              >
+                Transfer
+              </Button>
+            </>
           )}
         </Box>
       ),
@@ -296,6 +411,7 @@ const ChequeDetails = () => {
         </Tooltip>
       </Paper>
 
+      {/* Image Modal */}
       <Modal open={Boolean(selectedImage)} onClose={handleCloseModal}>
         <div
           style={{
@@ -321,6 +437,97 @@ const ChequeDetails = () => {
             Close
           </Button>
         </div>
+      </Modal>
+
+      {/* ✅ TRANSFER MODAL */}
+      <Modal open={transferModalOpen} onClose={handleCloseTransferModal}>
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: 400,
+            bgcolor: "background.paper",
+            boxShadow: 24,
+            p: 4,
+            borderRadius: 2,
+          }}
+        >
+          <Typography variant="h6" gutterBottom>
+            Transfer Cheque
+          </Typography>
+
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            <strong>Cheque Details:</strong><br />
+            Amount: {selectedChequeForTransfer?.amount}<br />
+            From: {selectedChequeForTransfer?.name}
+          </Typography>
+
+          <TextField
+            select
+            label="Transfer To"
+            value={transferTo}
+            onChange={(e) => {
+              setTransferTo(e.target.value);
+              setTransferToId(""); // Reset entity selection when changing type
+            }}
+            fullWidth
+            margin="normal"
+          >
+            <MenuItem value="">-- Select Type --</MenuItem>
+            <MenuItem value="customer">Customer</MenuItem>
+            <MenuItem value="supplier">Supplier</MenuItem>
+          </TextField>
+
+          {transferTo && (
+            <TextField
+              select
+              label={`Select ${transferTo === "customer" ? "Customer" : "Supplier"}`}
+              value={transferToId}
+              onChange={(e) => setTransferToId(e.target.value)}
+              fullWidth
+              margin="normal"
+            >
+              <MenuItem value="">-- Select {transferTo === "customer" ? "Customer" : "Supplier"} --</MenuItem>
+              {(transferTo === "customer" ? customers : suppliers).map((entity) => (
+                <MenuItem key={entity._id} value={entity._id}>
+                  {entity.username || entity.name}
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
+
+          <TextField
+            label="Description (Optional)"
+            value={transferDescription}
+            onChange={(e) => setTransferDescription(e.target.value)}
+            fullWidth
+            margin="normal"
+            multiline
+            rows={2}
+            placeholder="e.g., Payment for invoice #123"
+          />
+
+          <Box sx={{ display: "flex", gap: 2, mt: 2 }}>
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={handleTransferSubmit}
+              fullWidth
+              disabled={!transferTo || !transferToId}
+            >
+              Transfer
+            </Button>
+            <Button
+              variant="outlined"
+              onClick={handleCloseTransferModal}
+              fullWidth
+            >
+              Cancel
+            </Button>
+          </Box>
+        </Box>
       </Modal>
     </div>
   );

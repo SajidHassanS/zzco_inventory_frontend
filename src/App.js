@@ -37,6 +37,7 @@ import ViewExpenses from "./pages/ownAccount/ViewExpenses.js";
 import ViewWarehouse from "./pages/Warehouse/ViewWarehouse.js";
 import AddBank from "./pages/ownAccount/bank-accounts/AddBank.jsx";
 import ChequeDetails from "./pages/CheuqeDetail/CheuqeDetails.js";
+import Report from "./pages/Report/Report.js"; // ✅ Material-UI styled Report
 
 axios.defaults.withCredentials = true;
 
@@ -219,16 +220,17 @@ function App() {
           }
         />
 
-        {/* <Route
-          path="/view-expenses"
+        {/* ✅ Added Report Route */}
+        <Route
+          path="/report"
           element={
             <Sidebar>
               <Layout>
-               <ViewExpenses/>
+                <Report />
               </Layout>
             </Sidebar>
           }
-        /> */}
+        />
 
         <Route
           path="/Add-sale"
