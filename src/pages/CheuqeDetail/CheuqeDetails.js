@@ -15,12 +15,15 @@ import {
   Modal,
   Tooltip,
   Chip,
+  Box,
 } from "@mui/material";
 import {
   getPendingCheques,
   updateChequeStatus,
 } from "../../redux/features/cheque/chequeSlice";
 import CustomTable from "../../components/CustomTable/CustomTable";
+import axios from "axios";
+import { toast } from "react-toastify";
 
 const ChequeDetails = () => {
   const dispatch = useDispatch();
@@ -34,6 +37,9 @@ const ChequeDetails = () => {
   const [selectedCheques, setSelectedCheques] = useState([]);
   const [selectedImage, setSelectedImage] = useState(null);
   const [allCheques, setAllCheques] = useState([]);
+
+  const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+  const API_URL = `${BACKEND_URL}api/cheques`;
 
   // Fetch ALL so cleared remain visible
   useEffect(() => {
@@ -57,8 +63,8 @@ const ChequeDetails = () => {
 
       all.push(c);
       
-      // ✅ Only count PENDING cheques for today and upcoming
-      if (c.status === false) {
+      // ✅ Only count PENDING and NOT CANCELLED cheques for today and upcoming
+      if (c.status === false && !c.cancelled) {
         if (dayDiff === 0) t.push(c);
         else if (dayDiff > 0 && dayDiff <= 7) u.push(c);
       }
@@ -69,18 +75,18 @@ const ChequeDetails = () => {
     setUpcomingCheques(u);
   }, [cheques]);
 
-  // Only allow selecting rows that are pending AND have a bank id
+  // Only allow selecting rows that are pending AND have a bank id AND not cancelled
   const canSubmit = useMemo(() => {
     if (selectedCheques.length === 0) return false;
     return selectedCheques.every((id) => {
       const c = allCheques.find((x) => x._id === id);
-      return !!c?.bank && c?.status === false;
+      return !!c?.bank && c?.status === false && !c?.cancelled;
     });
   }, [selectedCheques, allCheques]);
 
   const handleStatusChange = (chequeId, isChecked) => {
     const row = allCheques.find((x) => x._id === chequeId);
-    if (!row?.bank || row?.status === true) return; // can't select cleared or missing bank
+    if (!row?.bank || row?.status === true || row?.cancelled) return;
     setSelectedCheques((prev) =>
       isChecked ? [...prev, chequeId] : prev.filter((id) => id !== chequeId)
     );
@@ -102,10 +108,33 @@ const ChequeDetails = () => {
 
       await dispatch(getPendingCheques({ status: "all" }));
       setSelectedCheques([]);
+      toast.success("Cheques cashed out successfully");
     } catch (e) {
       const msg = e?.message || e?.error || "Failed to cash out cheques";
       console.error(msg);
-      alert(msg);
+      toast.error(msg);
+    }
+  };
+
+  // ✅ ADD CANCEL HANDLER
+  const handleCancel = async (chequeId) => {
+    if (!window.confirm("Are you sure you want to cancel this cheque? This will reverse the balance.")) {
+      return;
+    }
+
+    try {
+      await axios.patch(
+        `${API_URL}/cancel/${chequeId}`,
+        {},
+        { withCredentials: true }
+      );
+
+      await dispatch(getPendingCheques({ status: "all" }));
+      toast.success("Cheque cancelled successfully");
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.message || "Failed to cancel cheque";
+      console.error(msg);
+      toast.error(msg);
     }
   };
 
@@ -132,18 +161,23 @@ const ChequeDetails = () => {
     {
       field: "status",
       headerName: "Status",
-      renderCell: (row) =>
-        row.status ? (
-          <Chip label="Cleared" size="small" />
-        ) : (
-          <Chip label="Pending" color="warning" size="small" />
-        ),
+      renderCell: (row) => (
+        <>
+          {row.cancelled ? (
+            <Chip label="Cancelled" color="error" size="small" />
+          ) : row.status ? (
+            <Chip label="Cleared" size="small" />
+          ) : (
+            <Chip label="Pending" color="warning" size="small" />
+          )}
+        </>
+      ),
     },
     {
       field: "statusChange",
       headerName: "Select",
       renderCell: (row) => {
-        const disabled = !row.bank || row.status === true;
+        const disabled = !row.bank || row.status === true || row.cancelled === true;
         const box = (
           <Checkbox
             checked={selectedCheques.includes(row._id)}
@@ -154,6 +188,7 @@ const ChequeDetails = () => {
         let tip = "";
         if (!row.bank) tip = "Missing bank account — cannot cash out";
         if (row.status === true) tip = "Already cleared";
+        if (row.cancelled === true) tip = "Cheque is cancelled";
         return tip ? (
           <Tooltip title={tip}>
             <span>{box}</span>
@@ -176,6 +211,25 @@ const ChequeDetails = () => {
             No Image
           </Typography>
         ),
+    },
+    // ✅ ADD ACTIONS COLUMN WITH CANCEL BUTTON
+    {
+      field: "actions",
+      headerName: "Actions",
+      renderCell: (row) => (
+        <Box>
+          {!row.cancelled && !row.status && (
+            <Button
+              variant="outlined"
+              color="error"
+              size="small"
+              onClick={() => handleCancel(row._id)}
+            >
+              Cancel
+            </Button>
+          )}
+        </Box>
+      ),
     },
   ];
 

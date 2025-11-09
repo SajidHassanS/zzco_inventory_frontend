@@ -169,13 +169,23 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
   // Columns for CustomTable (use normalized quantity + add image column)
   const columns = useMemo(
     () => [
-      {
-        field: "date",
-        headerName: "Date",
-        renderCell: (row) =>
-          row?.date ? new Date(row.date).toLocaleDateString() : "-",
-      },
-      { field: "productName", headerName: "Product Name" },
+     {
+      field: "date",
+      headerName: "Date",
+      renderCell: (row) =>
+        row?.date ? new Date(row.date).toLocaleDateString() : "-",
+    },
+    { 
+      field: "productName", 
+      headerName: "Product Name",
+      // ✅ FIX: Don't show supplier name, only show if it's an actual product
+      renderCell: (row) => {
+        const name = row?.productName;
+        // Skip if it matches supplier name
+        if (name === supplier?.username || name === supplier?.name) return "-";
+        return name || "-";
+      }
+    },
       { field: "description", headerName: "Description" },
       {
         field: "quantity",
