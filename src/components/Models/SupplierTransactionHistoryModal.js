@@ -1,6 +1,7 @@
 // src/components/Models/SupplierTransactionHistoryModal.jsx
 import React, { useEffect, useState, useMemo } from "react";
-import { Modal, Box, Typography, Button } from "@mui/material";
+import { Modal, Box, Typography, Button, IconButton } from "@mui/material";
+import { Visibility } from "@mui/icons-material";
 import axios from "axios";
 import CustomTable from "../CustomTable/CustomTable";
 import jsPDF from "jspdf";
@@ -9,6 +10,8 @@ import autoTable from "jspdf-autotable";
 const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
   const [transactions, setTransactions] = useState([]);
   const [totalBalance, setTotalBalance] = useState(0);
+  const [imageModalOpen, setImageModalOpen] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
 
   // Local pagination state
   const [page, setPage] = useState(0);
@@ -38,7 +41,7 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
     m = s.match(/(\d+)\s*(pcs?|pieces?|units?|bags?|boxes?|kg|kilograms?|lts?|liters?)/i);
     if (m) return Number(m[1]);
 
-    // 4) "<num> @ <price>" (common “qty @ unitPrice” style)
+    // 4) "<num> @ <price>" (common "qty @ unitPrice" style)
     m = s.match(/(\d+)\s*@\s*\d+(?:[.,]\d+)?/i);
     if (m) return Number(m[1]);
 
@@ -60,6 +63,17 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
 
     if (direct > 0) return direct;
     return parseQtyFromDesc(t?.description);
+  };
+
+  // Handle image view
+  const handleViewImage = (imageUrl) => {
+    setSelectedImage(imageUrl);
+    setImageModalOpen(true);
+  };
+
+  const handleCloseImageModal = () => {
+    setImageModalOpen(false);
+    setSelectedImage(null);
   };
 
   // Fetch & build running ledger (+ normalize quantity)
@@ -152,7 +166,7 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
     doc.save(`Supplier_Transaction_History_${supplier?.username || "supplier"}.pdf`);
   };
 
-  // Columns for CustomTable (use normalized quantity)
+  // Columns for CustomTable (use normalized quantity + add image column)
   const columns = useMemo(
     () => [
       {
@@ -197,6 +211,25 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
           row?.chequeDate ? new Date(row.chequeDate).toLocaleDateString() : "-",
       },
       {
+        field: "image",
+        headerName: "Cheque Image",
+        renderCell: (row) => {
+          const imageUrl = row?.image?.filePath;
+          return imageUrl ? (
+            <IconButton
+              size="small"
+              color="primary"
+              onClick={() => handleViewImage(imageUrl)}
+              title="View Image"
+            >
+              <Visibility />
+            </IconButton>
+          ) : (
+            "-"
+          );
+        },
+      },
+      {
         field: "runningBalance",
         headerName: "Running Balance",
         renderCell: (row) => (
@@ -208,51 +241,89 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
   );
 
   return (
-    <Modal open={open} onClose={onClose}>
-      <Box
-        sx={{
-          width: 1000,
-          p: 3,
-          mx: "auto",
-          mt: 5,
-          bgcolor: "background.paper",
-          boxShadow: 24,
-          borderRadius: 1,
-          overflow: "auto",
-        }}
-      >
-        <Typography variant="h6" sx={{ mb: 2 }}>
-          Ledger for {supplier?.username}
-        </Typography>
-
-        <CustomTable
-          columns={columns}
-          data={transactions}
-          page={page}
-          rowsPerPage={rowsPerPage}
-          onPageChange={handlePageChange}
-          onRowsPerPageChange={handleRowsPerPageChange}
-        />
-
-        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mt: 2 }}>
-          <Typography
-            variant="subtitle1"
-            sx={{ fontWeight: "bold", color: totalBalance >= 0 ? "green" : "red" }}
-          >
-            Total Balance: {Number(totalBalance || 0).toFixed(2)}
+    <>
+      <Modal open={open} onClose={onClose}>
+        <Box
+          sx={{
+            width: 1100,
+            p: 3,
+            mx: "auto",
+            mt: 5,
+            bgcolor: "background.paper",
+            boxShadow: 24,
+            borderRadius: 1,
+            overflow: "auto",
+            maxHeight: "90vh",
+          }}
+        >
+          <Typography variant="h6" sx={{ mb: 2 }}>
+            Ledger for {supplier?.username}
           </Typography>
 
-          <Box>
-            <Button variant="contained" color="secondary" onClick={downloadPDF} sx={{ mr: 2 }}>
-              Download PDF
-            </Button>
-            <Button variant="contained" color="primary" onClick={onClose}>
-              Close
-            </Button>
+          <CustomTable
+            columns={columns}
+            data={transactions}
+            page={page}
+            rowsPerPage={rowsPerPage}
+            onPageChange={handlePageChange}
+            onRowsPerPageChange={handleRowsPerPageChange}
+          />
+
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mt: 2 }}>
+            <Typography
+              variant="subtitle1"
+              sx={{ fontWeight: "bold", color: totalBalance >= 0 ? "green" : "red" }}
+            >
+              Total Balance: {Number(totalBalance || 0).toFixed(2)}
+            </Typography>
+
+            <Box>
+              <Button variant="contained" color="secondary" onClick={downloadPDF} sx={{ mr: 2 }}>
+                Download PDF
+              </Button>
+              <Button variant="contained" color="primary" onClick={onClose}>
+                Close
+              </Button>
+            </Box>
           </Box>
         </Box>
-      </Box>
-    </Modal>
+      </Modal>
+
+      {/* Image Preview Modal */}
+      <Modal open={imageModalOpen} onClose={handleCloseImageModal}>
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            bgcolor: "background.paper",
+            boxShadow: 24,
+            p: 2,
+            borderRadius: 1,
+            maxWidth: "90vw",
+            maxHeight: "90vh",
+            overflow: "auto",
+          }}
+        >
+          {selectedImage && (
+            <img
+              src={selectedImage}
+              alt="Cheque"
+              style={{ width: "100%", height: "auto", display: "block" }}
+            />
+          )}
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={handleCloseImageModal}
+            sx={{ mt: 2, display: "block", mx: "auto" }}
+          >
+            Close
+          </Button>
+        </Box>
+      </Modal>
+    </>
   );
 };
 

@@ -56,8 +56,12 @@ const ChequeDetails = () => {
       const dayDiff = (d.getTime() - today.getTime()) / (1000 * 3600 * 24);
 
       all.push(c);
-      if (dayDiff === 0) t.push(c);
-      else if (dayDiff > 0 && dayDiff <= 7) u.push(c);
+      
+      // ✅ Only count PENDING cheques for today and upcoming
+      if (c.status === false) {
+        if (dayDiff === 0) t.push(c);
+        else if (dayDiff > 0 && dayDiff <= 7) u.push(c);
+      }
     });
 
     setAllCheques(all);
@@ -88,7 +92,6 @@ const ChequeDetails = () => {
         const row = allCheques.find((c) => c._id === chequeId);
         if (!row) continue;
 
-        // 👉 Always send the CHEQUE _id to the server
         await dispatch(
           updateChequeStatus({
             id: row._id,
@@ -108,13 +111,23 @@ const ChequeDetails = () => {
 
   const handleCloseModal = () => setSelectedImage(null);
 
+  // ✅ Fix pagination handlers
+  const handlePageChange = (newPage) => {
+    setPage(Math.max(0, Number(newPage) || 0));
+  };
+
+  const handleRowsPerPageChange = (newRowsPerPage) => {
+    setRowsPerPage(Number(newRowsPerPage) || 5);
+    setPage(0);
+  };
+
   const columns = [
     {
       field: "chequeDate",
       headerName: "Date",
       renderCell: (row) => new Date(row.chequeDate || row.date).toLocaleDateString(),
     },
-    { field: "name", headerName: "Name" },
+    { field: "name", headerName: "Description" },
     { field: "type", headerName: "Type" },
     {
       field: "status",
@@ -166,12 +179,6 @@ const ChequeDetails = () => {
     },
   ];
 
-  const handleChangePage = (_e, newPage) => setPage(newPage);
-  const handleChangeRowsPerPage = (e) => {
-    setRowsPerPage(parseInt(e.target.value, 10));
-    setPage(0);
-  };
-
   if (isLoading) return <CircularProgress />;
 
   return (
@@ -208,8 +215,8 @@ const ChequeDetails = () => {
           data={allCheques || []}
           page={page}
           rowsPerPage={rowsPerPage}
-          onPageChange={handleChangePage}
-          onRowsPerPageChange={handleChangeRowsPerPage}
+          onPageChange={handlePageChange}
+          onRowsPerPageChange={handleRowsPerPageChange}
         />
 
         <Tooltip
@@ -227,7 +234,7 @@ const ChequeDetails = () => {
               color="primary"
               onClick={handleSubmit}
               disabled={!canSubmit}
-              sx={{ mt: 2 }}
+              sx={{ mt: 2, ml: 2, mb: 2 }}
             >
               Cash Out Selected Cheques ({selectedCheques.length})
             </Button>

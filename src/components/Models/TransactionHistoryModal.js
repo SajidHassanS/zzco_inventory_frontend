@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { Modal, Box, Typography, Button } from "@mui/material";
+import { Modal, Box, Typography, Button, IconButton } from "@mui/material";
+import { Visibility } from "@mui/icons-material";
 import axios from "axios";
 import CustomTable from "../CustomTable/CustomTable";
 import jsPDF from "jspdf";
@@ -21,6 +22,8 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(5);
   const [totalBalance, setTotalBalance] = useState(0);
+  const [imageModalOpen, setImageModalOpen] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
 
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
   const API_URL = `${BACKEND_URL}api/customers`;
@@ -71,7 +74,6 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
             quantity: qty || null,
             unitPrice: unitPrice != null ? unitPrice : null,
             lineTotal,
-
             debit,
             credit,
             runningBalance: balance,
@@ -86,7 +88,28 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
     };
 
     fetchTransactions();
-  }, [open, customer?._id]);
+  }, [open, customer?._id, API_URL]);
+
+  // Handle image view
+  const handleViewImage = (imageUrl) => {
+    setSelectedImage(imageUrl);
+    setImageModalOpen(true);
+  };
+
+  const handleCloseImageModal = () => {
+    setImageModalOpen(false);
+    setSelectedImage(null);
+  };
+
+  // ✅ Pagination handlers
+  const handlePageChange = (nextPage) => {
+    setPage(Math.max(0, Number(nextPage) || 0));
+  };
+
+  const handleRowsPerPageChange = (nextRpp) => {
+    setRowsPerPage(Number(nextRpp) || 5);
+    setPage(0);
+  };
 
   // PDF export (includes Qty/Unit/Line Total)
   const downloadPDF = () => {
@@ -125,69 +148,162 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
     doc.save(`Customer_Transaction_History_${customer?.username || "customer"}.pdf`);
   };
 
-  // Table columns (adds Qty/Unit/Line Total)
+  // Table columns (adds Qty/Unit/Line Total + Image column)
   const columns = [
     {
       field: "date",
       headerName: "Date",
       renderCell: (row) => (row?.date ? new Date(row.date).toLocaleDateString() : "-"),
     },
-    { field: "description", headerName: "Description", renderCell: (row) => row?.description || "-" },
-    { field: "paymentMethod", headerName: "Payment Type" },
-
-    { field: "quantity", headerName: "Qty", renderCell: (row) => (row?.quantity != null ? row.quantity : "-") },
-    { field: "unitPrice", headerName: "Unit Price", renderCell: (row) => (row?.unitPrice != null ? toNum(row.unitPrice).toFixed(2) : "-") },
-    { field: "lineTotal", headerName: "Line Total", renderCell: (row) => toNum(row?.lineTotal).toFixed(2) },
-
-    { field: "debit", headerName: "Debit", renderCell: (row) => <span style={{ color: "red" }}>{toNum(row?.debit).toFixed(2)}</span> },
-    { field: "credit", headerName: "Credit", renderCell: (row) => <span style={{ color: "green" }}>{toNum(row?.credit).toFixed(2)}</span> },
+    { 
+      field: "description", 
+      headerName: "Description", 
+      renderCell: (row) => row?.description || "-" 
+    },
+    { 
+      field: "paymentMethod", 
+      headerName: "Payment Type" 
+    },
+    { 
+      field: "quantity", 
+      headerName: "Qty", 
+      renderCell: (row) => (row?.quantity != null ? row.quantity : "-") 
+    },
+    { 
+      field: "unitPrice", 
+      headerName: "Unit Price", 
+      renderCell: (row) => (row?.unitPrice != null ? toNum(row.unitPrice).toFixed(2) : "-") 
+    },
+    { 
+      field: "lineTotal", 
+      headerName: "Line Total", 
+      renderCell: (row) => toNum(row?.lineTotal).toFixed(2) 
+    },
+    { 
+      field: "debit", 
+      headerName: "Debit", 
+      renderCell: (row) => <span style={{ color: "red" }}>{toNum(row?.debit).toFixed(2)}</span> 
+    },
+    { 
+      field: "credit", 
+      headerName: "Credit", 
+      renderCell: (row) => <span style={{ color: "green" }}>{toNum(row?.credit).toFixed(2)}</span> 
+    },
     {
       field: "chequeDate",
       headerName: "Cheque Date",
       renderCell: (row) => (row?.chequeDate ? new Date(row.chequeDate).toLocaleDateString() : "-"),
     },
-    { field: "runningBalance", headerName: "Running Balance", renderCell: (row) => toNum(row?.runningBalance).toFixed(2) },
+    {
+      field: "image",
+      headerName: "Image",
+      renderCell: (row) => {
+        const imageUrl = row?.image?.filePath;
+        return imageUrl ? (
+          <IconButton
+            size="small"
+            color="primary"
+            onClick={() => handleViewImage(imageUrl)}
+            title="View Image"
+          >
+            <Visibility />
+          </IconButton>
+        ) : (
+          "-"
+        );
+      },
+    },
+    { 
+      field: "runningBalance", 
+      headerName: "Running Balance", 
+      renderCell: (row) => toNum(row?.runningBalance).toFixed(2) 
+    },
   ];
 
   return (
-    <Modal open={open} onClose={onClose}>
-      <Box
-        sx={{
-          width: 1100,
-          p: 3,
-          mx: "auto",
-          mt: 5,
-          bgcolor: "background.paper",
-          boxShadow: 24,
-          borderRadius: 1,
-          overflow: "auto",
-        }}
-      >
-        <Typography variant="h6">Ledger for {customer?.username}</Typography>
-
-        <CustomTable
-          columns={columns}
-          data={transactions}
-          page={page}
-          rowsPerPage={rowsPerPage}
-        />
-
-        <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mt: 2 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: "bold", color: totalBalance >= 0 ? "green" : "red" }}>
-            Total Balance: {toNum(totalBalance).toFixed(2)}
+    <>
+      <Modal open={open} onClose={onClose}>
+        <Box
+          sx={{
+            width: 1200,
+            p: 3,
+            mx: "auto",
+            mt: 5,
+            bgcolor: "background.paper",
+            boxShadow: 24,
+            borderRadius: 1,
+            overflow: "auto",
+            maxHeight: "90vh",
+          }}
+        >
+          <Typography variant="h6" sx={{ mb: 2 }}>
+            Ledger for {customer?.username}
           </Typography>
 
-          <Box>
-            <Button variant="contained" color="secondary" onClick={downloadPDF} sx={{ mr: 2 }}>
-              Download PDF
-            </Button>
-            <Button variant="contained" color="primary" onClick={onClose}>
-              Close
-            </Button>
+          <CustomTable
+            columns={columns}
+            data={transactions}
+            page={page}
+            rowsPerPage={rowsPerPage}
+            onPageChange={handlePageChange}
+            onRowsPerPageChange={handleRowsPerPageChange}
+          />
+
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mt: 2 }}>
+            <Typography 
+              variant="subtitle1" 
+              sx={{ fontWeight: "bold", color: totalBalance >= 0 ? "green" : "red" }}
+            >
+              Total Balance: {toNum(totalBalance).toFixed(2)}
+            </Typography>
+
+            <Box>
+              <Button variant="contained" color="secondary" onClick={downloadPDF} sx={{ mr: 2 }}>
+                Download PDF
+              </Button>
+              <Button variant="contained" color="primary" onClick={onClose}>
+                Close
+              </Button>
+            </Box>
           </Box>
         </Box>
-      </Box>
-    </Modal>
+      </Modal>
+
+      {/* Image Preview Modal */}
+      <Modal open={imageModalOpen} onClose={handleCloseImageModal}>
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            bgcolor: "background.paper",
+            boxShadow: 24,
+            p: 2,
+            borderRadius: 1,
+            maxWidth: "90vw",
+            maxHeight: "90vh",
+            overflow: "auto",
+          }}
+        >
+          {selectedImage && (
+            <img
+              src={selectedImage}
+              alt="Transaction"
+              style={{ width: "100%", height: "auto", display: "block" }}
+            />
+          )}
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={handleCloseImageModal}
+            sx={{ mt: 2, display: "block", mx: "auto" }}
+          >
+            Close
+          </Button>
+        </Box>
+      </Modal>
+    </>
   );
 };
 
