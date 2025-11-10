@@ -1,8 +1,10 @@
 // src/pages/Report/Report.jsx
 import React, { useState, useEffect, useMemo } from "react";
-import { useSelector } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import useRedirectLoggedOutUser from "../../customHook/useRedirectLoggedOutUser";
 import { selectIsLoggedIn } from "../../redux/features/auth/authSlice";
+ 
+import { getPendingCheques } from "../../redux/features/cheque/chequeSlice"; // Add this
 import {
   Container,
   Card,
@@ -104,7 +106,7 @@ const MetricCard = ({ title, subtitle, value, count, icon: Icon, color, isCurren
           </Typography>
           {count !== undefined && (
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, fontWeight: 500 }}>
-              {count} {count === 1 ? "account" : "accounts"}
+              {count} {count === 1 ? (title.includes("Cheque") ? "cheque" : "account") : (title.includes("Cheque") ? "cheques" : "accounts")}
             </Typography>
           )}
         </Box>
@@ -116,7 +118,8 @@ const MetricCard = ({ title, subtitle, value, count, icon: Icon, color, isCurren
 function Report() {
   useRedirectLoggedOutUser("/login");
   const isLoggedIn = useSelector(selectIsLoggedIn);
-
+const dispatch = useDispatch();
+const chequesFromStore = useSelector((state) => state.cheque.cheques);
   const [loading, setLoading] = useState(true);
   
   // Date filters - EXACT same as BankList
@@ -177,6 +180,13 @@ function Report() {
       fetchAllData();
     }
   }, [isLoggedIn, reportType, selectedYear, selectedMonth]);
+
+  // Fetch cheques from Redux
+useEffect(() => {
+  if (isLoggedIn) {
+    dispatch(getPendingCheques({ status: "all" }));
+  }
+}, [dispatch, isLoggedIn]);
 
   const fetchAllData = async () => {
     setLoading(true);
@@ -428,20 +438,28 @@ function Report() {
     );
   }, [suppliers]);
 
-  // ===== Pending cheques =====
-  const pendingCheques = useMemo(() => {
-    const allTransactions = [...bankTransactions, ...cashRowsRaw];
-    const pending = allTransactions.filter((t) => 
-      (t.paymentMethod || "").toLowerCase() === "cheque" && 
-      !t.status && 
-      !t.cancelled
-    );
-    
-    return {
-      count: pending.length,
-      amount: pending.reduce((sum, t) => sum + Math.abs(pickAmount(t)), 0),
-    };
-  }, [bankTransactions, cashRowsRaw]);
+// ===== Pending cheques - EXACT logic from ChequeDetails =====
+const pendingCheques = useMemo(() => {
+  if (!Array.isArray(chequesFromStore)) {
+    console.log("⚠️ No cheques in store");
+    return { count: 0, amount: 0 };
+  }
+
+  const pending = chequesFromStore.filter((c) => {
+    return c.status === false && !c.cancelled && !c.transferred;
+  });
+
+  const totalAmount = pending.reduce((sum, c) => {
+    return sum + (Number(c.amount) || 0);
+  }, 0);
+
+  console.log("💳 Pending cheques:", pending.length, "Amount:", totalAmount);
+
+  return {
+    count: pending.length,
+    amount: totalAmount,
+  };
+}, [chequesFromStore]);
 
   // ===== Title for period =====
   const titleForPeriod = useMemo(() => {
