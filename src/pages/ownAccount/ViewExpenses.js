@@ -70,7 +70,7 @@ const ViewExpenses = () => {
 
 const [selectedDate, setSelectedDate] = useState(toLocalYMD());
   const [filteredEntries, setFilteredEntries] = useState([]);
-  const [runningBalance, setRunningBalance] = useState(0);
+  // const [runningBalance, setRunningBalance] = useState(0);
 
   // main table pagination
   const [page, setPage] = useState(1); // 1-based local
@@ -485,33 +485,32 @@ const fetchCash = async () => {
 
 
   // running balance only over monetary rows
-  const calculateRunningBalance = (entriesList) => {
-    let balance = 0;
-    const oldestToNewest = [...entriesList].reverse();
+  // const calculateRunningBalance = (entriesList) => {
+  //   let balance = 0;
+  //   const oldestToNewest = [...entriesList].reverse();
 
-    const withBalance = oldestToNewest.map((entry) => {
-      const isMoney = !NON_MONETARY_KINDS.has(entry.rawKind);
-      if (isMoney) balance += entry.amount;
-      return { ...entry, balance: isMoney ? balance : undefined };
-    });
+  //   const withBalance = oldestToNewest.map((entry) => {
+  //     const isMoney = !NON_MONETARY_KINDS.has(entry.rawKind);
+  //     if (isMoney) balance += entry.amount;
+  //     return { ...entry, balance: isMoney ? balance : undefined };
+  //   });
 
-    setRunningBalance(balance);
-    return withBalance.reverse();
-  };
+  //   setRunningBalance(balance);
+  //   return withBalance.reverse();
+  // };
 
-  const filterEntriesByDate = () => {
-    const sel = selectedDate;
-    const filtered = entries
-      .filter((entry) => toLocalYMD(entry.date) === sel)
-      .sort((a, b) => new Date(b.date) - new Date(a.date));
+const filterEntriesByDate = () => {
+  const sel = selectedDate;
+  const filtered = entries
+    .filter((entry) => toLocalYMD(entry.date) === sel)
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
 
-    const withBalance = calculateRunningBalance(filtered);
-    setFilteredEntries(withBalance);
-    setPage(1);
-    setTPage(1);
-    setCPage(1);
-    setBPage(1);
-  };
+  setFilteredEntries(filtered);
+  setPage(1);
+  setTPage(1);
+  setCPage(1);
+  setBPage(1);
+};
 
   /* ------------------------------ main table cols --------------------------- */
   const columns = [
@@ -550,12 +549,12 @@ const fetchCash = async () => {
         ),
     },
     { field: "paymentMethod", headerName: "Payment Method" },
-    {
-      field: "balance",
-      headerName: "Running Balance",
-      renderCell: (row) =>
-        Number.isFinite(row.balance) ? Number(row.balance).toFixed(2) : "",
-    },
+    // {
+    //   field: "balance",
+    //   headerName: "Running Balance",
+    //   renderCell: (row) =>
+    //     Number.isFinite(row.balance) ? Number(row.balance).toFixed(2) : "",
+    // },
     {
       field: "actions",
       headerName: "Actions",
@@ -785,9 +784,9 @@ const fetchCash = async () => {
           <Typography variant="h5" gutterBottom>
             Daily Book for {new Date(selectedDate).toDateString()}
           </Typography>
-          <Typography variant="h6" gutterBottom>
+          {/* <Typography variant="h6" gutterBottom>
             Daily Balance (monetary only): {Number(runningBalance || 0).toFixed(2)}
-          </Typography>
+          </Typography> */}
 
           {filteredEntries.length === 0 ? (
             <Typography variant="body1">No entries for the selected date.</Typography>
