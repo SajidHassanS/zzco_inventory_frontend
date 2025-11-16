@@ -319,34 +319,37 @@ useEffect(() => {
           </Typography>
         ),
     },
-    {
-      field: "actions",
-      headerName: "Actions",
-      renderCell: (row) => (
-        <Box sx={{ display: "flex", gap: 1 }}>
-          {!row.cancelled && !row.status && !row.transferred && (
-            <>
-              <Button
-                variant="outlined"
-                color="error"
-                size="small"
-                onClick={() => handleCancel(row._id)}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="outlined"
-                color="primary"
-                size="small"
-                onClick={() => handleTransferClick(row)}
-              >
-                Transfer
-              </Button>
-            </>
+  {
+  field: "actions",
+  headerName: "Actions",
+  renderCell: (row) => (
+    <Box sx={{ display: "flex", gap: 1 }}>
+      {!row.cancelled && !row.status && (
+        <>
+          <Button
+            variant="outlined"
+            color="error"
+            size="small"
+            onClick={() => handleCancel(row._id)}
+          >
+            Cancel
+          </Button>
+          {/* Only show Transfer button for non-transferred cheques */}
+          {!row.transferred && (
+            <Button
+              variant="outlined"
+              color="primary"
+              size="small"
+              onClick={() => handleTransferClick(row)}
+            >
+              Transfer
+            </Button>
           )}
-        </Box>
-      ),
-    },
+        </>
+      )}
+    </Box>
+  ),
+},
   ];
 
   if (isLoading) return <CircularProgress />;

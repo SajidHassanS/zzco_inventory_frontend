@@ -13,7 +13,6 @@ import { useSelector, useDispatch } from "react-redux";
 import { getBanks } from "../../redux/features/Bank/bankSlice";
 import { toast } from "react-toastify";
 
-// normalize base so we always have exactly one trailing slash
 const normBase = (raw) => {
   if (!raw) return "";
   return raw.endsWith("/") ? raw : `${raw}/`;
@@ -21,7 +20,7 @@ const normBase = (raw) => {
 
 const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
   const [amount, setAmount] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState(""); // "cash" | "online" | "cheque" | "credit"
+  const [paymentMethod, setPaymentMethod] = useState("");
   const [chequeDate, setChequeDate] = useState("");
   const [description, setDescription] = useState("");
   const [selectedBank, setSelectedBank] = useState("");
@@ -29,6 +28,12 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
   const [imagePreview, setImagePreview] = useState("");
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+
+  // ✅ NEW: Transfer Cheque State
+  const [transferTo, setTransferTo] = useState(""); // "customer" | "supplier"
+  const [transferToId, setTransferToId] = useState("");
+  const [customers, setCustomers] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
 
   const RAW_BACKEND = process.env.REACT_APP_BACKEND_URL || "";
   const BASE = normBase(RAW_BACKEND);
@@ -40,10 +45,35 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
   useEffect(() => {
     if (open) {
       dispatch(getBanks());
+      fetchEntities();
       setErrors({});
       setLoading(false);
     }
   }, [dispatch, open]);
+
+  // ✅ Fetch customers and suppliers for transfer
+  const fetchEntities = async () => {
+    try {
+      const baseUrl = BASE;
+      const [custResp, suppResp] = await Promise.all([
+        axios.get(`${baseUrl}api/customers/allcustomer`, { withCredentials: true }),
+        axios.get(`${baseUrl}api/suppliers`, { withCredentials: true }),
+      ]);
+
+      const customersData = Array.isArray(custResp.data) 
+        ? custResp.data 
+        : custResp.data?.customers || [];
+      
+      const suppliersData = Array.isArray(suppResp.data)
+        ? suppResp.data
+        : suppResp.data?.suppliers || [];
+
+      setCustomers(customersData);
+      setSuppliers(suppliersData);
+    } catch (err) {
+      console.error("Error fetching entities:", err);
+    }
+  };
 
   const validateForm = () => {
     const formErrors = {};
@@ -56,7 +86,26 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
       formErrors.paymentMethod = "Payment method is required";
     }
 
-    // Only require bank/image for online/cheque; only require chequeDate for cheque
+    // ✅ Transfer Cheque validations
+    if (paymentMethod === "transfercheque") {
+      if (!selectedBank) {
+        formErrors.selectedBank = "Bank is required for transfer cheque";
+      }
+      if (!chequeDate) {
+        formErrors.chequeDate = "Cheque date is required";
+      }
+      if (!image) {
+        formErrors.image = "Cheque image is required";
+      }
+      if (!transferTo) {
+        formErrors.transferTo = "Please select transfer destination type";
+      }
+      if (!transferToId) {
+        formErrors.transferToId = "Please select who to transfer to";
+      }
+    }
+
+    // Regular online/cheque validations
     if (paymentMethod === "online" || paymentMethod === "cheque") {
       if (!selectedBank) {
         formErrors.selectedBank = "Bank selection is required for online/cheque payment";
@@ -69,7 +118,6 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
       formErrors.chequeDate = "Cheque date is required for cheque payment";
     }
 
-    // No extra requirements for "credit"
     setErrors(formErrors);
     return Object.keys(formErrors).length === 0;
   };
@@ -92,17 +140,28 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
         (description && description.trim()) ||
         `Payment received from ${customer?.username || customer?.name || "customer"}`;
 
-      // Build payload. For credit, we send only the basics.
+      // ✅ Build payload based on payment method
       const base = {
         amount: amt,
-        paymentMethod: method, // "cash" | "online" | "cheque" | "credit"
+        paymentMethod: method,
         description: cleanDesc,
-        ...(method === "online" || method === "cheque" ? { bankId: selectedBank } : {}),
-        ...(method === "cheque" ? { chequeDate } : {}),
+        ...(method === "online" || method === "cheque" || method === "transfercheque" 
+          ? { bankId: selectedBank } 
+          : {}),
+        ...(method === "cheque" || method === "transfercheque" 
+          ? { chequeDate } 
+          : {}),
+        // ✅ Add transfer details for transfercheque
+        ...(method === "transfercheque" 
+          ? { 
+              transferTo, 
+              transferToId,
+            } 
+          : {}),
       };
 
       let resp;
-      if (image && (method === "online" || method === "cheque")) {
+      if (image && (method === "online" || method === "cheque" || method === "transfercheque")) {
         const fd = new FormData();
         Object.entries(base).forEach(([k, v]) => fd.append(k, v));
         fd.append("image", image);
@@ -110,10 +169,9 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
         resp = await axios.post(
           `${API_URL}/minus-customer-balance/${customer._id}`,
           fd,
-          { withCredentials: true } // don't set content-type manually
+          { withCredentials: true }
         );
       } else {
-        // cash or credit, or online/cheque without image (shouldn't happen due to validation)
         resp = await axios.post(
           `${API_URL}/minus-customer-balance/${customer._id}`,
           base,
@@ -158,7 +216,9 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           top: "50%",
           left: "50%",
           transform: "translate(-50%, -50%)",
-          width: 400,
+          width: 500,
+          maxHeight: "90vh",
+          overflow: "auto",
           bgcolor: "background.paper",
           boxShadow: 24,
           p: 4,
@@ -186,7 +246,14 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           label="Payment Method"
           select
           value={paymentMethod}
-          onChange={(e) => setPaymentMethod(e.target.value.toLowerCase())}
+          onChange={(e) => {
+            setPaymentMethod(e.target.value.toLowerCase());
+            // Reset transfer fields when changing payment method
+            if (e.target.value.toLowerCase() !== "transfercheque") {
+              setTransferTo("");
+              setTransferToId("");
+            }
+          }}
           fullWidth
           margin="normal"
           error={!!errors.paymentMethod}
@@ -194,6 +261,8 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
             errors.paymentMethod ||
             (paymentMethod === "credit"
               ? "Credit = ledger-only (no bank/cash movement)"
+              : paymentMethod === "transfercheque"
+              ? "Transfer this cheque to another customer or supplier"
               : "")
           }
           disabled={loading}
@@ -202,9 +271,10 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           <MenuItem value="online">Online</MenuItem>
           <MenuItem value="cheque">Cheque</MenuItem>
           <MenuItem value="credit">Credit</MenuItem>
+          <MenuItem value="transfercheque">Transfer Cheque</MenuItem>
         </TextField>
 
-        {(paymentMethod === "online" || paymentMethod === "cheque") && (
+        {(paymentMethod === "online" || paymentMethod === "cheque" || paymentMethod === "transfercheque") && (
           <TextField
             label="Select Bank"
             select
@@ -230,7 +300,7 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           </TextField>
         )}
 
-        {paymentMethod === "cheque" && (
+        {(paymentMethod === "cheque" || paymentMethod === "transfercheque") && (
           <TextField
             label="Cheque Date"
             type="date"
@@ -245,7 +315,7 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           />
         )}
 
-        {(paymentMethod === "online" || paymentMethod === "cheque") && (
+        {(paymentMethod === "online" || paymentMethod === "cheque" || paymentMethod === "transfercheque") && (
           <Grid item xs={12}>
             <TextField
               type="file"
@@ -263,10 +333,64 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
               <img
                 src={imagePreview}
                 alt="Preview"
-                style={{ width: "100%", maxHeight: 200, objectFit: "contain" }}
+                style={{ width: "100%", maxHeight: 200, objectFit: "contain", marginTop: 10 }}
               />
             )}
           </Grid>
+        )}
+
+        {/* ✅ Transfer Cheque Options */}
+        {paymentMethod === "transfercheque" && (
+          <>
+            <TextField
+              label="Transfer To"
+              select
+              value={transferTo}
+              onChange={(e) => {
+                setTransferTo(e.target.value);
+                setTransferToId(""); // Reset selection when changing type
+              }}
+              fullWidth
+              margin="normal"
+              error={!!errors.transferTo}
+              helperText={errors.transferTo}
+              disabled={loading}
+            >
+              <MenuItem value="">-- Select Type --</MenuItem>
+              <MenuItem value="customer">Customer</MenuItem>
+              <MenuItem value="supplier">Supplier</MenuItem>
+            </TextField>
+
+          {transferTo && (
+  <TextField
+    label={`Select ${transferTo === "customer" ? "Customer" : "Supplier"}`}
+    select
+    value={transferToId}
+    onChange={(e) => setTransferToId(e.target.value)}
+    fullWidth
+    margin="normal"
+    error={!!errors.transferToId}
+    helperText={errors.transferToId}
+    disabled={loading}
+  >
+    <MenuItem value="">
+      -- Select {transferTo === "customer" ? "Customer" : "Supplier"} --
+    </MenuItem>
+    {(transferTo === "customer" ? customers : suppliers)
+      .filter((entity) => {
+        // ✅ Safe filtering with null checks
+        if (!entity || !entity._id) return false;
+        if (!customer || !customer._id) return true;
+        return entity._id !== customer._id;
+      })
+      .map((entity) => (
+        <MenuItem key={entity._id} value={entity._id}>
+          {entity.username || entity.name}
+        </MenuItem>
+      ))}
+  </TextField>
+)}
+          </>
         )}
 
         <TextField
@@ -278,13 +402,11 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           multiline
           rows={2}
           placeholder={
-            paymentMethod === "credit"
-              ? `e.g. Credit adjustment for ${
-                  customer?.username || customer?.name || "customer"
-                }`
-              : `e.g. Payment received from ${
-                  customer?.username || customer?.name || "customer"
-                }`
+            paymentMethod === "transfercheque"
+              ? `e.g. Cheque transferred to ${transferTo || "..."}`
+              : paymentMethod === "credit"
+              ? `e.g. Credit adjustment for ${customer?.username || customer?.name || "customer"}`
+              : `e.g. Payment received from ${customer?.username || customer?.name || "customer"}`
           }
           disabled={loading}
         />
@@ -295,6 +417,7 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           type="submit"
           fullWidth
           disabled={loading}
+          sx={{ mt: 2 }}
         >
           {loading ? "Processing..." : "Subtract Balance"}
         </Button>
