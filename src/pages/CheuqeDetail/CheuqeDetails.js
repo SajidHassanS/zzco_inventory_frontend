@@ -57,51 +57,33 @@ const ChequeDetails = () => {
     dispatch(getPendingCheques({ status: "all" }));
   }, [dispatch]);
 
-// ✅ CHANGE THIS:
-useEffect(() => {
-  const fetchEntities = async () => {
-    try {
-      const baseUrl = BACKEND_URL.endsWith('/') ? BACKEND_URL : `${BACKEND_URL}/`;
-      
-      console.log('Fetching customers from:', `${baseUrl}api/customers/allcustomer`);
-      console.log('Fetching suppliers from:', `${baseUrl}api/suppliers`);
+  useEffect(() => {
+    const fetchEntities = async () => {
+      try {
+        const baseUrl = BACKEND_URL.endsWith('/') ? BACKEND_URL : `${BACKEND_URL}/`;
+        
+        const [custResp, suppResp] = await Promise.all([
+          axios.get(`${baseUrl}api/customers/allcustomer`, { withCredentials: true }),
+          axios.get(`${baseUrl}api/suppliers`, { withCredentials: true }),
+        ]);
 
-      const [custResp, suppResp] = await Promise.all([
-        axios.get(`${baseUrl}api/customers/allcustomer`, { withCredentials: true }), // ✅ Add /allcustomer
-        axios.get(`${baseUrl}api/suppliers`, { withCredentials: true }),
-      ]);
+        const customersData = Array.isArray(custResp.data) 
+          ? custResp.data 
+          : custResp.data?.customers || [];
+        
+        const suppliersData = Array.isArray(suppResp.data)
+          ? suppResp.data
+          : suppResp.data?.suppliers || [];
 
-      console.log('Customers response:', custResp);
-      console.log('Suppliers response:', suppResp);
-
-      const customersData = Array.isArray(custResp.data) 
-        ? custResp.data 
-        : custResp.data?.customers || [];
-      
-      const suppliersData = Array.isArray(suppResp.data)
-        ? suppResp.data
-        : suppResp.data?.suppliers || [];
-
-      console.log('Customers count:', customersData.length);
-      console.log('Suppliers count:', suppliersData.length);
-
-      setCustomers(customersData);
-      setSuppliers(suppliersData);
-
-      if (suppliersData.length === 0) {
-        console.warn('⚠️ No suppliers found!');
+        setCustomers(customersData);
+        setSuppliers(suppliersData);
+      } catch (err) {
+        console.error("❌ Error fetching entities:", err);
+        toast.error(err.response?.data?.message || "Failed to load customers/suppliers");
       }
-      if (customersData.length === 0) {
-        console.warn('⚠️ No customers found!');
-      }
-    } catch (err) {
-      console.error("❌ Error fetching entities:", err);
-      console.error("Error response:", err.response);
-      toast.error(err.response?.data?.message || "Failed to load customers/suppliers");
-    }
-  };
-  fetchEntities();
-}, [BACKEND_URL]);
+    };
+    fetchEntities();
+  }, [BACKEND_URL]);
 
   useEffect(() => {
     if (!Array.isArray(cheques)) return;
@@ -120,8 +102,13 @@ useEffect(() => {
 
       all.push(c);
       
-      // ✅ Only count PENDING, NOT CANCELLED, and NOT TRANSFERRED cheques
-      if (c.status === false && !c.cancelled && !c.transferred) {
+      // ✅ Only count PENDING, NOT CANCELLED, NOT TRANSFERRED-CASHED-OUT
+      if (c.status === false && !c.cancelled) {
+        // Skip if transferred AND cashed out
+        if (c.transferred && c.transferredCashedOut) {
+          return; // Skip this cheque for pending count
+        }
+        
         if (dayDiff === 0) t.push(c);
         else if (dayDiff > 0 && dayDiff <= 7) u.push(c);
       }
@@ -194,12 +181,33 @@ useEffect(() => {
     }
   };
 
-  // ✅ FIX: Reset all fields when opening transfer modal
+  // ✅ NEW: Cash Out Transferred Cheque Handler
+  const handleCashOutTransferred = async (chequeId) => {
+    if (!window.confirm("Mark this transferred cheque as cashed out? This will NOT affect your bank balance.")) {
+      return;
+    }
+
+    try {
+      await axios.patch(
+        `${API_URL}/cashout-transferred/${chequeId}`,
+        {},
+        { withCredentials: true }
+      );
+
+      await dispatch(getPendingCheques({ status: "all" }));
+      toast.success("Transferred cheque marked as cashed out successfully");
+    } catch (err) {
+      const msg = err?.response?.data?.message || err?.message || "Failed to cash out transferred cheque";
+      console.error(msg);
+      toast.error(msg);
+    }
+  };
+
   const handleTransferClick = (cheque) => {
     setSelectedChequeForTransfer(cheque);
-    setTransferTo(""); // ✅ Clear dropdown
-    setTransferToId(""); // ✅ Clear entity selection
-    setTransferDescription(""); // ✅ Clear description
+    setTransferTo("");
+    setTransferToId("");
+    setTransferDescription("");
     setTransferModalOpen(true);
   };
 
@@ -268,6 +276,8 @@ useEffect(() => {
         <>
           {row.cancelled ? (
             <Chip label="Cancelled" color="error" size="small" />
+          ) : row.transferredCashedOut ? (
+            <Chip label="Cashed Out (Transferred)" color="success" size="small" />
           ) : row.transferred ? (
             <Chip label="Transferred" color="info" size="small" />
           ) : row.status ? (
@@ -295,7 +305,13 @@ useEffect(() => {
         if (!row.bank) tip = "Missing bank account — cannot cash out";
         if (row.status === true) tip = "Already cleared";
         if (row.cancelled === true) tip = "Cheque is cancelled";
-        if (row.transferred === true) tip = "Cheque is transferred";
+        if (row.transferred === true) {
+          if (row.transferredCashedOut) {
+            tip = "Transferred cheque already cashed out by recipient";
+          } else {
+            tip = "Cheque is transferred - use Cash Out button to mark as cashed";
+          }
+        }
         return tip ? (
           <Tooltip title={tip}>
             <span>{box}</span>
@@ -319,37 +335,65 @@ useEffect(() => {
           </Typography>
         ),
     },
-  {
-  field: "actions",
-  headerName: "Actions",
-  renderCell: (row) => (
-    <Box sx={{ display: "flex", gap: 1 }}>
-      {!row.cancelled && !row.status && (
-        <>
-          <Button
-            variant="outlined"
-            color="error"
-            size="small"
-            onClick={() => handleCancel(row._id)}
-          >
-            Cancel
-          </Button>
-          {/* Only show Transfer button for non-transferred cheques */}
-          {!row.transferred && (
-            <Button
-              variant="outlined"
-              color="primary"
-              size="small"
-              onClick={() => handleTransferClick(row)}
-            >
-              Transfer
-            </Button>
+    {
+      field: "actions",
+      headerName: "Actions",
+      renderCell: (row) => (
+        <Box sx={{ display: "flex", gap: 1 }}>
+          {!row.cancelled && !row.status && (
+            <>
+              {/* Show Cancel button only for non-transferred cheques */}
+              {!row.transferred && (
+                <Button
+                  variant="outlined"
+                  color="error"
+                  size="small"
+                  onClick={() => handleCancel(row._id)}
+                >
+                  Cancel
+                </Button>
+              )}
+              
+              {/* Show Transfer button only for non-transferred cheques */}
+              {!row.transferred && (
+                <Button
+                  variant="outlined"
+                  color="primary"
+                  size="small"
+                  onClick={() => handleTransferClick(row)}
+                >
+                  Transfer
+                </Button>
+              )}
+
+              {/* Show Cash Out button for transferred cheques that haven't been cashed out */}
+              {row.transferred && !row.transferredCashedOut && (
+                <>
+                  <Button
+                    variant="outlined"
+                    color="success"
+                    size="small"
+                    onClick={() => handleCashOutTransferred(row._id)}
+                  >
+                    Cash Out
+                  </Button>
+
+                  {/* Show Cancel button for transferred cheques that haven't been cashed out */}
+                  <Button
+                    variant="outlined"
+                    color="error"
+                    size="small"
+                    onClick={() => handleCancel(row._id)}
+                  >
+                    Cancel
+                  </Button>
+                </>
+              )}
+            </>
           )}
-        </>
-      )}
-    </Box>
-  ),
-},
+        </Box>
+      ),
+    },
   ];
 
   if (isLoading) return <CircularProgress />;
@@ -474,7 +518,7 @@ useEffect(() => {
             value={transferTo}
             onChange={(e) => {
               setTransferTo(e.target.value);
-              setTransferToId(""); // Reset entity selection when changing type
+              setTransferToId("");
             }}
             fullWidth
             margin="normal"
