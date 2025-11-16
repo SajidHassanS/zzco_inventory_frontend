@@ -28,31 +28,19 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
   // Parse qty from flexible description patterns
   const parseQtyFromDesc = (desc) => {
     const s = String(desc || "");
-
-    // 1) "<num> x" or "<num> ×"
     let m = s.match(/(\d+)\s*[x×]\s/i);
     if (m) return Number(m[1]);
-
-    // 2) "qty: <num>" or "quantity: <num>" or "qty <num>"
     m = s.match(/qty(?:uantity)?\s*[:\-]?\s*(\d+)/i);
     if (m) return Number(m[1]);
-
-    // 3) "<num> pcs|pieces|units|bags|boxes|kg|liters"
     m = s.match(/(\d+)\s*(pcs?|pieces?|units?|bags?|boxes?|kg|kilograms?|lts?|liters?)/i);
     if (m) return Number(m[1]);
-
-    // 4) "<num> @ <price>" (common "qty @ unitPrice" style)
     m = s.match(/(\d+)\s*@\s*\d+(?:[.,]\d+)?/i);
     if (m) return Number(m[1]);
-
-    // 5) "(qty <num>)" or "(qty: <num>)"
     m = s.match(/\(?\s*qty\s*[:\-]?\s*(\d+)\s*\)?/i);
     if (m) return Number(m[1]);
-
     return 0;
   };
 
-  // Prefer explicit quantity-like fields; fallback to description
   const normalizeQty = (t) => {
     const direct =
       toNum(t?.quantity) ||
@@ -60,7 +48,6 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
       toNum(t?.stockSold) ||
       toNum(t?.units) ||
       toNum(t?.count);
-
     if (direct > 0) return direct;
     return parseQtyFromDesc(t?.description);
   };
@@ -76,59 +63,103 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
     setSelectedImage(null);
   };
 
-  // Fetch & build running ledger (+ normalize quantity)
+  // ✅ Helper to extract image URL from any object structure
+  const extractImageUrl = (obj) => {
+    if (!obj) return null;
+    
+    // Try direct access
+    if (typeof obj === 'string') return obj;
+    if (obj.filePath) return obj.filePath;
+    if (obj.imageFilePath) return obj.imageFilePath;
+    
+    // Try _doc property (Mongoose)
+    if (obj._doc) {
+      if (obj._doc.filePath) return obj._doc.filePath;
+      if (obj._doc.imageFilePath) return obj._doc.imageFilePath;
+    }
+    
+    // Try bracket notation
+    if (obj['filePath']) return obj['filePath'];
+    if (obj['imageFilePath']) return obj['imageFilePath'];
+    
+    return null;
+  };
+
+  // Fetch & build running ledger
   useEffect(() => {
     if (!open || !supplier?._id) return;
+const fetchTransactions = async () => {
+  try {
+    const { data } = await axios.get(
+      `${API_URL}/${supplier._id}/transaction-history`,
+      { withCredentials: true }
+    );
 
-    const fetchTransactions = async () => {
-      try {
-        const { data } = await axios.get(
-          `${API_URL}/${supplier._id}/transaction-history`,
-          { withCredentials: true }
-        );
+    const history = Array.isArray(data?.transactionHistory)
+      ? data.transactionHistory
+      : [];
 
-        const history = Array.isArray(data?.transactionHistory)
-          ? data.transactionHistory
-          : [];
+    console.log("📦 RAW TRANSACTION HISTORY FROM API:", history);
 
-        let balance = 0;
-        const ledger = history.map((t, idx) => {
-          const type = String(t?.type || "").toLowerCase();
-          const amount = toNum(t?.amount);
-          const debit = type === "debit" ? amount : 0;
-          const credit = type === "credit" ? amount : 0;
-          balance += credit - debit;
+    let balance = 0;
+    const ledger = history.map((t, idx) => {
+      const type = String(t?.type || "").toLowerCase();
+      const amount = toNum(t?.amount);
+      const debit = type === "debit" ? amount : 0;
+      const credit = type === "credit" ? amount : 0;
+      balance += credit - debit;
 
-          const quantity = normalizeQty(t);
+      const quantity = normalizeQty(t);
 
-          return {
-            id: t._id || idx,
-            ...t,
-            quantity,
-            debit,
-            credit,
-            runningBalance: balance,
-          };
+      // ✅ DEBUG: Log transferred cheques
+      if (t.description?.toLowerCase().includes("transferred")) {
+        console.log("🔍 TRANSFERRED TRANSACTION:", {
+          description: t.description,
+          image: t.image,
+          chequeImage: t.chequeImage,
+          fullTransaction: t
         });
-
-        setTransactions(ledger);
-        setTotalBalance(balance);
-      } catch (err) {
-        console.error("Error fetching supplier transaction history:", err);
       }
-    };
+
+      // ✅ Try to convert to plain object for better access
+      let plainT;
+      try {
+        plainT = JSON.parse(JSON.stringify(t));
+      } catch (e) {
+        plainT = { ...t };
+      }
+
+      return {
+        id: plainT._id || t._id || idx,
+        ...plainT,
+        quantity,
+        debit,
+        credit,
+        runningBalance: balance,
+        // ✅ Preserve original objects for image access
+        _originalImage: t.image,
+        _originalChequeImage: t.chequeImage,
+      };
+    });
+
+    console.log("✅ PROCESSED LEDGER:", ledger);
+    setTransactions(ledger);
+    setTotalBalance(balance);
+  } catch (err) {
+    console.error("Error fetching supplier transaction history:", err);
+  }
+};
 
     fetchTransactions();
   }, [open, supplier?._id, API_URL]);
 
-  // Pagination handlers expected by CustomTable
   const handlePageChange = (nextPage) => setPage(Math.max(0, Number(nextPage) || 0));
   const handleRowsPerPageChange = (nextRpp) => {
     setRowsPerPage(Number(nextRpp) || 5);
     setPage(0);
   };
 
-  // PDF download (includes Description + Qty)
+  // PDF download
   const downloadPDF = () => {
     const doc = new jsPDF();
     doc.text(`Ledger for ${supplier?.username || "-"}`, 14, 10);
@@ -166,26 +197,23 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
     doc.save(`Supplier_Transaction_History_${supplier?.username || "supplier"}.pdf`);
   };
 
-  // Columns for CustomTable (use normalized quantity + add image column)
   const columns = useMemo(
     () => [
-     {
-      field: "date",
-      headerName: "Date",
-      renderCell: (row) =>
-        row?.date ? new Date(row.date).toLocaleDateString() : "-",
-    },
-    { 
-      field: "productName", 
-      headerName: "Product Name",
-      // ✅ FIX: Don't show supplier name, only show if it's an actual product
-      renderCell: (row) => {
-        const name = row?.productName;
-        // Skip if it matches supplier name
-        if (name === supplier?.username || name === supplier?.name) return "-";
-        return name || "-";
-      }
-    },
+      {
+        field: "date",
+        headerName: "Date",
+        renderCell: (row) =>
+          row?.date ? new Date(row.date).toLocaleDateString() : "-",
+      },
+      {
+        field: "productName",
+        headerName: "Product Name",
+        renderCell: (row) => {
+          const name = row?.productName;
+          if (name === supplier?.username || name === supplier?.name) return "-";
+          return name || "-";
+        }
+      },
       { field: "description", headerName: "Description" },
       {
         field: "quantity",
@@ -220,25 +248,45 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
         renderCell: (row) =>
           row?.chequeDate ? new Date(row.chequeDate).toLocaleDateString() : "-",
       },
-      {
-        field: "image",
-        headerName: "Cheque Image",
-        renderCell: (row) => {
-          const imageUrl = row?.image?.filePath;
-          return imageUrl ? (
-            <IconButton
-              size="small"
-              color="primary"
-              onClick={() => handleViewImage(imageUrl)}
-              title="View Image"
-            >
-              <Visibility />
-            </IconButton>
-          ) : (
-            "-"
-          );
-        },
-      },
+    {
+  field: "image",
+  headerName: "Cheque Image",
+  renderCell: (row) => {
+    // ✅ Try all possible ways to get image URL
+    let imageUrl = null;
+    
+    // Try plain object properties
+    imageUrl = extractImageUrl(row.image) || extractImageUrl(row.chequeImage);
+    
+    // Try original Mongoose objects if available
+    if (!imageUrl) {
+      imageUrl = extractImageUrl(row._originalImage) || extractImageUrl(row._originalChequeImage);
+    }
+    
+    // ✅ DEBUG LOG FOR EVERY ROW
+    console.log("🖼️ IMAGE RENDER:", {
+      description: row.description,
+      imageUrl: imageUrl,
+      rowImage: row.image,
+      rowChequeImage: row.chequeImage,
+      originalImage: row._originalImage,
+      originalChequeImage: row._originalChequeImage,
+    });
+    
+    return imageUrl ? (
+      <IconButton
+        size="small"
+        color="primary"
+        onClick={() => handleViewImage(imageUrl)}
+        title="View Image"
+      >
+        <Visibility />
+      </IconButton>
+    ) : (
+      "-"
+    );
+  },
+},
       {
         field: "runningBalance",
         headerName: "Running Balance",
@@ -247,7 +295,7 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
         ),
       },
     ],
-    []
+    [supplier, handleViewImage]
   );
 
   return (
@@ -299,7 +347,6 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
         </Box>
       </Modal>
 
-      {/* Image Preview Modal */}
       <Modal open={imageModalOpen} onClose={handleCloseImageModal}>
         <Box
           sx={{
