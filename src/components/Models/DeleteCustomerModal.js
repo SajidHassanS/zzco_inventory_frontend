@@ -12,7 +12,8 @@ const DeleteCustomerModal = ({ open, onClose, customer, onSuccess }) => {
   const userRole = localStorage.getItem("userRole");
   const hasDeletePermission = useSelector((state) => selectCanDelete(state, "deleteCustomer"));
 
-  // Allow delete if the user is an Admin or has the specific delete permission
+  // ✅ Allow delete if the user is an Admin or has the specific delete permission
+  // Check for "Admin" (capitalized) since that's what we store in localStorage
   const canDeleteCustomer = userRole === "Admin" || hasDeletePermission;
 
   const handleDelete = async () => {
@@ -24,12 +25,12 @@ const DeleteCustomerModal = ({ open, onClose, customer, onSuccess }) => {
     }
 
     try {
-     const response = await axios.delete(
-  `${BACKEND_URL}api/customers/delete-customer/${customer._id}`,
-  {
-    withCredentials: true, // ✅ Must include this to send session cookies
-  }
-);
+      const response = await axios.delete(
+        `${BACKEND_URL}api/customers/delete-customer/${customer._id}`,
+        {
+          withCredentials: true, // ✅ Must include this to send session cookies
+        }
+      );
 
       toast.success(response.data.message || "Customer deleted successfully");
       onSuccess(); // Callback to refresh the customer list

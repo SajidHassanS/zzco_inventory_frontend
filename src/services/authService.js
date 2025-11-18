@@ -2,16 +2,14 @@ import axios from "axios";
 import { toast } from "react-toastify";
 export const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
-
-
-export const validateEmail = (email) => {
+export const validateEmail = email => {
   return email.match(
     /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/
   );
 };
 
 // Register User
-export const registerUser = async (userData) => {
+export const registerUser = async userData => {
   try {
     const response = await axios.post(
       `${BACKEND_URL}api/users/register`,
@@ -33,7 +31,7 @@ export const registerUser = async (userData) => {
 
 // Login User
 // Login User in authService.js
-export const loginUser = async (userData) => {
+export const loginUser = async userData => {
   try {
     const response = await axios.post(
       `${BACKEND_URL}api/users/login`,
@@ -59,12 +57,13 @@ export const loginUser = async (userData) => {
   }
 };
 
-
-
 // Login Customer
-export const loginCustomer = async (userData) => {
+export const loginCustomer = async userData => {
   try {
-    const response = await axios.post(`${BACKEND_URL}api/users/Customerlogin`, userData);
+    const response = await axios.post(
+      `${BACKEND_URL}api/users/Customerlogin`,
+      userData
+    );
     if (response.statusText === "OK") {
       const { role } = response.data;
       if (role) {
@@ -86,9 +85,12 @@ export const loginCustomer = async (userData) => {
 };
 
 // Login Manager
-export const loginManager = async (userData) => {
+export const loginManager = async userData => {
   try {
-    const response = await axios.post(`${BACKEND_URL}api/users/managerlogin`, userData);
+    const response = await axios.post(
+      `${BACKEND_URL}api/users/managerlogin`,
+      userData
+    );
     if (response.statusText === "OK") {
       const { role } = response.data;
       if (role) {
@@ -114,7 +116,7 @@ export const logoutUser = async () => {
   try {
     await axios.get(`${BACKEND_URL}api/users/logout`);
     localStorage.removeItem("userRole"); // Clear role on logout
-    localStorage.removeItem("name");     // Clear name on logout
+    localStorage.removeItem("name"); // Clear name on logout
     toast.info("Logged out successfully");
   } catch (error) {
     const message =
@@ -126,7 +128,7 @@ export const logoutUser = async () => {
 };
 
 // Forgot Password
-export const forgotPassword = async (userData) => {
+export const forgotPassword = async userData => {
   try {
     const response = await axios.post(
       `${BACKEND_URL}api/users/forgotpassword`,
@@ -175,11 +177,12 @@ export const getLoginStatus = async () => {
   }
 };
 
-
 // Get User Profile
 export const getUser = async () => {
   try {
-    const response = await axios.get(`${BACKEND_URL}api/users/getuser`);
+    const response = await axios.get(`${BACKEND_URL}api/users/getuser`, {
+      withCredentials: true // ✅ Add this
+    });
     return response.data;
   } catch (error) {
     const message =
@@ -191,11 +194,12 @@ export const getUser = async () => {
 };
 
 // Update Profile
-export const updateUser = async (formData) => {
+export const updateUser = async formData => {
   try {
     const response = await axios.patch(
       `${BACKEND_URL}api/users/updateuser`,
-      formData
+      formData,
+      { withCredentials: true } // ✅ Add this
     );
     return response.data;
   } catch (error) {
@@ -208,11 +212,12 @@ export const updateUser = async (formData) => {
 };
 
 // Change Password
-export const changePassword = async (formData) => {
+export const changePassword = async formData => {
   try {
     const response = await axios.patch(
       `${BACKEND_URL}api/users/changepassword`,
-      formData
+      formData,
+      { withCredentials: true } // ✅ Add this
     );
     return response.data;
   } catch (error) {
@@ -221,5 +226,6 @@ export const changePassword = async (formData) => {
       error.message ||
       error.toString();
     toast.error(message);
+    throw error; // ✅ Re-throw the error so it can be caught in the component
   }
 };
