@@ -1,12 +1,13 @@
 // src/pages/Customer/CustomerList.jsx
 import React, { useMemo, useState, useEffect } from "react";
-import { Avatar, Box, Grid, IconButton } from "@mui/material";
+import { Avatar, Box, Grid, IconButton, Tooltip } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
-import { Add, Remove, Delete, History } from "@mui/icons-material";
+import { Add, Remove, Delete, History, Discount as DiscountIcon } from "@mui/icons-material"; // ✅ Add DiscountIcon
 import { useSelector } from "react-redux";
 import { selectCanDelete } from "../../redux/features/auth/authSlice";
 import AddBalanceModal from "../../components/Models/AddBalanceModal";
 import MinusBalanceModal from "../../components/Models/MinusBalanceModal";
+import ApplyCustomerDiscountModal from "../../components/Models/ApplyCustomerDiscountModal"; // ✅ NEW
 import DeleteCustomerModal from "../../components/Models/DeleteCustomerModal";
 import TransactionHistoryModal from "../../components/Models/TransactionHistoryModal";
 
@@ -50,6 +51,7 @@ const CustomerList = ({ customers, refreshCustomers }) => {
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [isAddModalOpen, setAddModalOpen] = useState(false);
   const [isMinusModalOpen, setMinusModalOpen] = useState(false);
+  const [isDiscountModalOpen, setDiscountModalOpen] = useState(false); // ✅ NEW
   const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isHistoryModalOpen, setHistoryModalOpen] = useState(false);
 
@@ -68,10 +70,23 @@ const CustomerList = ({ customers, refreshCustomers }) => {
     setSelectedCustomer(customer);
     setAddModalOpen(true);
   };
+  
   const openMinusModal = (customer) => {
     setSelectedCustomer(customer);
     setMinusModalOpen(true);
   };
+  
+  // ✅ NEW: Open discount modal
+  const openDiscountModal = (customer) => {
+    if (!customer || !customer._id) return;
+    if (customer.balance <= 0) {
+      alert("Cannot apply discount. Customer doesn't owe you money (balance must be positive).");
+      return;
+    }
+    setSelectedCustomer(customer);
+    setDiscountModalOpen(true);
+  };
+  
   const openDeleteModal = (customer) => {
     if (!canDeleteCustomer) {
       alert("You do not have permission to delete this customer.");
@@ -80,13 +95,16 @@ const CustomerList = ({ customers, refreshCustomers }) => {
     setSelectedCustomer(customer);
     setDeleteModalOpen(true);
   };
+  
   const openHistoryModal = (customer) => {
     setSelectedCustomer(customer);
     setHistoryModalOpen(true);
   };
+  
   const closeModals = () => {
     setAddModalOpen(false);
     setMinusModalOpen(false);
+    setDiscountModalOpen(false); // ✅ NEW
     setDeleteModalOpen(false);
     setHistoryModalOpen(false);
     setSelectedCustomer(null);
@@ -149,33 +167,57 @@ const CustomerList = ({ customers, refreshCustomers }) => {
     {
       field: "action",
       headerName: "Action",
-      width: 200,
+      width: 240, // ✅ Increased width for 5 buttons
       sortable: false,
       renderCell: (params) => (
         <Grid container spacing={1} wrap="nowrap">
           <Grid item>
-            <IconButton color="primary" onClick={() => openAddModal(params.row)}>
-              <Add />
-            </IconButton>
+            <Tooltip title="Add Balance (customer owes you)">
+              <IconButton color="primary" onClick={() => openAddModal(params.row)}>
+                <Add />
+              </IconButton>
+            </Tooltip>
           </Grid>
           <Grid item>
-            <IconButton color="secondary" onClick={() => openMinusModal(params.row)}>
-              <Remove />
-            </IconButton>
+            <Tooltip title="Customer pays you">
+              <IconButton color="secondary" onClick={() => openMinusModal(params.row)}>
+                <Remove />
+              </IconButton>
+            </Tooltip>
+          </Grid>
+          {/* ✅ NEW: Discount Button */}
+          <Grid item>
+            <Tooltip title={params.row.balance > 0 ? "Give Discount" : "Customer doesn't owe money"}>
+              <span>
+                <IconButton
+                  color="success"
+                  onClick={() => openDiscountModal(params.row)}
+                  disabled={params.row.balance <= 0}
+                >
+                  <DiscountIcon />
+                </IconButton>
+              </span>
+            </Tooltip>
           </Grid>
           <Grid item>
-            <IconButton
-              color="error"
-              onClick={() => openDeleteModal(params.row)}
-              disabled={!canDeleteCustomer}
-            >
-              <Delete />
-            </IconButton>
+            <Tooltip title={canDeleteCustomer ? "Delete customer" : "No permission"}>
+              <span>
+                <IconButton
+                  color="error"
+                  onClick={() => openDeleteModal(params.row)}
+                  disabled={!canDeleteCustomer}
+                >
+                  <Delete />
+                </IconButton>
+              </span>
+            </Tooltip>
           </Grid>
           <Grid item>
-            <IconButton color="info" onClick={() => openHistoryModal(params.row)}>
-              <History />
-            </IconButton>
+            <Tooltip title="Transaction history">
+              <IconButton color="info" onClick={() => openHistoryModal(params.row)}>
+                <History />
+              </IconButton>
+            </Tooltip>
           </Grid>
         </Grid>
       ),
@@ -221,6 +263,16 @@ const CustomerList = ({ customers, refreshCustomers }) => {
         customer={selectedCustomer}
         onSuccess={refreshCustomers}
       />
+
+      {/* ✅ NEW: Discount Modal */}
+      {isDiscountModalOpen && selectedCustomer && (
+        <ApplyCustomerDiscountModal
+          open={isDiscountModalOpen}
+          onClose={closeModals}
+          customer={selectedCustomer}
+          onSuccess={refreshCustomers}
+        />
+      )}
 
       {/* Delete Customer Modal */}
       <DeleteCustomerModal

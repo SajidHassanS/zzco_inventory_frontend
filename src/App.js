@@ -39,6 +39,10 @@ import AddBank from "./pages/ownAccount/bank-accounts/AddBank.jsx";
 import ChequeDetails from "./pages/CheuqeDetail/CheuqeDetails.js";
 import Report from "./pages/Report/Report.js"; // ✅ Material-UI styled Report
 
+// ✅ NEW: Import Damage Product Components
+import AddDamageProduct from "./pages/damageProduct/AddDamageProduct";
+import DamageProductList from "./pages/damageProduct/DamageProductList";
+
 axios.defaults.withCredentials = true;
 
 function App() {
@@ -242,6 +246,30 @@ function App() {
             </Sidebar>
           }
         />
+
+        {/* ✅ NEW: Damage Product Routes */}
+        <Route
+          path="/add-damage-product"
+          element={
+            <Sidebar>
+              <Layout>
+                <AddDamageProduct />
+              </Layout>
+            </Sidebar>
+          }
+        />
+
+        <Route
+          path="/damage-products"
+          element={
+            <Sidebar>
+              <Layout>
+                <DamageProductList />
+              </Layout>
+            </Sidebar>
+          }
+        />
+        {/* ✅ END: Damage Product Routes */}
 
         <Route
           path="/contact-us"

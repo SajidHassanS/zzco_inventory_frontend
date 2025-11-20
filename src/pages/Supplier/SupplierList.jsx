@@ -2,11 +2,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Avatar, Box, Grid, IconButton, Tooltip } from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
-import { Add, Delete, History, Remove } from "@mui/icons-material";
+import { Add, Delete, History, Remove, Discount as DiscountIcon } from "@mui/icons-material"; // ✅ Add DiscountIcon
 import { useSelector } from "react-redux";
 import { selectCanDelete } from "../../redux/features/auth/authSlice";
 import AddSupplierBalanceModal from "../../components/Models/AddSupplierBalanceModal";
 import MinusSupplierBalanceModal from "../../components/Models/MinusSupplierBalanceModal";
+import ApplySupplierDiscountModal from "../../components/Models/ApplySupplierDiscountModal"; // ✅ NEW
 import ConfirmDeleteModal from "../../components/Models/ConfirmDeleteModal";
 import SupplierTransactionHistoryModal from "../../components/Models/SupplierTransactionHistoryModal";
 
@@ -19,6 +20,7 @@ const SupplierList = ({ suppliers = [], refreshSuppliers }) => {
   // modals
   const [isAddModalOpen, setAddModalOpen] = useState(false);
   const [isMinusModalOpen, setMinusModalOpen] = useState(false);
+  const [isDiscountModalOpen, setDiscountModalOpen] = useState(false); // ✅ NEW
   const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isHistoryModalOpen, setHistoryModalOpen] = useState(false);
 
@@ -48,6 +50,18 @@ const SupplierList = ({ suppliers = [], refreshSuppliers }) => {
     setSelectedSupplier(supplier);
     setMinusModalOpen(true);
   };
+  
+// ✅ UPDATED: Open discount modal
+const openDiscountModal = (supplier) => {
+  if (!supplier || !supplier._id) return;
+  if (supplier.balance >= 0) { // ✅ CHANGED: >= instead of <=
+    alert("Cannot apply discount. You haven't paid this supplier yet (balance must be negative).");
+    return;
+  }
+  setSelectedSupplier(supplier);
+  setDiscountModalOpen(true);
+};
+  
   const openDeleteModal = (supplier) => {
     if (!canDelete) {
       alert("You do not have permission to delete this supplier.");
@@ -65,13 +79,14 @@ const SupplierList = ({ suppliers = [], refreshSuppliers }) => {
   const closeModals = () => {
     setAddModalOpen(false);
     setMinusModalOpen(false);
+    setDiscountModalOpen(false); // ✅ NEW
     setDeleteModalOpen(false);
     setHistoryModalOpen(false);
     setSelectedSupplier(null);
   };
 
   /* ------------------------------- updaters ---------------------------------- */
-  // called by Add / Minus modals; pass the UPDATED supplier returned by API
+  // called by Add / Minus / Discount modals; pass the UPDATED supplier returned by API
   const handleBalanceUpdate = (updatedSupplier) => {
     if (!updatedSupplier || !updatedSupplier._id) return;
 
@@ -83,9 +98,7 @@ const SupplierList = ({ suppliers = [], refreshSuppliers }) => {
               // keep everything the API just sent (balance, last desc, etc.)
               ...updatedSupplier,
               // fallback safety:
-              balance: Number(
-           updatedSupplier.balance ?? s.balance ?? 0
-        ),
+              balance: Number(updatedSupplier.balance ?? s.balance ?? 0),
               latestTxnDescription:
                 updatedSupplier.latestTxnDescription ?? s.latestTxnDescription,
             }
@@ -105,8 +118,6 @@ const SupplierList = ({ suppliers = [], refreshSuppliers }) => {
   };
 
   /* -------------------------------- columns --------------------------------- */
-  // We assume your backend now returns:
-  // latestTxnDescription, totalPurchasedQty, totalInStockQty
   const columns = useMemo(
     () => [
       {
@@ -129,17 +140,16 @@ const SupplierList = ({ suppliers = [], refreshSuppliers }) => {
       {
         field: "balance",
         headerName: "Balance",
-       minWidth: 90,
-  flex: 0.5,   
-     
-       valueGetter: (p) => Number(p.row?.balance ?? 0),
- renderCell: (p) => <strong>{currency(Number(p.value))}</strong>,
+        minWidth: 90,
+        flex: 0.5,
+        valueGetter: (p) => Number(p.row?.balance ?? 0),
+        renderCell: (p) => <strong>{currency(Number(p.value))}</strong>,
       },
       {
         field: "latestTxnDescription",
         headerName: "Latest Description",
-       flex: 1.6,                 // give it the most, but not all
-   minWidth: 260,
+        flex: 1.6,
+        minWidth: 260,
         renderCell: (params) => (
           <Tooltip title={params.value || "—"} arrow>
             <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -148,37 +158,51 @@ const SupplierList = ({ suppliers = [], refreshSuppliers }) => {
           </Tooltip>
         ),
       },
-     
       {
         field: "totalInStockQty",
         headerName: "In Stock",
-      minWidth: 110,
-   flex: 0.6, 
+        minWidth: 110,
+        flex: 0.6,
         valueGetter: (p) => Number(p.row?.totalInStockQty || 0),
       },
       {
         field: "action",
         headerName: "Action",
-     minWidth: 160,
-  flex: 0.7,   
+        minWidth: 200, // ✅ Increased width for 5 buttons
+        flex: 0.8,
         sortable: false,
         filterable: false,
         renderCell: (params) => (
           <Grid container spacing={1} wrap="nowrap">
             <Grid item>
-              <Tooltip title="Add (credit)">
+              <Tooltip title="Add Balance (you owe supplier)">
                 <IconButton color="primary" size="small" onClick={() => openAddModal(params.row)}>
                   <Add fontSize="small" />
                 </IconButton>
               </Tooltip>
             </Grid>
             <Grid item>
-              <Tooltip title="Minus (debit)">
+              <Tooltip title="Pay Supplier (reduce debt)">
                 <IconButton color="secondary" size="small" onClick={() => openMinusModal(params.row)}>
                   <Remove fontSize="small" />
                 </IconButton>
               </Tooltip>
             </Grid>
+            {/* ✅ NEW: Discount Button */}
+          <Grid item>
+  <Tooltip title={params.row.balance < 0 ? "Apply Discount" : "No payment made to discount"}>
+    <span>
+      <IconButton
+        color="success"
+        size="small"
+        onClick={() => openDiscountModal(params.row)}
+        disabled={params.row.balance >= 0} // ✅ CHANGED: >= instead of <=
+      >
+        <DiscountIcon fontSize="small" />
+      </IconButton>
+    </span>
+  </Tooltip>
+</Grid>
             <Grid item>
               <Tooltip title={canDelete ? "Delete supplier" : "No permission"}>
                 <span>
@@ -234,22 +258,21 @@ const SupplierList = ({ suppliers = [], refreshSuppliers }) => {
         width: "auto",
       }}
     >
-   <DataGrid
-  sx={{ borderLeft: 0, borderRight: 0, borderRadius: 0 }}
-  rows={supplierList}
-  columns={columns}
-  getRowId={(row) => row._id}
-  autoHeight
- density="compact"
- rowHeight={44}
-  initialState={{
-    pagination: { paginationModel: { page: 0, pageSize: 10 } },
-    sorting: { sortModel: [{ field: "username", sort: "asc" }] },
-  }}
-  pageSizeOptions={[10, 15, 20, 30, 50, 100]}
-  disableRowSelectionOnClick
-/>
-
+      <DataGrid
+        sx={{ borderLeft: 0, borderRight: 0, borderRadius: 0 }}
+        rows={supplierList}
+        columns={columns}
+        getRowId={(row) => row._id}
+        autoHeight
+        density="compact"
+        rowHeight={44}
+        initialState={{
+          pagination: { paginationModel: { page: 0, pageSize: 10 } },
+          sorting: { sortModel: [{ field: "username", sort: "asc" }] },
+        }}
+        pageSizeOptions={[10, 15, 20, 30, 50, 100]}
+        disableRowSelectionOnClick
+      />
 
       {/* Add Balance Modal */}
       {isAddModalOpen && selectedSupplier && (
@@ -257,7 +280,6 @@ const SupplierList = ({ suppliers = [], refreshSuppliers }) => {
           open={isAddModalOpen}
           onClose={closeModals}
           supplier={selectedSupplier}
-          // IMPORTANT: Have the modal call onSuccess(updatedSupplierFromAPI)
           onSuccess={handleBalanceUpdate}
         />
       )}
@@ -266,6 +288,16 @@ const SupplierList = ({ suppliers = [], refreshSuppliers }) => {
       {isMinusModalOpen && selectedSupplier && (
         <MinusSupplierBalanceModal
           open={isMinusModalOpen}
+          onClose={closeModals}
+          supplier={selectedSupplier}
+          onSuccess={handleBalanceUpdate}
+        />
+      )}
+
+      {/* ✅ NEW: Discount Modal */}
+      {isDiscountModalOpen && selectedSupplier && (
+        <ApplySupplierDiscountModal
+          open={isDiscountModalOpen}
           onClose={closeModals}
           supplier={selectedSupplier}
           onSuccess={handleBalanceUpdate}

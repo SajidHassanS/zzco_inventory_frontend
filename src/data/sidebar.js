@@ -7,6 +7,7 @@ import { MdAccountBalance } from "react-icons/md";
 import { FaWarehouse } from "react-icons/fa6";
 import { FaMoneyCheckDollar } from "react-icons/fa6";
 import { TbReportAnalytics } from "react-icons/tb";
+import { MdBrokenImage } from "react-icons/md"; // ✅ New icon for damage
 
 const menu = [
   {
@@ -33,6 +34,11 @@ const menu = [
     title: "Sale Product",
     icon: <BsCartDashFill />,
     path: "/add-sale"
+  },
+  {
+    title: "Damage Product", // ✅ NEW
+    icon: <MdBrokenImage />,
+    path: "/damage-products"
   },
   {
     title: "Cheque Detail",

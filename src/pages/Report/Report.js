@@ -838,7 +838,7 @@ const pendingCheques = useMemo(() => {
 
           <Divider sx={{ mb: 4 }} />
 
-          {/* Expenses Summary */}
+        {/* Expenses Summary */}
           <Box mb={2}>
             <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
               Expenses Summary
@@ -874,6 +874,57 @@ const pendingCheques = useMemo(() => {
                   isCurrency={true}
                 />
               </Grid>
+            </Grid>
+          </Box>
+
+          {/* Damage Loss Summary - NEW SECTION */}
+          <Divider sx={{ mb: 4, mt: 4 }} />
+
+          <Box mb={2}>
+            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
+              Damage & Loss Summary
+            </Typography>
+            <Grid container spacing={3}>
+              {plData && plData.damageLoss !== undefined ? (
+                <>
+                  <Grid item xs={12} sm={6} md={4}>
+                    <MetricCard
+                      title="Total Damage Loss"
+                      subtitle="Products marked as damaged"
+                      value={plData.damageLoss || 0}
+                      icon={LossIcon}
+                      color="danger"
+                      isCurrency={true}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={4}>
+                    <MetricCard
+                      title="Regular Expenses"
+                      subtitle="Operational expenses"
+                      value={plData.expenses || 0}
+                      icon={MoneyIcon}
+                      color="warning"
+                      isCurrency={true}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6} md={4}>
+                    <MetricCard
+                      title="Combined Expenses + Loss"
+                      subtitle="Total expenses including damage"
+                      value={(plData.expenses || 0) + (plData.damageLoss || 0)}
+                      icon={MoneyIcon}
+                      color="danger"
+                      isCurrency={true}
+                    />
+                  </Grid>
+                </>
+              ) : (
+                <Grid item xs={12}>
+                  <Typography variant="body2" color="text.secondary">
+                    No damage loss data available for this period. Check the Damage Products section to record damages.
+                  </Typography>
+                </Grid>
+              )}
             </Grid>
           </Box>
         </CardContent>
