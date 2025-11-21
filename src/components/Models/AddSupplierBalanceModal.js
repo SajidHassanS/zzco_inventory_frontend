@@ -38,13 +38,24 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
       formErrors.paymentMethod = "Payment method is required";
     }
 
-    // Only require these for online/cheque
-    if (paymentMethod === "online" || paymentMethod === "cheque") {
-      if (!selectedBank) formErrors.selectedBank = "Bank selection is required for online/cheque";
-      if (!image) formErrors.image = "Image upload is required for online/cheque";
+    // ✅ UPDATED: Only require bank for ONLINE (not cheque)
+    if (paymentMethod === "online") {
+      if (!selectedBank) {
+        formErrors.selectedBank = "Bank selection is required for online payment";
+      }
+      if (!image) {
+        formErrors.image = "Image upload is required for online payment";
+      }
     }
-    if (paymentMethod === "cheque" && !chequeDate) {
-      formErrors.chequeDate = "Cheque date is required for cheque";
+
+    // ✅ For cheque: only require chequeDate and image (NO bank)
+    if (paymentMethod === "cheque") {
+      if (!chequeDate) {
+        formErrors.chequeDate = "Cheque date is required for cheque";
+      }
+      if (!image) {
+        formErrors.image = "Image upload is required for cheque";
+      }
     }
 
     // credit: no extra requirements
@@ -79,13 +90,16 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
       formData.append("desc", description?.trim() || ""); // alias
       formData.append("name", supplier?.username || "");
 
-      if (paymentMethod === "online" || paymentMethod === "cheque") {
+      // ✅ UPDATED: Only send bankId for ONLINE (not cheque)
+      if (paymentMethod === "online") {
         formData.append("bankId", selectedBank);
         if (image) formData.append("image", image);
       }
+      
       if (paymentMethod === "cheque") {
         formData.append("chequeDate", chequeDate);
         formData.append("status", "pending");
+        if (image) formData.append("image", image);
       }
 
       // 1) Create supplier-side transaction (source of truth)
@@ -243,7 +257,8 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
           <MenuItem value="credit">Credit</MenuItem>
         </TextField>
 
-        {(paymentMethod === "online" || paymentMethod === "cheque") && (
+        {/* ✅ UPDATED: Only show bank for ONLINE (not cheque) */}
+        {paymentMethod === "online" && (
           <TextField
             label="Select Bank"
             select

@@ -73,20 +73,27 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
       formErrors.paymentMethod = "Payment method is required";
     }
 
-    // Only require bank/image for online/cheque; only require chequeDate for cheque
-    if (paymentMethod === "online" || paymentMethod === "cheque") {
+    // ✅ UPDATED: Only require bank for ONLINE (not cheque)
+    if (paymentMethod === "online") {
       if (!selectedBank) {
-        formErrors.selectedBank = "Bank selection is required for online/cheque payment";
+        formErrors.selectedBank = "Bank selection is required for online payment";
       }
       if (!image) {
-        formErrors.image = "Image upload is required for online or cheque payment";
+        formErrors.image = "Image upload is required for online payment";
       }
     }
-    if (paymentMethod === "cheque" && !chequeDate) {
-      formErrors.chequeDate = "Cheque date is required for cheque payment";
+
+    // ✅ For cheque: only require chequeDate and image (NO bank required)
+    if (paymentMethod === "cheque") {
+      if (!chequeDate) {
+        formErrors.chequeDate = "Cheque date is required for cheque payment";
+      }
+      if (!image) {
+        formErrors.image = "Image upload is required for cheque payment";
+      }
     }
 
-    // No extra requirements for "credit"
+    // No extra requirements for "credit" or "cash"
     setErrors(formErrors);
     return Object.keys(formErrors).length === 0;
   };
@@ -109,12 +116,12 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
         (description && description.trim()) ||
         `Payout to ${customer?.username || customer?.name || "customer"}`;
 
-      // Build payload. For credit, send only ledger info (no bank/cheque/image).
+      // ✅ UPDATED: Only send bankId for online (not cheque)
       const base = {
         amount: amt,
         paymentMethod: method, // "cash" | "online" | "cheque" | "credit"
         description: cleanDesc,
-        ...(method === "online" || method === "cheque" ? { bankId: selectedBank } : {}),
+        ...(method === "online" ? { bankId: selectedBank } : {}),
         ...(method === "cheque" ? { chequeDate } : {}),
       };
 
@@ -218,7 +225,8 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           <MenuItem value="credit">Credit</MenuItem>
         </TextField>
 
-        {(paymentMethod === "online" || paymentMethod === "cheque") && (
+        {/* ✅ UPDATED: Only show bank dropdown for ONLINE (not cheque) */}
+        {paymentMethod === "online" && (
           <TextField
             label="Select Bank"
             select

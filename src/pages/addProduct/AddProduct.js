@@ -509,79 +509,80 @@ const AddProduct = () => {
                 {/* ✅ UPDATED: Show payment/supplier fields only if NOT own inventory */}
                 {!isOwnInventory && (
                   <>
-                    <Grid item xs={12} sm={6}>
-                      <FormControl fullWidth disabled={submitting}>
-                        <InputLabel>Payment Method</InputLabel>
-                        <Select
-                          value={paymentMethod}
-                          onChange={e => setPaymentMethod(e.target.value)}
-                          label="Payment Method"
-                        >
-                          <MenuItem value="cash">Cash</MenuItem>
-                          <MenuItem value="cheque">Cheque</MenuItem>
-                          <MenuItem value="online">Online</MenuItem>
-                          <MenuItem value="credit">Credit</MenuItem>
-                        </Select>
-                      </FormControl>
-                    </Grid>
+                
+<Grid item xs={12} sm={6}>
+  <FormControl fullWidth disabled={submitting}>
+    <InputLabel>Payment Method</InputLabel>
+    <Select
+      value={paymentMethod}
+      onChange={e => setPaymentMethod(e.target.value)}
+      label="Payment Method"
+    >
+      {/* <MenuItem value="cash">Cash</MenuItem>
+      <MenuItem value="cheque">Cheque</MenuItem>
+      <MenuItem value="online">Online</MenuItem> */}
+      <MenuItem value="credit">Credit</MenuItem>
+    </Select>
+  </FormControl>
+</Grid>
 
-                    {paymentMethod === "cheque" && (
-                      <Grid item xs={12} sm={6}>
-                        <TextField
-                          fullWidth
-                          label="Cheque Date"
-                          type="date"
-                          value={chequeDate}
-                          onChange={e => setChequeDate(e.target.value)}
-                          InputLabelProps={{ shrink: true }}
-                          disabled={submitting}
-                        />
-                      </Grid>
-                    )}
+{/* {paymentMethod === "cheque" && (
+  <Grid item xs={12} sm={6}>
+    <TextField
+      fullWidth
+      label="Cheque Date"
+      type="date"
+      value={chequeDate}
+      onChange={e => setChequeDate(e.target.value)}
+      InputLabelProps={{ shrink: true }}
+      disabled={submitting}
+    />
+  </Grid>
+)} */}
 
-                    {(paymentMethod === "cheque" || paymentMethod === "online") && (
-                      <Grid item xs={12}>
-                        <input
-                          accept="image/*"
-                          style={{ display: "none" }}
-                          id="payment-image-file"
-                          type="file"
-                          onChange={handlePaymentImageChange}
-                          disabled={submitting}
-                        />
-                        <label htmlFor="payment-image-file">
-                          <Button variant="contained" component="span" disabled={submitting}>
-                            Upload {paymentMethod === "cheque" ? "Cheque" : "Payment"} Image
-                          </Button>
-                        </label>
-                        {paymentImagePreview && (
-                          <img
-                            src={paymentImagePreview}
-                            alt="Preview"
-                            style={{ marginTop: 10, maxWidth: "100%", maxHeight: 200 }}
-                          />
-                        )}
-                      </Grid>
-                    )}
+{/* {(paymentMethod === "cheque" || paymentMethod === "online") && (
+  <Grid item xs={12}>
+    <input
+      accept="image/*"
+      style={{ display: "none" }}
+      id="payment-image-file"
+      type="file"
+      onChange={handlePaymentImageChange}
+      disabled={submitting}
+    />
+    <label htmlFor="payment-image-file">
+      <Button variant="contained" component="span" disabled={submitting}>
+        Upload {paymentMethod === "cheque" ? "Cheque" : "Payment"} Image
+      </Button>
+    </label>
+    {paymentImagePreview && (
+      <img
+        src={paymentImagePreview}
+        alt="Preview"
+        style={{ marginTop: 10, maxWidth: "100%", maxHeight: 200 }}
+      />
+    )}
+  </Grid>
+)} */}
 
-                    {(paymentMethod === "online" || paymentMethod === "cheque") && (
-                      <Grid item xs={12} sm={6}>
-                        <FormControl fullWidth disabled={submitting}>
-                          <InputLabel>Bank</InputLabel>
-                          <Select
-                            value={selectedBank}
-                            onChange={e => setSelectedBank(e.target.value)}
-                            label="Bank"
-                          >
-                            {banks.map(bank => (
-                              <MenuItem key={bank._id} value={bank._id}>
-                                {bank.bankName}
-                              </MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                      </Grid>
-                    )}
+{/* {(paymentMethod === "online" || paymentMethod === "cheque") && (
+  <Grid item xs={12} sm={6}>
+    <FormControl fullWidth disabled={submitting}>
+      <InputLabel>Bank</InputLabel>
+      <Select
+        value={selectedBank}
+        onChange={e => setSelectedBank(e.target.value)}
+        label="Bank"
+      >
+        {banks.map(bank => (
+          <MenuItem key={bank._id} value={bank._id}>
+            {bank.bankName}
+          </MenuItem>
+        ))}
+      </Select>
+    </FormControl>
+  </Grid>
+)} */}
 
                     <Grid item xs={12} sm={6} display="flex" flexDirection="row" justifyContent="space-between">
                       <FormControl fullWidth disabled={submitting}>

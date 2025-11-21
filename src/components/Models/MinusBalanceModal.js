@@ -105,17 +105,24 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
       }
     }
 
-    // Regular online/cheque validations
-    if (paymentMethod === "online" || paymentMethod === "cheque") {
+    // ✅ UPDATED: Only validate bank for ONLINE (not cheque)
+    if (paymentMethod === "online") {
       if (!selectedBank) {
-        formErrors.selectedBank = "Bank selection is required for online/cheque payment";
+        formErrors.selectedBank = "Bank selection is required for online payment";
       }
       if (!image) {
-        formErrors.image = "Image is required for online or cheque payment";
+        formErrors.image = "Image is required for online payment";
       }
     }
-    if (paymentMethod === "cheque" && !chequeDate) {
-      formErrors.chequeDate = "Cheque date is required for cheque payment";
+
+    // ✅ For cheque: only require chequeDate and image (NO bank)
+    if (paymentMethod === "cheque") {
+      if (!chequeDate) {
+        formErrors.chequeDate = "Cheque date is required for cheque payment";
+      }
+      if (!image) {
+        formErrors.image = "Image is required for cheque payment";
+      }
     }
 
     setErrors(formErrors);
@@ -140,12 +147,12 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
         (description && description.trim()) ||
         `Payment received from ${customer?.username || customer?.name || "customer"}`;
 
-      // ✅ Build payload based on payment method
+      // ✅ UPDATED: Only send bankId for online and transfercheque (not regular cheque)
       const base = {
         amount: amt,
         paymentMethod: method,
         description: cleanDesc,
-        ...(method === "online" || method === "cheque" || method === "transfercheque" 
+        ...(method === "online" || method === "transfercheque" 
           ? { bankId: selectedBank } 
           : {}),
         ...(method === "cheque" || method === "transfercheque" 
@@ -274,7 +281,8 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           <MenuItem value="transfercheque">Transfer Cheque</MenuItem>
         </TextField>
 
-        {(paymentMethod === "online" || paymentMethod === "cheque" || paymentMethod === "transfercheque") && (
+        {/* ✅ UPDATED: Only show bank for ONLINE and TRANSFERCHEQUE (not regular cheque) */}
+        {(paymentMethod === "online" || paymentMethod === "transfercheque") && (
           <TextField
             label="Select Bank"
             select
@@ -361,35 +369,35 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
               <MenuItem value="supplier">Supplier</MenuItem>
             </TextField>
 
-          {transferTo && (
-  <TextField
-    label={`Select ${transferTo === "customer" ? "Customer" : "Supplier"}`}
-    select
-    value={transferToId}
-    onChange={(e) => setTransferToId(e.target.value)}
-    fullWidth
-    margin="normal"
-    error={!!errors.transferToId}
-    helperText={errors.transferToId}
-    disabled={loading}
-  >
-    <MenuItem value="">
-      -- Select {transferTo === "customer" ? "Customer" : "Supplier"} --
-    </MenuItem>
-    {(transferTo === "customer" ? customers : suppliers)
-      .filter((entity) => {
-        // ✅ Safe filtering with null checks
-        if (!entity || !entity._id) return false;
-        if (!customer || !customer._id) return true;
-        return entity._id !== customer._id;
-      })
-      .map((entity) => (
-        <MenuItem key={entity._id} value={entity._id}>
-          {entity.username || entity.name}
-        </MenuItem>
-      ))}
-  </TextField>
-)}
+            {transferTo && (
+              <TextField
+                label={`Select ${transferTo === "customer" ? "Customer" : "Supplier"}`}
+                select
+                value={transferToId}
+                onChange={(e) => setTransferToId(e.target.value)}
+                fullWidth
+                margin="normal"
+                error={!!errors.transferToId}
+                helperText={errors.transferToId}
+                disabled={loading}
+              >
+                <MenuItem value="">
+                  -- Select {transferTo === "customer" ? "Customer" : "Supplier"} --
+                </MenuItem>
+                {(transferTo === "customer" ? customers : suppliers)
+                  .filter((entity) => {
+                    // ✅ Safe filtering with null checks
+                    if (!entity || !entity._id) return false;
+                    if (!customer || !customer._id) return true;
+                    return entity._id !== customer._id;
+                  })
+                  .map((entity) => (
+                    <MenuItem key={entity._id} value={entity._id}>
+                      {entity.username || entity.name}
+                    </MenuItem>
+                  ))}
+              </TextField>
+            )}
           </>
         )}
 

@@ -18,11 +18,17 @@ import {
   Box,
   TextField,
   MenuItem,
+  Radio,
+  RadioGroup,
+  FormControlLabel,
+  FormControl,
+  FormLabel,
 } from "@mui/material";
 import {
   getPendingCheques,
   updateChequeStatus,
 } from "../../redux/features/cheque/chequeSlice";
+import { getBanks } from "../../redux/features/Bank/bankSlice";
 import CustomTable from "../../components/CustomTable/CustomTable";
 import axios from "axios";
 import { toast } from "react-toastify";
@@ -31,6 +37,7 @@ const ChequeDetails = () => {
   const dispatch = useDispatch();
   const cheques = useSelector((state) => state.cheque.cheques);
   const isLoading = useSelector((state) => state.cheque.isLoading);
+  const banks = useSelector((state) => state.bank.banks || []);
 
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(5);
@@ -39,6 +46,12 @@ const ChequeDetails = () => {
   const [selectedCheques, setSelectedCheques] = useState([]);
   const [selectedImage, setSelectedImage] = useState(null);
   const [allCheques, setAllCheques] = useState([]);
+
+  // ✅ CASH OUT MODAL STATE
+  const [cashOutModalOpen, setCashOutModalOpen] = useState(false);
+  const [cashOutMethod, setCashOutMethod] = useState(""); // "bank" | "cash"
+  const [selectedBankId, setSelectedBankId] = useState("");
+  const [processingCashOut, setProcessingCashOut] = useState(false);
 
   // ✅ TRANSFER STATE
   const [transferModalOpen, setTransferModalOpen] = useState(false);
@@ -55,6 +68,7 @@ const ChequeDetails = () => {
   // Fetch ALL so cleared remain visible
   useEffect(() => {
     dispatch(getPendingCheques({ status: "all" }));
+    dispatch(getBanks());
   }, [dispatch]);
 
   useEffect(() => {
@@ -119,44 +133,108 @@ const ChequeDetails = () => {
     setUpcomingCheques(u);
   }, [cheques]);
 
-  // Only allow selecting rows that are pending AND have a bank id AND not cancelled AND not transferred
+  // ✅ UPDATED: Removed bank requirement - only check status, cancelled, transferred
   const canSubmit = useMemo(() => {
     if (selectedCheques.length === 0) return false;
     return selectedCheques.every((id) => {
       const c = allCheques.find((x) => x._id === id);
-      return !!c?.bank && c?.status === false && !c?.cancelled && !c?.transferred;
+      return c?.status === false && !c?.cancelled && !c?.transferred;
     });
   }, [selectedCheques, allCheques]);
 
+  // ✅ UPDATED: Removed bank requirement from status change
   const handleStatusChange = (chequeId, isChecked) => {
     const row = allCheques.find((x) => x._id === chequeId);
-    if (!row?.bank || row?.status === true || row?.cancelled || row?.transferred) return;
+    if (row?.status === true || row?.cancelled || row?.transferred) return;
     setSelectedCheques((prev) =>
       isChecked ? [...prev, chequeId] : prev.filter((id) => id !== chequeId)
     );
   };
 
-  const handleSubmit = async () => {
-    try {
-      for (const chequeId of selectedCheques) {
-        const row = allCheques.find((c) => c._id === chequeId);
-        if (!row) continue;
+  // ✅ NEW: Open cash out modal instead of directly submitting
+  const handleCashOutClick = () => {
+    setCashOutMethod("");
+    setSelectedBankId("");
+    setCashOutModalOpen(true);
+  };
 
-        await dispatch(
-          updateChequeStatus({
-            id: row._id,
-            status: true,
-          })
-        ).unwrap();
+// ✅ NEW: Process cash out with bank/cash selection
+const handleCashOutSubmit = async () => {
+  if (!cashOutMethod) {
+    toast.error("Please select Bank or Cash");
+    return;
+  }
+
+  if (cashOutMethod === "bank" && !selectedBankId) {
+    toast.error("Please select a bank");
+    return;
+  }
+
+  setProcessingCashOut(true);
+
+  try {
+    for (const chequeId of selectedCheques) {
+      const row = allCheques.find((c) => c._id === chequeId);
+      if (!row) continue;
+
+      // ✅ UPDATED: Add skipBankProcessing flag
+      await dispatch(
+        updateChequeStatus({
+          id: row._id,
+          status: true,
+          skipBankProcessing: true, // ✅ NEW LINE: Tell backend to skip automatic bank processing
+        })
+      ).unwrap();
+
+      // Add to bank or cash based on selection
+      const amount = Number(row.amount) || 0;
+      const description = `Cheque cleared: ${row.name || row.description || ""}`;
+
+      if (cashOutMethod === "bank") {
+        // Add to bank
+        await axios.post(
+          `${BACKEND_URL}api/banks/${selectedBankId}/transaction`,
+          {
+            amount,
+            type: "add",
+            description,
+          },
+          { withCredentials: true }
+        );
+      } else if (cashOutMethod === "cash") {
+        // Add to cash
+        await axios.post(
+          `${BACKEND_URL}api/cash/add`,
+          {
+            balance: amount,
+            type: "add",
+            description,
+          },
+          { withCredentials: true }
+        );
       }
+    }
 
-      await dispatch(getPendingCheques({ status: "all" }));
-      setSelectedCheques([]);
-      toast.success("Cheques cashed out successfully");
-    } catch (e) {
-      const msg = e?.message || e?.error || "Failed to cash out cheques";
-      console.error(msg);
-      toast.error(msg);
+    await dispatch(getPendingCheques({ status: "all" }));
+    setSelectedCheques([]);
+    setCashOutModalOpen(false);
+    setCashOutMethod("");
+    setSelectedBankId("");
+    toast.success(`Cheques cashed out to ${cashOutMethod === "bank" ? "bank" : "cash"} successfully`);
+  } catch (e) {
+    const msg = e?.message || e?.error || "Failed to cash out cheques";
+    console.error(msg);
+    toast.error(msg);
+  } finally {
+    setProcessingCashOut(false);
+  }
+};
+
+  const handleCloseCashOutModal = () => {
+    if (!processingCashOut) {
+      setCashOutModalOpen(false);
+      setCashOutMethod("");
+      setSelectedBankId("");
     }
   };
 
@@ -293,7 +371,8 @@ const ChequeDetails = () => {
       field: "statusChange",
       headerName: "Select",
       renderCell: (row) => {
-        const disabled = !row.bank || row.status === true || row.cancelled === true || row.transferred === true;
+        // ✅ UPDATED: Removed bank check
+        const disabled = row.status === true || row.cancelled === true || row.transferred === true;
         const box = (
           <Checkbox
             checked={selectedCheques.includes(row._id)}
@@ -302,7 +381,7 @@ const ChequeDetails = () => {
           />
         );
         let tip = "";
-        if (!row.bank) tip = "Missing bank account — cannot cash out";
+        // ✅ UPDATED: Removed bank tooltip
         if (row.status === true) tip = "Already cleared";
         if (row.cancelled === true) tip = "Cheque is cancelled";
         if (row.transferred === true) {
@@ -436,12 +515,13 @@ const ChequeDetails = () => {
           onRowsPerPageChange={handleRowsPerPageChange}
         />
 
+        {/* ✅ UPDATED: Tooltip message */}
         <Tooltip
           title={
             selectedCheques.length === 0
               ? "Select at least one cheque"
               : !canSubmit
-              ? "Only pending cheques with a bank can be cashed"
+              ? "Only pending cheques can be cashed"
               : ""
           }
         >
@@ -449,7 +529,7 @@ const ChequeDetails = () => {
             <Button
               variant="contained"
               color="primary"
-              onClick={handleSubmit}
+              onClick={handleCashOutClick}
               disabled={!canSubmit}
               sx={{ mt: 2, ml: 2, mb: 2 }}
             >
@@ -458,6 +538,92 @@ const ChequeDetails = () => {
           </span>
         </Tooltip>
       </Paper>
+
+      {/* ✅ CASH OUT MODAL */}
+      <Modal open={cashOutModalOpen} onClose={handleCloseCashOutModal}>
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: 400,
+            bgcolor: "background.paper",
+            boxShadow: 24,
+            p: 4,
+            borderRadius: 2,
+          }}
+        >
+          <Typography variant="h6" gutterBottom>
+            Cash Out Cheques
+          </Typography>
+
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            You are cashing out {selectedCheques.length} cheque(s).
+            <br />
+            Where would you like to receive the money?
+          </Typography>
+
+          <FormControl component="fieldset" sx={{ mb: 2 }}>
+            <FormLabel component="legend">Select Destination</FormLabel>
+            <RadioGroup
+              value={cashOutMethod}
+              onChange={(e) => {
+                setCashOutMethod(e.target.value);
+                if (e.target.value === "cash") {
+                  setSelectedBankId("");
+                }
+              }}
+            >
+              <FormControlLabel value="bank" control={<Radio />} label="Bank Account" disabled={processingCashOut} />
+              <FormControlLabel value="cash" control={<Radio />} label="Cash" disabled={processingCashOut} />
+            </RadioGroup>
+          </FormControl>
+
+          {cashOutMethod === "bank" && (
+            <TextField
+              select
+              label="Select Bank"
+              value={selectedBankId}
+              onChange={(e) => setSelectedBankId(e.target.value)}
+              fullWidth
+              margin="normal"
+              disabled={processingCashOut}
+            >
+              <MenuItem value="">-- Select Bank --</MenuItem>
+              {banks.map((bank) => (
+                <MenuItem key={bank._id} value={bank._id}>
+                  {bank.bankName}
+                </MenuItem>
+              ))}
+            </TextField>
+          )}
+
+          <Box sx={{ display: "flex", gap: 2, mt: 3 }}>
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={handleCashOutSubmit}
+              fullWidth
+              disabled={
+                processingCashOut ||
+                !cashOutMethod ||
+                (cashOutMethod === "bank" && !selectedBankId)
+              }
+            >
+              {processingCashOut ? "Processing..." : "Confirm Cash Out"}
+            </Button>
+            <Button
+              variant="outlined"
+              onClick={handleCloseCashOutModal}
+              fullWidth
+              disabled={processingCashOut}
+            >
+              Cancel
+            </Button>
+          </Box>
+        </Box>
+      </Modal>
 
       {/* Image Modal */}
       <Modal open={Boolean(selectedImage)} onClose={handleCloseModal}>

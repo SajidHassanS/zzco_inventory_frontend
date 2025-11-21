@@ -20,9 +20,13 @@ export const getCheques = async ({ status = "pending" } = {}) => {
   return res.data; // array of rows
 };
 
-// PATCH /api/cheques/update-status/:id   body: { status }
-export const patchChequeStatus = async ({ id, status }) => {
-  const res = await api.patch(`/update-status/${id}`, { status });
+// PATCH /api/cheques/update-status/:id   body: { status, skipBankProcessing }
+export const patchChequeStatus = async ({ id, status, skipBankProcessing }) => {
+  console.log("🚀 Frontend sending:", { id, status, skipBankProcessing });
+  const res = await api.patch(`/update-status/${id}`, {
+    status,
+    skipBankProcessing // ✅ NEW: Pass the flag to backend
+  });
   return res.data; // { message, updatedDoc }
 };
 

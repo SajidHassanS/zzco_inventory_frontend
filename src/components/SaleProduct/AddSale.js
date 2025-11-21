@@ -388,101 +388,101 @@ export default function AddSale({
                 />
               </Grid>
 
-              {/* Payment Method */}
-              <Grid item xs={12} sm={6}>
-                <FormControl fullWidth margin="normal" error={!!errors.paymentMethod} disabled={submitting}>
-                  <InputLabel id="paymentMethod-label">Payment Method</InputLabel>
-                  <Select
-                    labelId="paymentMethod-label"
-                    id="paymentMethod"
-                    name="paymentMethod"
-                    value={sale.paymentMethod}
-                    onChange={handleInputChange}
-                    label="Payment Method"
-                  >
-                    <MenuItem value="">
-                      <em>Select Payment Method</em>
-                    </MenuItem>
-                    <MenuItem value="cash">Cash</MenuItem>
-                    <MenuItem value="online">Online</MenuItem>
-                    <MenuItem value="cheque">Cheque</MenuItem>
-                    <MenuItem value="credit">Credit</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
+         
+<Grid item xs={12} sm={6}>
+  <FormControl fullWidth margin="normal" error={!!errors.paymentMethod} disabled={submitting}>
+    <InputLabel id="paymentMethod-label">Payment Method</InputLabel>
+    <Select
+      labelId="paymentMethod-label"
+      id="paymentMethod"
+      name="paymentMethod"
+      value={sale.paymentMethod}
+      onChange={handleInputChange}
+      label="Payment Method"
+    >
+      <MenuItem value="">
+        <em>Select Payment Method</em>
+      </MenuItem>
+      {/* <MenuItem value="cash">Cash</MenuItem>
+      <MenuItem value="online">Online</MenuItem>
+      <MenuItem value="cheque">Cheque</MenuItem> */}
+      <MenuItem value="credit">Credit</MenuItem>
+    </Select>
+  </FormControl>
+</Grid>
 
-              {/* Bank (for online/cheque) */}
-              {(sale.paymentMethod === "online" || sale.paymentMethod === "cheque") && (
-                <Grid item xs={12} sm={6}>
-                  <FormControl full width margin="normal" error={!!errors.bankID} disabled={submitting}>
-                    <InputLabel id="bankID-label">Bank Name</InputLabel>
-                    <Select
-                      labelId="bankID-label"
-                      id="bankID"
-                      name="bankID"
-                      value={sale.bankID}
-                      onChange={handleInputChange}
-                      label="Bank Name"
-                    >
-                      <MenuItem value="">
-                        <em>Select Bank</em>
-                      </MenuItem>
-                      {banks.map((bank) => (
-                        <MenuItem key={bank._id} value={bank._id}>
-                          {bank.bankName}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-              )}
+{/* Bank (for online/cheque) */}
+{/* {(sale.paymentMethod === "online" || sale.paymentMethod === "cheque") && (
+  <Grid item xs={12} sm={6}>
+    <FormControl fullWidth margin="normal" error={!!errors.bankID} disabled={submitting}>
+      <InputLabel id="bankID-label">Bank Name</InputLabel>
+      <Select
+        labelId="bankID-label"
+        id="bankID"
+        name="bankID"
+        value={sale.bankID}
+        onChange={handleInputChange}
+        label="Bank Name"
+      >
+        <MenuItem value="">
+          <em>Select Bank</em>
+        </MenuItem>
+        {banks.map((bank) => (
+          <MenuItem key={bank._id} value={bank._id}>
+            {bank.bankName}
+          </MenuItem>
+        ))}
+      </Select>
+    </FormControl>
+  </Grid>
+)} */}
 
-              {/* Cheque Date (for cheque) */}
-              {sale.paymentMethod === "cheque" && (
-                <Grid item xs={12} sm={6}>
-                  <TextField
-                    fullWidth
-                    label="Cheque Date"
-                    type="date"
-                    name="chequeDate"
-                    value={sale.chequeDate}
-                    onChange={handleInputChange}
-                    InputLabelProps={{ shrink: true }}
-                    margin="normal"
-                    error={!!errors.chequeDate}
-                    helperText={errors.chequeDate}
-                    disabled={submitting}
-                  />
-                </Grid>
-              )}
+{/* Cheque Date (for cheque) */}
+{/* {sale.paymentMethod === "cheque" && (
+  <Grid item xs={12} sm={6}>
+    <TextField
+      fullWidth
+      label="Cheque Date"
+      type="date"
+      name="chequeDate"
+      value={sale.chequeDate}
+      onChange={handleInputChange}
+      InputLabelProps={{ shrink: true }}
+      margin="normal"
+      error={!!errors.chequeDate}
+      helperText={errors.chequeDate}
+      disabled={submitting}
+    />
+  </Grid>
+)} */}
 
-              {/* Image Upload (for online/cheque) */}
-              {(sale.paymentMethod === "cheque" || sale.paymentMethod === "online") && (
-                <Grid item xs={12}>
-                  <TextField
-                    type="file"
-                    label="Upload Image"
-                    name="image"
-                    onChange={handleImageChange}
-                    fullWidth
-                    margin="normal"
-                    InputLabelProps={{ shrink: true }}
-                    disabled={submitting}
-                  />
-                  {imagePreview && (
-                    <img
-                      src={imagePreview}
-                      alt="Preview"
-                      style={{
-                        width: "100%",
-                        maxHeight: "300px",
-                        marginTop: "16px",
-                        objectFit: "cover",
-                      }}
-                    />
-                  )}
-                </Grid>
-              )}
+{/* Image Upload (for online/cheque) */}
+{/* {(sale.paymentMethod === "cheque" || sale.paymentMethod === "online") && (
+  <Grid item xs={12}>
+    <TextField
+      type="file"
+      label="Upload Image"
+      name="image"
+      onChange={handleImageChange}
+      fullWidth
+      margin="normal"
+      InputLabelProps={{ shrink: true }}
+      disabled={submitting}
+    />
+    {imagePreview && (
+      <img
+        src={imagePreview}
+        alt="Preview"
+        style={{
+          width: "100%",
+          maxHeight: "300px",
+          marginTop: "16px",
+          objectFit: "cover",
+        }}
+      />
+    )}
+  </Grid>
+)} */}
 
               {/* Warehouse */}
               <Grid item xs={12} sm={6}>

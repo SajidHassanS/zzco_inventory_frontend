@@ -16,9 +16,9 @@ export const getPendingCheques = createAsyncThunk(
 // Update a single cheque by CHEQUE _id
 export const updateChequeStatus = createAsyncThunk(
   "cheque/updateStatus",
-  async ({ id, status }, thunkAPI) => {
+  async ({ id, status, skipBankProcessing }, thunkAPI) => { // ✅ ADD skipBankProcessing HERE
     try {
-      return await service.patchChequeStatus({ id, status });
+      return await service.patchChequeStatus({ id, status, skipBankProcessing }); // ✅ AND HERE
     } catch (e) {
       return thunkAPI.rejectWithValue(e?.response?.data || { message: "Update failed" });
     }

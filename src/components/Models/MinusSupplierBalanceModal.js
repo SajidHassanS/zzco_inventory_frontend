@@ -53,15 +53,24 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
       formErrors.paymentMethod = "Payment method is required";
     }
 
-    // Only enforce bank/image/cheque for online/cheque
-    if ((paymentMethod === "online" || paymentMethod === "cheque") && !selectedBank) {
-      formErrors.selectedBank = "Bank selection is required for online or cheque payment";
+    // ✅ UPDATED: Only enforce bank for ONLINE (not cheque)
+    if (paymentMethod === "online") {
+      if (!selectedBank) {
+        formErrors.selectedBank = "Bank selection is required for online payment";
+      }
+      if (!image) {
+        formErrors.image = "Image upload is required for online payment";
+      }
     }
-    if (paymentMethod === "cheque" && !chequeDate) {
-      formErrors.chequeDate = "Cheque date is required for cheque payment";
-    }
-    if ((paymentMethod === "online" || paymentMethod === "cheque") && !image) {
-      formErrors.image = "Image upload is required for online or cheque payment";
+
+    // ✅ For cheque: only require chequeDate and image (NO bank)
+    if (paymentMethod === "cheque") {
+      if (!chequeDate) {
+        formErrors.chequeDate = "Cheque date is required for cheque payment";
+      }
+      if (!image) {
+        formErrors.image = "Image upload is required for cheque payment";
+      }
     }
     // credit: no extra fields required
 
@@ -97,9 +106,12 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
       formData.append("paymentMethod", method);
       formData.append("description", cleanDesc);
       formData.append("desc", cleanDesc); // some backends read 'desc'
-      if (method === "online" || method === "cheque") {
+      
+      // ✅ UPDATED: Only send bankId for ONLINE (not cheque)
+      if (method === "online") {
         formData.append("bankId", selectedBank); // MUST be an ObjectId string
       }
+      
       if (method === "cheque") {
         formData.append("chequeDate", chequeDate || "");
       }
@@ -194,16 +206,14 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
     setImagePreview(URL.createObjectURL(file));
   };
 
+  // ✅ UPDATED: Disable submit logic - bank only required for online
   const disableSubmit =
     loading ||
     !amount ||
     parseFloat(amount) <= 0 ||
     !paymentMethod ||
-    (
-      (paymentMethod === "online" || paymentMethod === "cheque") &&
-      (!selectedBank || (paymentMethod === "cheque" && !chequeDate) || !image)
-    );
-  // Note: credit does not impose extra requirements
+    (paymentMethod === "online" && (!selectedBank || !image)) ||
+    (paymentMethod === "cheque" && (!chequeDate || !image));
 
   return (
     <Modal open={open} onClose={onClose}>
@@ -278,7 +288,8 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
           <MenuItem value="credit">Credit</MenuItem>
         </TextField>
 
-        {(paymentMethod === "online" || paymentMethod === "cheque") && (
+        {/* ✅ UPDATED: Only show bank for ONLINE (not cheque) */}
+        {paymentMethod === "online" && (
           <TextField
             label="Select Bank"
             select
