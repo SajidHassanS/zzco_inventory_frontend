@@ -38,9 +38,20 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
           { withCredentials: true }
         );
 
-        const history = Array.isArray(data?.transactionHistory)
+        let history = Array.isArray(data?.transactionHistory)
           ? data.transactionHistory
           : [];
+
+        console.log("📦 RAW CUSTOMER TRANSACTION HISTORY:", history);
+
+        // ✅ SORT by date (oldest first) to calculate running balance correctly
+        history = history.sort((a, b) => {
+          const dateA = new Date(a.date || a.createdAt || 0);
+          const dateB = new Date(b.date || b.createdAt || 0);
+          return dateA - dateB; // Ascending order (oldest first)
+        });
+
+        console.log("📅 SORTED CUSTOMER HISTORY (oldest first):", history);
 
         let balance = 0;
 
@@ -65,6 +76,7 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
             lineTotal = qty * unitPrice;
           }
 
+          // ✅ For customers: CREDIT increases balance (sale/payment from customer), DEBIT decreases (payment to customer)
           const debit = type === "debit" ? lineTotal : 0;
           const credit = type === "credit" ? lineTotal : 0;
           balance += credit - debit;
@@ -80,7 +92,12 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
           };
         });
 
-        setTransactions(ledger);
+        console.log("✅ PROCESSED CUSTOMER LEDGER (with running balance):", ledger);
+
+        // ✅ REVERSE for display (newest first in table)
+        const reversedLedger = [...ledger].reverse();
+
+        setTransactions(reversedLedger);
         setTotalBalance(balance);
       } catch (err) {
         console.error("Error fetching transaction history:", err);
@@ -129,7 +146,10 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
       "Running Balance",
     ];
 
-    const body = transactions.map((tr) => [
+    // ✅ Reverse back to chronological order for PDF (oldest to newest)
+    const pdfTransactions = [...transactions].reverse();
+
+    const body = pdfTransactions.map((tr) => [
       tr?.date ? new Date(tr.date).toLocaleDateString() : "-",
       tr?.description || "-",
       tr?.paymentMethod || "-",
@@ -216,7 +236,14 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
     { 
       field: "runningBalance", 
       headerName: "Running Balance", 
-      renderCell: (row) => toNum(row?.runningBalance).toFixed(2) 
+      renderCell: (row) => (
+        <span style={{ 
+          color: toNum(row?.runningBalance) >= 0 ? "green" : "red",
+          fontWeight: "bold" 
+        }}>
+          {toNum(row?.runningBalance).toFixed(2)}
+        </span>
+      )
     },
   ];
 

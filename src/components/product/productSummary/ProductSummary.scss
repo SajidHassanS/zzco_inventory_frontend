@@ -1,23 +1,76 @@
 .product-summary {
   width: 100%;
+  
   .info-summary {
     display: flex;
     flex-wrap: wrap;
+    gap: 15px; // Consistent spacing between cards
+    margin-top: 1rem;
   }
-  
-}
-.info-box {
-  border-radius: 10px; // Add border radius
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); // Add shadow
-  display: flex; // Use flexbox for layout
-  justify-content: space-between; // Space between name and value
-  padding: 10px; // Add some padding
-  // ... other existing styles ...
 }
 
+.info-box {
+  border-radius: 10px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center; // ✅ Vertically center content
+  justify-content: space-between;
+  padding: 20px; // ✅ More padding for better spacing
+  flex: 1 1 calc(33.333% - 15px); // ✅ Three cards per row with gap
+  min-width: 250px;
+  color: #fff; // ✅ White text on colored backgrounds
+  cursor: pointer; // ✅ Show it's clickable
+  transition: transform 0.2s ease, box-shadow 0.2s ease; // ✅ Smooth hover effect
+  
+  &:hover {
+    transform: translateY(-5px); // ✅ Lift effect on hover
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+  }
+  
+  .icon {
+    font-size: 2.5rem;
+    margin-right: 15px;
+    flex-shrink: 0; // ✅ Don't shrink icon
+  }
+  
+  .content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0; // ✅ Allow text to shrink
+  }
+  
+  .title {
+    font-size: 0.9rem;
+    font-weight: 500;
+    opacity: 0.9;
+    margin: 0;
+    white-space: nowrap; // ✅ Keep title on one line
+  }
+  
+  .count {
+    font-size: 1.5rem;
+    font-weight: bold;
+    margin: 0;
+    word-break: break-word; // ✅ Break long numbers if needed
+    overflow-wrap: break-word; // ✅ Wrap text properly
+    line-height: 1.2; // ✅ Tighter line spacing for wrapped text
+    
+    // ✅ Handle very large numbers
+    &.large-number {
+      font-size: 1.2rem;
+    }
+    
+    &.very-large-number {
+      font-size: 1rem;
+    }
+  }
+}
+
+// Card color variants
 .card {
   border: 1px solid #ccc;
-  // border-bottom: 3px solid var(--light-blue);
   padding: 5px;
   background-color: #f5f6fa;
 }
@@ -25,40 +78,48 @@
 .card1 {
   background-color: #b624ff;
 }
+
 .card2 {
   background-color: #32963d;
 }
+
 .card3 {
   background-color: #c41849;
 }
+
 .card4 {
   background-color: #03a5fc;
 }
-.info-summary {
-  display: flex; // Use flexbox for layout
-  flex-wrap: wrap; // Allow wrapping for responsiveness
-  gap: 5px; // Set a consistent gap between cards
-  // justify-content: space-between; // Space between cards
+
+// Media queries for responsiveness
+@media (max-width: 1024px) {
+  .info-box {
+    flex: 1 1 calc(50% - 15px); // ✅ Two cards per row on tablets
+  }
 }
 
-.info-box {
-  border-radius: 10px; // Add border radius
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); // Add shadow
-  flex: 1 1 calc(33% - 20px); // Responsive width, adjust as needed
-  min-width: 250px; // Minimum width for smaller screens
-  padding: 10px; // Add some padding
-  // ... other existing styles ...
-}
-
-// Media query for smaller screens
 @media (max-width: 768px) {
   .info-box {
-    flex: 1 1 calc(50% - 20px); // Two cards per row on smaller screens
+    flex: 1 1 calc(50% - 15px); // Two cards per row on smaller screens
+    min-width: 200px; // ✅ Slightly smaller min-width
+    padding: 15px; // ✅ Less padding on mobile
+    
+    .icon {
+      font-size: 2rem; // ✅ Smaller icon on mobile
+    }
+    
+    .count {
+      font-size: 1.3rem; // ✅ Smaller font on mobile
+    }
   }
 }
 
 @media (max-width: 480px) {
   .info-box {
     flex: 1 1 100%; // One card per row on very small screens
+    
+    .count {
+      font-size: 1.2rem; // ✅ Even smaller on tiny screens
+    }
   }
 }

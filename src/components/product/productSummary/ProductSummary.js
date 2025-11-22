@@ -26,9 +26,38 @@ const outOfStockIcon = <BsCartX size={40} color="#fff" />;
 const bankIcon = <BsBank2 size={40} color="#fff" />;
 const cashIcon = <FaMoneyBillWave size={40} color="#fff" />;
 
-// helpers
-export const formatNumbers = (x) =>
-  x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+// ✅ UPDATED: Better number formatting with abbreviations
+export const formatNumbers = (x) => {
+  const num = Number(x);
+  
+  if (!Number.isFinite(num)) return "0";
+  
+  const absNum = Math.abs(num);
+  const sign = num < 0 ? "-" : "";
+  
+  // For numbers >= 1 trillion
+  if (absNum >= 1000000000000) {
+    return sign + (absNum / 1000000000000).toFixed(2) + "T";
+  }
+  
+  // For numbers >= 1 billion
+  if (absNum >= 1000000000) {
+    return sign + (absNum / 1000000000).toFixed(2) + "B";
+  }
+  
+  // For numbers >= 1 million
+  if (absNum >= 1000000) {
+    return sign + (absNum / 1000000).toFixed(1) + "M";
+  }
+  
+  // For numbers >= 10 thousand
+  if (absNum >= 10000) {
+    return sign + (absNum / 1000).toFixed(1) + "K";
+  }
+  
+  // For smaller numbers, use commas
+  return num.toFixed(2).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+};
 
 // normalize to compare case-insensitively
 const norm = (s) => (s ?? "").toString().trim().toLowerCase();

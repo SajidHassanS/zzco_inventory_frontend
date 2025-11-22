@@ -88,67 +88,88 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
   // Fetch & build running ledger
   useEffect(() => {
     if (!open || !supplier?._id) return;
-const fetchTransactions = async () => {
-  try {
-    const { data } = await axios.get(
-      `${API_URL}/${supplier._id}/transaction-history`,
-      { withCredentials: true }
-    );
-
-    const history = Array.isArray(data?.transactionHistory)
-      ? data.transactionHistory
-      : [];
-
-    console.log("📦 RAW TRANSACTION HISTORY FROM API:", history);
-
-    let balance = 0;
-    const ledger = history.map((t, idx) => {
-      const type = String(t?.type || "").toLowerCase();
-      const amount = toNum(t?.amount);
-      const debit = type === "debit" ? amount : 0;
-      const credit = type === "credit" ? amount : 0;
-      balance += credit - debit;
-
-      const quantity = normalizeQty(t);
-
-      // ✅ DEBUG: Log transferred cheques
-      if (t.description?.toLowerCase().includes("transferred")) {
-        console.log("🔍 TRANSFERRED TRANSACTION:", {
-          description: t.description,
-          image: t.image,
-          chequeImage: t.chequeImage,
-          fullTransaction: t
-        });
-      }
-
-      // ✅ Try to convert to plain object for better access
-      let plainT;
+    
+    const fetchTransactions = async () => {
       try {
-        plainT = JSON.parse(JSON.stringify(t));
-      } catch (e) {
-        plainT = { ...t };
+        const { data } = await axios.get(
+          `${API_URL}/${supplier._id}/transaction-history`,
+          { withCredentials: true }
+        );
+
+        let history = Array.isArray(data?.transactionHistory)
+          ? data.transactionHistory
+          : [];
+
+        console.log("📦 RAW TRANSACTION HISTORY FROM API:", history);
+
+        // ✅ SORT by date (oldest first) to calculate running balance correctly
+        history = history.sort((a, b) => {
+          const dateA = new Date(a.date || a.createdAt || 0);
+          const dateB = new Date(b.date || b.createdAt || 0);
+          return dateA - dateB; // Ascending order (oldest first)
+        });
+
+        console.log("📅 SORTED HISTORY (oldest first):", history);
+
+        let balance = 0;
+        const ledger = history.map((t, idx) => {
+          const type = String(t?.type || "").toLowerCase();
+          const amount = toNum(t?.amount);
+          
+          // ✅ For suppliers: CREDIT increases balance (payment received), DEBIT decreases (purchase made)
+          const debit = type === "debit" ? amount : 0;
+          const credit = type === "credit" ? amount : 0;
+          balance += credit - debit;
+
+          const quantity = normalizeQty(t);
+
+          // ✅ DEBUG: Log transferred cheques
+          if (t.description?.toLowerCase().includes("transferred")) {
+            console.log("🔍 TRANSFERRED TRANSACTION:", {
+              date: t.date,
+              description: t.description,
+              type: type,
+              amount: amount,
+              debit: debit,
+              credit: credit,
+              runningBalance: balance,
+              image: t.image,
+              chequeImage: t.chequeImage,
+            });
+          }
+
+          // ✅ Try to convert to plain object for better access
+          let plainT;
+          try {
+            plainT = JSON.parse(JSON.stringify(t));
+          } catch (e) {
+            plainT = { ...t };
+          }
+
+          return {
+            id: plainT._id || t._id || idx,
+            ...plainT,
+            quantity,
+            debit,
+            credit,
+            runningBalance: balance,
+            // ✅ Preserve original objects for image access
+            _originalImage: t.image,
+            _originalChequeImage: t.chequeImage,
+          };
+        });
+
+        console.log("✅ PROCESSED LEDGER (with running balance):", ledger);
+        
+        // ✅ REVERSE for display (newest first in table)
+        const reversedLedger = [...ledger].reverse();
+        
+        setTransactions(reversedLedger);
+        setTotalBalance(balance);
+      } catch (err) {
+        console.error("Error fetching supplier transaction history:", err);
       }
-
-      return {
-        id: plainT._id || t._id || idx,
-        ...plainT,
-        quantity,
-        debit,
-        credit,
-        runningBalance: balance,
-        // ✅ Preserve original objects for image access
-        _originalImage: t.image,
-        _originalChequeImage: t.chequeImage,
-      };
-    });
-
-    console.log("✅ PROCESSED LEDGER:", ledger);
-    setTransactions(ledger);
-    setTotalBalance(balance);
-  } catch (err) {
-    console.error("Error fetching supplier transaction history:", err);
-  }
-};
+    };
 
     fetchTransactions();
   }, [open, supplier?._id, API_URL]);
@@ -176,7 +197,10 @@ const fetchTransactions = async () => {
       "Running Balance",
     ];
 
-    const tableRows = transactions.map((tr) => [
+    // ✅ Reverse back to chronological order for PDF (oldest to newest)
+    const pdfTransactions = [...transactions].reverse();
+
+    const tableRows = pdfTransactions.map((tr) => [
       tr?.date ? new Date(tr.date).toLocaleDateString() : "-",
       tr?.productName || "-",
       tr?.description || "-",
@@ -248,54 +272,49 @@ const fetchTransactions = async () => {
         renderCell: (row) =>
           row?.chequeDate ? new Date(row.chequeDate).toLocaleDateString() : "-",
       },
-    {
-  field: "image",
-  headerName: "Cheque Image",
-  renderCell: (row) => {
-    // ✅ Try all possible ways to get image URL
-    let imageUrl = null;
-    
-    // Try plain object properties
-    imageUrl = extractImageUrl(row.image) || extractImageUrl(row.chequeImage);
-    
-    // Try original Mongoose objects if available
-    if (!imageUrl) {
-      imageUrl = extractImageUrl(row._originalImage) || extractImageUrl(row._originalChequeImage);
-    }
-    
-    // ✅ DEBUG LOG FOR EVERY ROW
-    console.log("🖼️ IMAGE RENDER:", {
-      description: row.description,
-      imageUrl: imageUrl,
-      rowImage: row.image,
-      rowChequeImage: row.chequeImage,
-      originalImage: row._originalImage,
-      originalChequeImage: row._originalChequeImage,
-    });
-    
-    return imageUrl ? (
-      <IconButton
-        size="small"
-        color="primary"
-        onClick={() => handleViewImage(imageUrl)}
-        title="View Image"
-      >
-        <Visibility />
-      </IconButton>
-    ) : (
-      "-"
-    );
-  },
-},
+      {
+        field: "image",
+        headerName: "Cheque Image",
+        renderCell: (row) => {
+          // ✅ Try all possible ways to get image URL
+          let imageUrl = null;
+          
+          // Try plain object properties
+          imageUrl = extractImageUrl(row.image) || extractImageUrl(row.chequeImage);
+          
+          // Try original Mongoose objects if available
+          if (!imageUrl) {
+            imageUrl = extractImageUrl(row._originalImage) || extractImageUrl(row._originalChequeImage);
+          }
+          
+          return imageUrl ? (
+            <IconButton
+              size="small"
+              color="primary"
+              onClick={() => handleViewImage(imageUrl)}
+              title="View Image"
+            >
+              <Visibility />
+            </IconButton>
+          ) : (
+            "-"
+          );
+        },
+      },
       {
         field: "runningBalance",
         headerName: "Running Balance",
         renderCell: (row) => (
-          <span>{Number(row?.runningBalance ?? 0).toFixed(2)}</span>
+          <span style={{ 
+            color: Number(row?.runningBalance ?? 0) >= 0 ? "green" : "red",
+            fontWeight: "bold" 
+          }}>
+            {Number(row?.runningBalance ?? 0).toFixed(2)}
+          </span>
         ),
       },
     ],
-    [supplier, handleViewImage]
+    [supplier]
   );
 
   return (
