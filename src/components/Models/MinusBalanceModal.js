@@ -88,9 +88,7 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
 
     // ✅ Transfer Cheque validations
     if (paymentMethod === "transfercheque") {
-      if (!selectedBank) {
-        formErrors.selectedBank = "Bank is required for transfer cheque";
-      }
+     
       if (!chequeDate) {
         formErrors.chequeDate = "Cheque date is required";
       }
@@ -152,7 +150,7 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
         amount: amt,
         paymentMethod: method,
         description: cleanDesc,
-        ...(method === "online" || method === "transfercheque" 
+        ...(method === "online" 
           ? { bankId: selectedBank } 
           : {}),
         ...(method === "cheque" || method === "transfercheque" 
@@ -282,7 +280,7 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
         </TextField>
 
         {/* ✅ UPDATED: Only show bank for ONLINE and TRANSFERCHEQUE (not regular cheque) */}
-        {(paymentMethod === "online" || paymentMethod === "transfercheque") && (
+        {(paymentMethod === "online" ) && (
           <TextField
             label="Select Bank"
             select
