@@ -175,14 +175,14 @@ const openDiscountModal = (supplier) => {
         renderCell: (params) => (
           <Grid container spacing={1} wrap="nowrap">
             <Grid item>
-              <Tooltip title="Pay Supplier ( Reduce debt )">
+              <Tooltip title="Pay to Supplier">
                 <IconButton color="primary" size="small" onClick={() => openAddModal(params.row)}>
                   <Add fontSize="small" />
                 </IconButton>
               </Tooltip>
             </Grid>
             <Grid item>
-              <Tooltip title="Add Balance (you owe supplier)"> 
+              <Tooltip title="Get from Supplier"> 
                 <IconButton color="secondary" size="small" onClick={() => openMinusModal(params.row)}>
                   <Remove fontSize="small" />
                 </IconButton>
