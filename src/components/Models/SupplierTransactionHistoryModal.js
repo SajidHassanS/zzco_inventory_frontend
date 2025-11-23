@@ -161,10 +161,8 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
 
         console.log("✅ PROCESSED LEDGER (with running balance):", ledger);
         
-        // ✅ REVERSE for display (newest first in table)
-        const reversedLedger = [...ledger].reverse();
-        
-        setTransactions(reversedLedger);
+        // ✅ Keep chronological order (oldest to newest) for display
+        setTransactions(ledger); // No reverse!
         setTotalBalance(balance);
       } catch (err) {
         console.error("Error fetching supplier transaction history:", err);
@@ -180,45 +178,137 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
     setPage(0);
   };
 
-  // PDF download
+  // ✅ Professional PDF download
   const downloadPDF = () => {
-    const doc = new jsPDF();
-    doc.text(`Ledger for ${supplier?.username || "-"}`, 14, 10);
+    const doc = new jsPDF('landscape');
+    
+    // ✅ Header
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.text(`${supplier?.username || "SUPPLIER"}`, 14, 15);
+    
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "normal");
+    doc.text("Ledger", 14, 22);
+    
+    // ✅ Date range
+    doc.setFontSize(10);
+    const today = new Date().toLocaleDateString();
+    const firstDate = transactions.length > 0 
+      ? new Date(transactions[0]?.date || transactions[0]?.createdAt).toLocaleDateString()
+      : today;
+    doc.text(`From Date: ${firstDate}`, 240, 15);
+    doc.text(`To Date: ${today}`, 240, 20);
 
+    // ✅ Table columns
     const tableColumn = [
       "Date",
+      "Type",
       "Product Name",
       "Description",
-      "Qty",
-      "Payment Type",
+      "Quantity",
       "Debit",
       "Credit",
       "Cheque Date",
-      "Running Balance",
+      "Running Balance"
     ];
 
-    // ✅ Reverse back to chronological order for PDF (oldest to newest)
-    const pdfTransactions = [...transactions].reverse();
+    const tableRows = transactions.map((tr) => {
+      const type = String(tr?.paymentMethod || "").toUpperCase().substring(0, 3);
+      const qty = tr?.quantity != null && toNum(tr.quantity) > 0 ? toNum(tr.quantity).toFixed(2) : "-";
+      const chequeDate = tr?.chequeDate ? new Date(tr.chequeDate).toLocaleDateString() : "-";
+      
+      return [
+        tr?.date ? new Date(tr.date).toLocaleDateString() : "-",
+        type,
+        tr?.productName || "-",
+        tr?.description || "-",
+        qty,
+        toNum(tr?.debit).toFixed(2),
+        toNum(tr?.credit).toFixed(2),
+        chequeDate,
+        toNum(tr?.runningBalance).toFixed(2),
+      ];
+    });
 
-    const tableRows = pdfTransactions.map((tr) => [
-      tr?.date ? new Date(tr.date).toLocaleDateString() : "-",
-      tr?.productName || "-",
-      tr?.description || "-",
-      toNum(tr?.quantity) > 0 ? tr.quantity : "-",
-      tr?.paymentMethod
-        ? String(tr.paymentMethod).charAt(0).toUpperCase() +
-          String(tr.paymentMethod).slice(1).toLowerCase()
-        : "-",
-      Number(tr?.debit ?? 0).toFixed(2),
-      Number(tr?.credit ?? 0).toFixed(2),
-      tr?.chequeDate ? new Date(tr.chequeDate).toLocaleDateString() : "-",
-      Number(tr?.runningBalance ?? 0).toFixed(2),
+    // ✅ Add totals row
+    const totalDebit = transactions.reduce((sum, tr) => sum + toNum(tr?.debit), 0);
+    const totalCredit = transactions.reduce((sum, tr) => sum + toNum(tr?.credit), 0);
+    
+    tableRows.push([
+      "",
+      "",
+      "",
+      "",
+      "Total:",
+      totalDebit.toFixed(2),
+      totalCredit.toFixed(2),
+      "",
+      ""
     ]);
 
-    autoTable(doc, { head: [tableColumn], body: tableRows, startY: 20 });
-    const endY = doc.lastAutoTable?.finalY ?? 20;
-    doc.text(`Total Balance: ${Number(totalBalance || 0).toFixed(2)}`, 14, endY + 10);
-    doc.save(`Supplier_Transaction_History_${supplier?.username || "supplier"}.pdf`);
+    // ✅ Professional table
+    autoTable(doc, {
+      head: [tableColumn],
+      body: tableRows,
+      startY: 28,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [41, 128, 185],
+        textColor: 255,
+        fontStyle: 'bold',
+        halign: 'center',
+        fontSize: 9
+      },
+      bodyStyles: {
+        fontSize: 8,
+        cellPadding: 2
+      },
+      columnStyles: {
+        0: { cellWidth: 22, halign: 'center' },   // Date
+        1: { cellWidth: 15, halign: 'center' },   // Type
+        2: { cellWidth: 30, halign: 'left' },     // Product Name
+        3: { cellWidth: 60, halign: 'left' },     // Description
+        4: { cellWidth: 20, halign: 'right' },    // Quantity
+        5: { cellWidth: 25, halign: 'right', textColor: [255, 0, 0] },  // Debit (red)
+        6: { cellWidth: 25, halign: 'right', textColor: [0, 128, 0] },  // Credit (green)
+        7: { cellWidth: 22, halign: 'center' },   // Cheque Date
+        8: { cellWidth: 30, halign: 'right', fontStyle: 'bold' }        // Running Balance
+      },
+      didParseCell: function(data) {
+        if (data.row.index === tableRows.length - 1) {
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fillColor = [240, 240, 240];
+        }
+      },
+      styles: {
+        overflow: 'linebreak',
+        cellWidth: 'wrap'
+      }
+    });
+
+    const finalY = doc.lastAutoTable.finalY || 28;
+    
+    // ✅ Summary
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    
+    const purchaseQty = transactions
+      .filter(tr => String(tr?.type).toLowerCase() === 'debit')
+      .reduce((sum, tr) => sum + toNum(tr?.quantity), 0);
+      
+    const saleQty = transactions
+      .filter(tr => String(tr?.type).toLowerCase() === 'credit')
+      .reduce((sum, tr) => sum + toNum(tr?.quantity), 0);
+
+    const finalBalance = totalCredit - totalDebit;
+
+    doc.text(`P.Q: ${purchaseQty.toFixed(2)}`, 14, finalY + 10);
+    doc.text(`S.Q: ${saleQty.toFixed(2)}`, 70, finalY + 10);
+    doc.text(`Total Debit: ${totalDebit.toFixed(2)}`, 130, finalY + 10);
+    doc.text(`Final Balance: ${finalBalance.toFixed(2)}`, 200, finalY + 10);
+
+    doc.save(`Supplier_Ledger_${supplier?.username || "supplier"}_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
   const columns = useMemo(
@@ -276,13 +366,9 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
         field: "image",
         headerName: "Cheque Image",
         renderCell: (row) => {
-          // ✅ Try all possible ways to get image URL
           let imageUrl = null;
-          
-          // Try plain object properties
           imageUrl = extractImageUrl(row.image) || extractImageUrl(row.chequeImage);
           
-          // Try original Mongoose objects if available
           if (!imageUrl) {
             imageUrl = extractImageUrl(row._originalImage) || extractImageUrl(row._originalChequeImage);
           }

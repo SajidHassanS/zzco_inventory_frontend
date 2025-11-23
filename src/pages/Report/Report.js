@@ -469,79 +469,248 @@ const pendingCheques = useMemo(() => {
     return `${selectedYear}`;
   }, [reportType, selectedYear, selectedMonth]);
 
-  // ===== PDF Export =====
-  const downloadComprehensiveReport = () => {
-    const doc = new jsPDF();
+// ===== PDF Export - PROFESSIONAL VERSION =====
+const downloadComprehensiveReport = () => {
+  const doc = new jsPDF('portrait');
+  
+  // ===== HEADER =====
+  doc.setFontSize(18);
+  doc.setFont("helvetica", "bold");
+  doc.text("FINANCIAL REPORT", 105, 15, { align: "center" });
+  
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "normal");
+  doc.text(`Period: ${titleForPeriod}`, 105, 22, { align: "center" });
+  doc.text(`Generated: ${new Date().toLocaleString()}`, 105, 28, { align: "center" });
+  
+  // Add line separator
+  doc.setLineWidth(0.5);
+  doc.line(14, 32, 196, 32);
+  
+  let yPos = 40;
+
+  // ===== SECTION 1: CASH & BANK SUMMARY =====
+  doc.setFontSize(13);
+  doc.setFont(undefined, "bold");
+  doc.setFillColor(41, 128, 185);
+  doc.rect(14, yPos - 5, 182, 8, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.text("CASH & BANK SUMMARY", 16, yPos);
+  yPos += 10;
+  
+  doc.setTextColor(0, 0, 0);
+  doc.setFont(undefined, "normal");
+  doc.setFontSize(10);
+  
+  // Table-like format
+  doc.text("Total Cash Balance:", 20, yPos);
+  doc.text(`Rs ${availableCashBalance.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+  yPos += 6;
+  
+  doc.text("Total Bank Balance:", 20, yPos);
+  doc.text(`Rs ${totalBankBalance.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+  yPos += 6;
+  
+  doc.text("Pending Cheques:", 20, yPos);
+  doc.text(`Rs ${pendingCheques.amount.toLocaleString('en-PK', {minimumFractionDigits: 2})} (${pendingCheques.count} cheques)`, 140, yPos, { align: "right" });
+  yPos += 6;
+  
+  // Subtotal line
+  doc.setLineWidth(0.3);
+  doc.line(20, yPos, 140, yPos);
+  yPos += 5;
+  
+  doc.setFont(undefined, "bold");
+  doc.text("Total Liquid Assets:", 20, yPos);
+  doc.text(`Rs ${(availableCashBalance + totalBankBalance).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+  yPos += 12;
+
+  // ===== SECTION 2: CUSTOMER ACCOUNTS =====
+  doc.setFont(undefined, "bold");
+  doc.setFillColor(76, 175, 80);
+  doc.rect(14, yPos - 5, 182, 8, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.text("CUSTOMER ACCOUNTS", 16, yPos);
+  yPos += 10;
+  
+  doc.setTextColor(0, 0, 0);
+  doc.setFont(undefined, "normal");
+  
+  doc.text(`Dues FROM Customers (Receivable):`, 20, yPos);
+  doc.text(`Rs ${customerDues.receivable.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+  doc.setFontSize(8);
+  doc.setTextColor(100, 100, 100);
+  doc.text(`(${customerDues.receivableCount} customers)`, 145, yPos);
+  yPos += 6;
+  
+  doc.setFontSize(10);
+  doc.setTextColor(0, 0, 0);
+  doc.text(`Dues TO Customers (Payable):`, 20, yPos);
+  doc.text(`Rs ${customerDues.payable.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+  doc.setFontSize(8);
+  doc.setTextColor(100, 100, 100);
+  doc.text(`(${customerDues.payableCount} customers)`, 145, yPos);
+  yPos += 6;
+  
+  doc.setLineWidth(0.3);
+  doc.line(20, yPos, 140, yPos);
+  yPos += 5;
+  
+  doc.setFontSize(10);
+  doc.setFont(undefined, "bold");
+  const customerNet = customerDues.receivable - customerDues.payable;
+  doc.setTextColor(customerNet >= 0 ? 0 : 255, customerNet >= 0 ? 128 : 0, 0);
+  doc.text("Net Customer Position:", 20, yPos);
+  doc.text(`Rs ${customerNet.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+  yPos += 12;
+
+  // ===== SECTION 3: SUPPLIER ACCOUNTS =====
+  doc.setTextColor(0, 0, 0);
+  doc.setFont(undefined, "bold");
+  doc.setFillColor(255, 152, 0);
+  doc.rect(14, yPos - 5, 182, 8, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.text("SUPPLIER ACCOUNTS", 16, yPos);
+  yPos += 10;
+  
+  doc.setTextColor(0, 0, 0);
+  doc.setFont(undefined, "normal");
+  
+  doc.text(`Dues TO Suppliers (Payable):`, 20, yPos);
+  doc.text(`Rs ${supplierDues.payable.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+  doc.setFontSize(8);
+  doc.setTextColor(100, 100, 100);
+  doc.text(`(${supplierDues.payableCount} suppliers)`, 145, yPos);
+  yPos += 6;
+  
+  doc.setFontSize(10);
+  doc.setTextColor(0, 0, 0);
+  doc.text(`Dues FROM Suppliers (Receivable):`, 20, yPos);
+  doc.text(`Rs ${supplierDues.receivable.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+  doc.setFontSize(8);
+  doc.setTextColor(100, 100, 100);
+  doc.text(`(${supplierDues.receivableCount} suppliers)`, 145, yPos);
+  yPos += 6;
+  
+  doc.setLineWidth(0.3);
+  doc.line(20, yPos, 140, yPos);
+  yPos += 5;
+  
+  doc.setFontSize(10);
+  doc.setFont(undefined, "bold");
+  const supplierNet = supplierDues.receivable - supplierDues.payable;
+  doc.setTextColor(supplierNet >= 0 ? 0 : 255, supplierNet >= 0 ? 128 : 0, 0);
+  doc.text("Net Supplier Position:", 20, yPos);
+  doc.text(`Rs ${supplierNet.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+  yPos += 12;
+
+  // ===== SECTION 4: EXPENSES SUMMARY =====
+  doc.setTextColor(0, 0, 0);
+  doc.setFont(undefined, "bold");
+  doc.setFillColor(244, 67, 54);
+  doc.rect(14, yPos - 5, 182, 8, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.text("EXPENSES SUMMARY", 16, yPos);
+  yPos += 10;
+  
+  doc.setTextColor(0, 0, 0);
+  doc.setFont(undefined, "normal");
+  
+  doc.text("Cash Expenses:", 20, yPos);
+  doc.text(`Rs ${cashExpensesFromExpensesApi.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+  yPos += 6;
+  
+  doc.text("Bank Expenses:", 20, yPos);
+  doc.text(`Rs ${totalBankExpenses.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+  yPos += 6;
+  
+  doc.setLineWidth(0.3);
+  doc.line(20, yPos, 140, yPos);
+  yPos += 5;
+  
+  doc.setFont(undefined, "bold");
+  doc.text("Total Expenses:", 20, yPos);
+  doc.text(`Rs ${(cashExpensesFromExpensesApi + totalBankExpenses).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+  yPos += 12;
+
+  // Check if we need a new page
+  if (yPos > 250) {
+    doc.addPage();
+    yPos = 20;
+  }
+
+  // ===== SECTION 5: PROFIT & LOSS =====
+  if (plData) {
+    doc.setFont(undefined, "bold");
+    doc.setFillColor(33, 150, 243);
+    doc.rect(14, yPos - 5, 182, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.text("PROFIT & LOSS STATEMENT", 16, yPos);
+    yPos += 10;
     
-    doc.setFontSize(16);
-    doc.text("Financial Report", 14, 15);
-    doc.setFontSize(11);
-    doc.text(`Period: ${titleForPeriod}`, 14, 22);
-    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 28);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont(undefined, "normal");
     
-    let yPos = 38;
-
-    doc.setFontSize(13);
+    doc.text("Total Revenue:", 20, yPos);
+    doc.setTextColor(0, 128, 0);
+    doc.text(`Rs ${(plData.revenue || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    yPos += 6;
+    
+    doc.setTextColor(0, 0, 0);
+    doc.text("Cost of Goods Sold (COGS):", 20, yPos);
+    doc.setTextColor(255, 0, 0);
+    doc.text(`Rs ${(plData.cogs || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    yPos += 6;
+    
+    doc.setLineWidth(0.3);
+    doc.line(20, yPos, 140, yPos);
+    yPos += 5;
+    
+    doc.setTextColor(0, 0, 0);
     doc.setFont(undefined, "bold");
-    doc.text("Cash & Bank Summary", 14, yPos);
+    doc.text("Gross Profit:", 20, yPos);
+    doc.setTextColor(0, 100, 200);
+    doc.text(`Rs ${(plData.grossProfit || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
     yPos += 8;
+    
+    doc.setTextColor(0, 0, 0);
     doc.setFont(undefined, "normal");
-    doc.setFontSize(10);
-    doc.text(`Total Cash Balance: Rs ${availableCashBalance.toFixed(2)}`, 14, yPos);
+    doc.text("Operating Expenses:", 20, yPos);
+    doc.setTextColor(255, 0, 0);
+    doc.text(`Rs ${(plData.expenses || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
     yPos += 6;
-    doc.text(`Total Bank Balance: Rs ${totalBankBalance.toFixed(2)}`, 14, yPos);
-    yPos += 6;
-    doc.text(`Pending Cheques: Rs ${pendingCheques.amount.toFixed(2)} (${pendingCheques.count})`, 14, yPos);
-    yPos += 6;
-    doc.text(`Total Liquid Assets: Rs ${(availableCashBalance + totalBankBalance).toFixed(2)}`, 14, yPos);
-    yPos += 10;
-
-    doc.setFontSize(13);
-    doc.setFont(undefined, "bold");
-    doc.text("Customer Accounts", 14, yPos);
-    yPos += 8;
-    doc.setFont(undefined, "normal");
-    doc.setFontSize(10);
-    doc.text(`Receivable: Rs ${customerDues.receivable.toFixed(2)} (${customerDues.receivableCount})`, 14, yPos);
-    yPos += 6;
-    doc.text(`Payable: Rs ${customerDues.payable.toFixed(2)} (${customerDues.payableCount})`, 14, yPos);
-    yPos += 6;
-    doc.text(`Net: Rs ${(customerDues.receivable - customerDues.payable).toFixed(2)}`, 14, yPos);
-    yPos += 10;
-
-    doc.setFontSize(13);
-    doc.setFont(undefined, "bold");
-    doc.text("Supplier Accounts", 14, yPos);
-    yPos += 8;
-    doc.setFont(undefined, "normal");
-    doc.setFontSize(10);
-    doc.text(`Payable: Rs ${supplierDues.payable.toFixed(2)} (${supplierDues.payableCount})`, 14, yPos);
-    yPos += 6;
-    doc.text(`Receivable: Rs ${supplierDues.receivable.toFixed(2)} (${supplierDues.receivableCount})`, 14, yPos);
-    yPos += 6;
-    doc.text(`Net: Rs ${(supplierDues.receivable - supplierDues.payable).toFixed(2)}`, 14, yPos);
-    yPos += 10;
-
-    if (plData) {
-      doc.setFontSize(13);
-      doc.setFont(undefined, "bold");
-      doc.text("Profit & Loss", 14, yPos);
-      yPos += 8;
-      doc.setFont(undefined, "normal");
-      doc.setFontSize(10);
-      doc.text(`Revenue: Rs ${plData.revenue.toFixed(2)}`, 14, yPos);
+    
+    if (plData.damageLoss !== undefined && plData.damageLoss > 0) {
+      doc.setTextColor(0, 0, 0);
+      doc.text("Damage & Loss:", 20, yPos);
+      doc.setTextColor(255, 0, 0);
+      doc.text(`Rs ${(plData.damageLoss || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
       yPos += 6;
-      doc.text(`COGS: Rs ${plData.cogs.toFixed(2)}`, 14, yPos);
-      yPos += 6;
-      doc.text(`Expenses: Rs ${plData.expenses.toFixed(2)}`, 14, yPos);
-      yPos += 6;
-      doc.text(`Gross Profit: Rs ${plData.grossProfit.toFixed(2)}`, 14, yPos);
-      yPos += 6;
-      doc.text(`Net Profit: Rs ${plData.netProfit.toFixed(2)}`, 14, yPos);
     }
+    
+    doc.setLineWidth(0.5);
+    doc.line(20, yPos, 140, yPos);
+    yPos += 6;
+    
+    const netProfit = plData.netProfit || 0;
+    doc.setFont(undefined, "bold");
+    doc.setFontSize(12);
+    doc.setTextColor(0, 0, 0);
+    doc.text("NET PROFIT:", 20, yPos);
+    doc.setTextColor(netProfit >= 0 ? 0 : 255, netProfit >= 0 ? 128 : 0, 0);
+    doc.text(`Rs ${netProfit.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    yPos += 10;
+  }
 
-    doc.save(`Financial_Report_${titleForPeriod}.pdf`);
-  };
+  // ===== FOOTER =====
+  doc.setTextColor(100, 100, 100);
+  doc.setFontSize(8);
+  doc.setFont(undefined, "italic");
+  doc.text("This is a computer-generated report. No signature required.", 105, 285, { align: "center" });
+  doc.text(`Page 1 of ${doc.internal.getNumberOfPages()}`, 105, 290, { align: "center" });
+
+  doc.save(`Financial_Report_${titleForPeriod.replace(/ /g, '_')}.pdf`);
+};
 
   if (loading) {
     return (
