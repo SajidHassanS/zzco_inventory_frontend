@@ -469,25 +469,37 @@ const pendingCheques = useMemo(() => {
     return `${selectedYear}`;
   }, [reportType, selectedYear, selectedMonth]);
 
-// ===== PDF Export - PROFESSIONAL VERSION =====
+// ===== PDF Export - PROFESSIONAL VERSION WITH LOGO =====
 const downloadComprehensiveReport = () => {
   const doc = new jsPDF('portrait');
   
-  // ===== HEADER =====
-  doc.setFontSize(18);
+  // ===== COMPANY LOGO/HEADER - ORANGE COLOR =====
+  doc.setFontSize(22);
   doc.setFont("helvetica", "bold");
-  doc.text("FINANCIAL REPORT", 105, 15, { align: "center" });
+  doc.setTextColor(255, 87, 34); // ✅ Orange/Red color (matching Admin logo)
+  doc.text("Z&Z TRADERS .CO", 105, 12, { align: "center" });
+  
+  // Decorative line under logo
+  doc.setLineWidth(0.8);
+  doc.setDrawColor(255, 87, 34); // ✅ Orange/Red color
+  doc.line(60, 15, 150, 15);
+  
+  // ===== REPORT TITLE =====
+  doc.setFontSize(16);
+  doc.setTextColor(0, 0, 0);
+  doc.text("FINANCIAL REPORT", 105, 22, { align: "center" });
   
   doc.setFontSize(11);
   doc.setFont("helvetica", "normal");
-  doc.text(`Period: ${titleForPeriod}`, 105, 22, { align: "center" });
-  doc.text(`Generated: ${new Date().toLocaleString()}`, 105, 28, { align: "center" });
+  doc.text(`Period: ${titleForPeriod}`, 105, 28, { align: "center" });
+  doc.text(`Generated: ${new Date().toLocaleString()}`, 105, 33, { align: "center" });
   
   // Add line separator
   doc.setLineWidth(0.5);
-  doc.line(14, 32, 196, 32);
+  doc.setDrawColor(0, 0, 0);
+  doc.line(14, 37, 196, 37);
   
-  let yPos = 40;
+  let yPos = 45;
 
   // ===== SECTION 1: CASH & BANK SUMMARY =====
   doc.setFontSize(13);

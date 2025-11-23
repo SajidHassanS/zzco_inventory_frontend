@@ -178,138 +178,150 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
     setPage(0);
   };
 
-  // ✅ Professional PDF download
-  const downloadPDF = () => {
-    const doc = new jsPDF('landscape');
-    
-    // ✅ Header
-    doc.setFontSize(16);
-    doc.setFont("helvetica", "bold");
-    doc.text(`${supplier?.username || "SUPPLIER"}`, 14, 15);
-    
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "normal");
-    doc.text("Ledger", 14, 22);
-    
-    // ✅ Date range
-    doc.setFontSize(10);
-    const today = new Date().toLocaleDateString();
-    const firstDate = transactions.length > 0 
-      ? new Date(transactions[0]?.date || transactions[0]?.createdAt).toLocaleDateString()
-      : today;
-    doc.text(`From Date: ${firstDate}`, 240, 15);
-    doc.text(`To Date: ${today}`, 240, 20);
+ // ✅ Professional PDF download with Z&Z TRADERS logo
+const downloadPDF = () => {
+  const doc = new jsPDF('landscape');
+  
+  // ✅ COMPANY LOGO/HEADER - ORANGE COLOR
+  doc.setFontSize(20);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(255, 87, 34); // ✅ Orange/Red color (matching Admin logo)
+  doc.text("Z&Z TRADERS .CO", 148, 12, { align: "center" });
+  
+  // Decorative line under logo
+  doc.setLineWidth(0.8);
+  doc.setDrawColor(255, 87, 34); // ✅ Orange/Red color
+  doc.line(110, 15, 186, 15);
+  
+  // ✅ Supplier name
+  doc.setFontSize(16);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(0, 0, 0);
+  doc.text(`${supplier?.username || "SUPPLIER"}`, 14, 15);
+  
+  doc.setFontSize(12);
+  doc.setFont("helvetica", "normal");
+  doc.text("Ledger", 14, 22);
+  
+  // ✅ Date range
+  doc.setFontSize(10);
+  const today = new Date().toLocaleDateString();
+  const firstDate = transactions.length > 0 
+    ? new Date(transactions[0]?.date || transactions[0]?.createdAt).toLocaleDateString()
+    : today;
+  doc.text(`From Date: ${firstDate}`, 240, 15);
+  doc.text(`To Date: ${today}`, 240, 20);
 
-    // ✅ Table columns
-    const tableColumn = [
-      "Date",
-      "Type",
-      "Product Name",
-      "Description",
-      "Quantity",
-      "Debit",
-      "Credit",
-      "Cheque Date",
-      "Running Balance"
+  // ✅ Table columns
+  const tableColumn = [
+    "Date",
+    "Type",
+    "Product Name",
+    "Description",
+    "Quantity",
+    "Debit",
+    "Credit",
+    "Cheque Date",
+    "Running Balance"
+  ];
+
+  const tableRows = transactions.map((tr) => {
+    const type = String(tr?.paymentMethod || "").toUpperCase().substring(0, 3);
+    const qty = tr?.quantity != null && toNum(tr.quantity) > 0 ? toNum(tr.quantity).toFixed(2) : "-";
+    const chequeDate = tr?.chequeDate ? new Date(tr.chequeDate).toLocaleDateString() : "-";
+    
+    return [
+      tr?.date ? new Date(tr.date).toLocaleDateString() : "-",
+      type,
+      tr?.productName || "-",
+      tr?.description || "-",
+      qty,
+      toNum(tr?.debit).toFixed(2),
+      toNum(tr?.credit).toFixed(2),
+      chequeDate,
+      toNum(tr?.runningBalance).toFixed(2),
     ];
+  });
 
-    const tableRows = transactions.map((tr) => {
-      const type = String(tr?.paymentMethod || "").toUpperCase().substring(0, 3);
-      const qty = tr?.quantity != null && toNum(tr.quantity) > 0 ? toNum(tr.quantity).toFixed(2) : "-";
-      const chequeDate = tr?.chequeDate ? new Date(tr.chequeDate).toLocaleDateString() : "-";
-      
-      return [
-        tr?.date ? new Date(tr.date).toLocaleDateString() : "-",
-        type,
-        tr?.productName || "-",
-        tr?.description || "-",
-        qty,
-        toNum(tr?.debit).toFixed(2),
-        toNum(tr?.credit).toFixed(2),
-        chequeDate,
-        toNum(tr?.runningBalance).toFixed(2),
-      ];
-    });
+  // ✅ Add totals row
+  const totalDebit = transactions.reduce((sum, tr) => sum + toNum(tr?.debit), 0);
+  const totalCredit = transactions.reduce((sum, tr) => sum + toNum(tr?.credit), 0);
+  
+  tableRows.push([
+    "",
+    "",
+    "",
+    "",
+    "Total:",
+    totalDebit.toFixed(2),
+    totalCredit.toFixed(2),
+    "",
+    ""
+  ]);
 
-    // ✅ Add totals row
-    const totalDebit = transactions.reduce((sum, tr) => sum + toNum(tr?.debit), 0);
-    const totalCredit = transactions.reduce((sum, tr) => sum + toNum(tr?.credit), 0);
-    
-    tableRows.push([
-      "",
-      "",
-      "",
-      "",
-      "Total:",
-      totalDebit.toFixed(2),
-      totalCredit.toFixed(2),
-      "",
-      ""
-    ]);
-
-    // ✅ Professional table
-    autoTable(doc, {
-      head: [tableColumn],
-      body: tableRows,
-      startY: 28,
-      theme: 'grid',
-      headStyles: {
-        fillColor: [41, 128, 185],
-        textColor: 255,
-        fontStyle: 'bold',
-        halign: 'center',
-        fontSize: 9
-      },
-      bodyStyles: {
-        fontSize: 8,
-        cellPadding: 2
-      },
-      columnStyles: {
-        0: { cellWidth: 22, halign: 'center' },   // Date
-        1: { cellWidth: 15, halign: 'center' },   // Type
-        2: { cellWidth: 30, halign: 'left' },     // Product Name
-        3: { cellWidth: 60, halign: 'left' },     // Description
-        4: { cellWidth: 20, halign: 'right' },    // Quantity
-        5: { cellWidth: 25, halign: 'right', textColor: [255, 0, 0] },  // Debit (red)
-        6: { cellWidth: 25, halign: 'right', textColor: [0, 128, 0] },  // Credit (green)
-        7: { cellWidth: 22, halign: 'center' },   // Cheque Date
-        8: { cellWidth: 30, halign: 'right', fontStyle: 'bold' }        // Running Balance
-      },
-      didParseCell: function(data) {
-        if (data.row.index === tableRows.length - 1) {
-          data.cell.styles.fontStyle = 'bold';
-          data.cell.styles.fillColor = [240, 240, 240];
-        }
-      },
-      styles: {
-        overflow: 'linebreak',
-        cellWidth: 'wrap'
+  // ✅ Professional table
+  autoTable(doc, {
+    head: [tableColumn],
+    body: tableRows,
+    startY: 28,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [41, 128, 185],
+      textColor: 255,
+      fontStyle: 'bold',
+      halign: 'center',
+      fontSize: 9
+    },
+    bodyStyles: {
+      fontSize: 8,
+      cellPadding: 2
+    },
+    columnStyles: {
+      0: { cellWidth: 22, halign: 'center' },   // Date
+      1: { cellWidth: 15, halign: 'center' },   // Type
+      2: { cellWidth: 30, halign: 'left' },     // Product Name
+      3: { cellWidth: 60, halign: 'left' },     // Description
+      4: { cellWidth: 20, halign: 'right' },    // Quantity
+      5: { cellWidth: 25, halign: 'right', textColor: [255, 0, 0] },  // Debit (red)
+      6: { cellWidth: 25, halign: 'right', textColor: [0, 128, 0] },  // Credit (green)
+      7: { cellWidth: 22, halign: 'center' },   // Cheque Date
+      8: { cellWidth: 30, halign: 'right', fontStyle: 'bold' }        // Running Balance
+    },
+    didParseCell: function(data) {
+      if (data.row.index === tableRows.length - 1) {
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.fillColor = [240, 240, 240];
       }
-    });
+    },
+    styles: {
+      overflow: 'linebreak',
+      cellWidth: 'wrap'
+    }
+  });
 
-    const finalY = doc.lastAutoTable.finalY || 28;
+  const finalY = doc.lastAutoTable.finalY || 28;
+  
+  // ✅ Summary
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "bold");
+  
+  const purchaseQty = transactions
+    .filter(tr => String(tr?.type).toLowerCase() === 'debit')
+    .reduce((sum, tr) => sum + toNum(tr?.quantity), 0);
     
-    // ✅ Summary
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "bold");
-    
-    const purchaseQty = transactions
-      .filter(tr => String(tr?.type).toLowerCase() === 'debit')
-      .reduce((sum, tr) => sum + toNum(tr?.quantity), 0);
-      
-    const saleQty = transactions
-      .filter(tr => String(tr?.type).toLowerCase() === 'credit')
-      .reduce((sum, tr) => sum + toNum(tr?.quantity), 0);
+  const saleQty = transactions
+    .filter(tr => String(tr?.type).toLowerCase() === 'credit')
+    .reduce((sum, tr) => sum + toNum(tr?.quantity), 0);
 
-    const finalBalance = totalCredit - totalDebit;
+  const finalBalance = totalCredit - totalDebit;
 
-    doc.text(`P.Q: ${purchaseQty.toFixed(2)}`, 14, finalY + 10);
-    doc.text(`S.Q: ${saleQty.toFixed(2)}`, 70, finalY + 10);
-    doc.text(`Total Debit: ${totalDebit.toFixed(2)}`, 130, finalY + 10);
-    doc.text(`Final Balance: ${finalBalance.toFixed(2)}`, 200, finalY + 10);
+  doc.text(`P.Q: ${purchaseQty.toFixed(2)}`, 14, finalY + 10);
+  doc.text(`S.Q: ${saleQty.toFixed(2)}`, 70, finalY + 10);
+  doc.text(`Total Debit: ${totalDebit.toFixed(2)}`, 130, finalY + 10);
+  doc.text(`Final Balance: ${finalBalance.toFixed(2)}`, 200, finalY + 10);
 
-    doc.save(`Supplier_Ledger_${supplier?.username || "supplier"}_${new Date().toISOString().split('T')[0]}.pdf`);
-  };
+  doc.save(`Supplier_Ledger_${supplier?.username || "supplier"}_${new Date().toISOString().split('T')[0]}.pdf`);
+};
 
   const columns = useMemo(
     () => [

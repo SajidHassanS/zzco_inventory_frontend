@@ -126,141 +126,153 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
     setPage(0);
   };
 
-// PDF export with professional formatting
-const downloadPDF = () => {
-  const doc = new jsPDF('landscape'); // ✅ Use landscape for more space
-  
-  // ✅ Header with customer name
-  doc.setFontSize(16);
-  doc.setFont("helvetica", "bold");
-  doc.text(`${customer?.username || "CUSTOMER"}`, 14, 15);
-  
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "normal");
-  doc.text("Ledger", 14, 22);
-  
-  // ✅ Add date range
-  doc.setFontSize(10);
-  const today = new Date().toLocaleDateString();
-  const firstDate = transactions.length > 0 
-    ? new Date(transactions[0]?.date || transactions[0]?.createdAt).toLocaleDateString()
-    : today;
-  doc.text(`From Date: ${firstDate}`, 240, 15);
-  doc.text(`To Date: ${today}`, 240, 20);
-
-  // ✅ Complete table columns with all fields
-  const tableColumn = [
-    "Date",
-    "Type",
-    "Description",
-    "Quantity",
-    "Rate",
-    "Debit",
-    "Credit",
-    "Cheque Date",
-    "Running Balance"
-  ];
-
-  const tableRows = transactions.map((tr) => {
-    const type = String(tr?.paymentMethod || "CRE").toUpperCase().substring(0, 3);
-    const qty = tr?.quantity != null && toNum(tr.quantity) > 0 ? toNum(tr.quantity).toFixed(2) : "-";
-    const rate = tr?.unitPrice != null && toNum(tr.unitPrice) > 0 ? toNum(tr.unitPrice).toFixed(2) : "-";
-    const chequeDate = tr?.chequeDate ? new Date(tr.chequeDate).toLocaleDateString() : "-";
+  // PDF export with professional formatting and Z&Z TRADERS logo
+  const downloadPDF = () => {
+    const doc = new jsPDF('landscape');
     
-    return [
-      tr?.date ? new Date(tr.date).toLocaleDateString() : "-",
-      type,
-      tr?.description || "-",
-      qty,
-      rate,
-      toNum(tr?.debit).toFixed(2),
-      toNum(tr?.credit).toFixed(2),
-      chequeDate,
-      toNum(tr?.runningBalance).toFixed(2),
+ doc.setFontSize(20);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(255, 87, 34); // ✅ Orange/Red color (matching Admin logo)
+  doc.text("Z&Z TRADERS .CO", 148, 12, { align: "center" });
+  
+  // Decorative line under logo
+  doc.setLineWidth(0.8);
+  doc.setDrawColor(255, 87, 34); // ✅ Orange/Red color
+  doc.line(110, 15, 186, 15);
+
+    
+    // ✅ Customer name
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(0, 0, 0);
+    doc.text(`${customer?.username || "CUSTOMER"}`, 14, 15);
+    
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "normal");
+    doc.text("Ledger", 14, 22);
+    
+    // ✅ Date range
+    doc.setFontSize(10);
+    const today = new Date().toLocaleDateString();
+    const firstDate = transactions.length > 0 
+      ? new Date(transactions[0]?.date || transactions[0]?.createdAt).toLocaleDateString()
+      : today;
+    doc.text(`From Date: ${firstDate}`, 240, 15);
+    doc.text(`To Date: ${today}`, 240, 20);
+
+    // ✅ Complete table columns with all fields
+    const tableColumn = [
+      "Date",
+      "Type",
+      "Description",
+      "Quantity",
+      "Rate",
+      "Debit",
+      "Credit",
+      "Cheque Date",
+      "Running Balance"
     ];
-  });
 
-  // ✅ Add totals row
-  const totalDebit = transactions.reduce((sum, tr) => sum + toNum(tr?.debit), 0);
-  const totalCredit = transactions.reduce((sum, tr) => sum + toNum(tr?.credit), 0);
-  
-  tableRows.push([
-    "",
-    "",
-    "",
-    "",
-    "Total:",
-    totalDebit.toFixed(2),
-    totalCredit.toFixed(2),
-    "",
-    ""
-  ]);
+    const tableRows = transactions.map((tr) => {
+      const type = String(tr?.paymentMethod || "CRE").toUpperCase().substring(0, 3);
+      const qty = tr?.quantity != null && toNum(tr.quantity) > 0 ? toNum(tr.quantity).toFixed(2) : "-";
+      const rate = tr?.unitPrice != null && toNum(tr.unitPrice) > 0 ? toNum(tr.unitPrice).toFixed(2) : "-";
+      const chequeDate = tr?.chequeDate ? new Date(tr.chequeDate).toLocaleDateString() : "-";
+      
+      return [
+        tr?.date ? new Date(tr.date).toLocaleDateString() : "-",
+        type,
+        tr?.description || "-",
+        qty,
+        rate,
+        toNum(tr?.debit).toFixed(2),
+        toNum(tr?.credit).toFixed(2),
+        chequeDate,
+        toNum(tr?.runningBalance).toFixed(2),
+      ];
+    });
 
-  // ✅ Professional table with all columns
-  autoTable(doc, {
-    head: [tableColumn],
-    body: tableRows,
-    startY: 28,
-    theme: 'grid',
-    headStyles: {
-      fillColor: [41, 128, 185],
-      textColor: 255,
-      fontStyle: 'bold',
-      halign: 'center',
-      fontSize: 9
-    },
-    bodyStyles: {
-      fontSize: 8,
-      cellPadding: 2
-    },
-    columnStyles: {
-      0: { cellWidth: 22, halign: 'center' },   // Date
-      1: { cellWidth: 15, halign: 'center' },   // Type
-      2: { cellWidth: 65, halign: 'left' },     // Description
-      3: { cellWidth: 20, halign: 'right' },    // Quantity
-      4: { cellWidth: 20, halign: 'right' },    // Rate
-      5: { cellWidth: 25, halign: 'right', textColor: [255, 0, 0] },  // Debit (red)
-      6: { cellWidth: 25, halign: 'right', textColor: [0, 128, 0] },  // Credit (green)
-      7: { cellWidth: 22, halign: 'center' },   // Cheque Date
-      8: { cellWidth: 30, halign: 'right', fontStyle: 'bold' }        // Running Balance
-    },
-    // ✅ Highlight totals row
-    didParseCell: function(data) {
-      if (data.row.index === tableRows.length - 1) {
-        data.cell.styles.fontStyle = 'bold';
-        data.cell.styles.fillColor = [240, 240, 240];
+    // ✅ Add totals row
+    const totalDebit = transactions.reduce((sum, tr) => sum + toNum(tr?.debit), 0);
+    const totalCredit = transactions.reduce((sum, tr) => sum + toNum(tr?.credit), 0);
+    
+    tableRows.push([
+      "",
+      "",
+      "",
+      "",
+      "Total:",
+      totalDebit.toFixed(2),
+      totalCredit.toFixed(2),
+      "",
+      ""
+    ]);
+
+    // ✅ Professional table with all columns
+    autoTable(doc, {
+      head: [tableColumn],
+      body: tableRows,
+      startY: 28,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [41, 128, 185],
+        textColor: 255,
+        fontStyle: 'bold',
+        halign: 'center',
+        fontSize: 9
+      },
+      bodyStyles: {
+        fontSize: 8,
+        cellPadding: 2
+      },
+      columnStyles: {
+        0: { cellWidth: 22, halign: 'center' },   // Date
+        1: { cellWidth: 15, halign: 'center' },   // Type
+        2: { cellWidth: 65, halign: 'left' },     // Description
+        3: { cellWidth: 20, halign: 'right' },    // Quantity
+        4: { cellWidth: 20, halign: 'right' },    // Rate
+        5: { cellWidth: 25, halign: 'right', textColor: [255, 0, 0] },  // Debit (red)
+        6: { cellWidth: 25, halign: 'right', textColor: [0, 128, 0] },  // Credit (green)
+        7: { cellWidth: 22, halign: 'center' },   // Cheque Date
+        8: { cellWidth: 30, halign: 'right', fontStyle: 'bold' }        // Running Balance
+      },
+      // ✅ Highlight totals row
+      didParseCell: function(data) {
+        if (data.row.index === tableRows.length - 1) {
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fillColor = [240, 240, 240];
+        }
+      },
+      // ✅ Prevent text overflow
+      styles: {
+        overflow: 'linebreak',
+        cellWidth: 'wrap'
       }
-    },
-    // ✅ Prevent text overflow
-    styles: {
-      overflow: 'linebreak',
-      cellWidth: 'wrap'
-    }
-  });
+    });
 
-  const finalY = doc.lastAutoTable.finalY || 28;
-  
- // ✅ Summary at bottom - CORRECTED
-doc.setFontSize(11);
-doc.setFont("helvetica", "bold");
+    const finalY = doc.lastAutoTable.finalY || 28;
+    
+    // ✅ Summary at bottom
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
 
-const purchaseQty = transactions
-  .filter(tr => String(tr?.type).toLowerCase() === 'debit')
-  .reduce((sum, tr) => sum + toNum(tr?.quantity), 0);
-  
-const saleQty = transactions
-  .filter(tr => String(tr?.type).toLowerCase() === 'credit')
-  .reduce((sum, tr) => sum + toNum(tr?.quantity), 0);
+    const purchaseQty = transactions
+      .filter(tr => String(tr?.type).toLowerCase() === 'debit')
+      .reduce((sum, tr) => sum + toNum(tr?.quantity), 0);
+      
+    const saleQty = transactions
+      .filter(tr => String(tr?.type).toLowerCase() === 'credit')
+      .reduce((sum, tr) => sum + toNum(tr?.quantity), 0);
 
-// ✅ FIXED: Show final balance instead of total credit
-const finalBalance = totalCredit - totalDebit; // or just use totalBalance from state
-// ✅ Better summary format
-doc.text(`P.Q: ${purchaseQty.toFixed(2)}`, 14, finalY + 10);
-doc.text(`S.Q: ${saleQty.toFixed(2)}`, 70, finalY + 10);
-doc.text(`Total Debit: ${totalDebit.toFixed(2)}`, 130, finalY + 10);
-doc.text(`Final Balance: ${(totalCredit - totalDebit).toFixed(2)}`, 200, finalY + 10);
-  doc.save(`Ledger_${customer?.username || "customer"}_${new Date().toISOString().split('T')[0]}.pdf`);
-};
+    const finalBalance = totalCredit - totalDebit;
+
+    doc.text(`P.Q: ${purchaseQty.toFixed(2)}`, 14, finalY + 10);
+    doc.text(`S.Q: ${saleQty.toFixed(2)}`, 70, finalY + 10);
+    doc.text(`Total Debit: ${totalDebit.toFixed(2)}`, 130, finalY + 10);
+    doc.text(`Final Balance: ${finalBalance.toFixed(2)}`, 200, finalY + 10);
+
+    doc.save(`Ledger_${customer?.username || "customer"}_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
 
   // Table columns (adds Qty/Unit/Line Total + Image column)
   const columns = [
