@@ -8,8 +8,11 @@ import {
   Typography,
   Grid,
   Paper,
-  MenuItem
+  MenuItem,
+  InputAdornment,
+  IconButton
 } from "@mui/material";
+import { Visibility, VisibilityOff } from "@mui/icons-material"; // ✅ Import icons
 import heroImg from "../../assets/logom.png";
 
 import {
@@ -36,6 +39,7 @@ const Login = () => {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState(initialState);
+  const [showPassword, setShowPassword] = useState(false); // ✅ Password visibility state
   const { email, password, role } = formData;
 
   const handleInputChange = e => {
@@ -45,6 +49,15 @@ const Login = () => {
 
   const handleRoleChange = e => {
     setFormData({ ...formData, role: e.target.value });
+  };
+
+  // ✅ Toggle password visibility
+  const handleClickShowPassword = () => {
+    setShowPassword(!showPassword);
+  };
+
+  const handleMouseDownPassword = event => {
+    event.preventDefault();
   };
 
   const handleSubmit = async e => {
@@ -151,6 +164,7 @@ const Login = () => {
               value={formData.email}
               onChange={handleInputChange}
             />
+            {/* ✅ Updated password field with eye icon */}
             <TextField
               variant="outlined"
               margin="normal"
@@ -158,11 +172,25 @@ const Login = () => {
               fullWidth
               name="password"
               label="Password"
-              type="password"
+              type={showPassword ? "text" : "password"} // ✅ Toggle type
               id="password"
               autoComplete="current-password"
               value={formData.password}
               onChange={handleInputChange}
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      aria-label="toggle password visibility"
+                      onClick={handleClickShowPassword}
+                      onMouseDown={handleMouseDownPassword}
+                      edge="end"
+                    >
+                      {showPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                )
+              }}
             />
             <Button
               type="submit"

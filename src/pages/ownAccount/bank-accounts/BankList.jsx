@@ -35,9 +35,9 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
   const [isTransactionModalOpen, setTransactionModalOpen] = useState(false);
 
   // ===== Report selectors (Daily | Monthly | Yearly) =====
-  const [reportType, setReportType] = useState("monthly"); // "daily" | "monthly" | "yearly"
+  const [reportType, setReportType] = useState("monthly");
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1); // 1..12
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
 
   const canDelete = useSelector(selectCanDelete);
 
@@ -98,7 +98,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     const d = new Date(isoDate);
     const y = d.getFullYear();
     const m = d.getMonth() + 1;
-    if (reportType === "daily") return y === selectedYear && m === selectedMonth; // daily view = chosen month
+    if (reportType === "daily") return y === selectedYear && m === selectedMonth;
     if (reportType === "monthly") return y === selectedYear && m === selectedMonth;
     if (reportType === "yearly") return y === selectedYear;
     return true;
@@ -115,10 +115,9 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
   const toNum = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
   const pickWhen = (tx) => tx?.createdAt || tx?.date || tx?._displayDate || null;
 
-  // Safely pick the numeric amount from diverse shapes
   const pickAmount = (tx) => {
-    if (tx?.amount != null) return toNum(tx.amount);   // <- backend customer flows use this
-    if (tx?.balance != null) return toNum(tx.balance); // <- older cash module used this
+    if (tx?.amount != null) return toNum(tx.amount);
+    if (tx?.balance != null) return toNum(tx.balance);
     if (tx?.debit != null || tx?.credit != null) {
       const debit = toNum(tx.debit);
       const credit = toNum(tx.credit);
@@ -127,7 +126,6 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     return 0;
   };
 
-  // reversal detector
   const isReversalRow = (t) => {
     const desc = (t.description || "").toLowerCase();
     return (
@@ -137,7 +135,6 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
   };
 
   // ===== CASH (FIXED) =====
-  // Use new backend array (transactions). Fallback to allEntries if present.
   const cashRowsRaw = useMemo(() => {
     return (cash?.transactions || cash?.allEntries || []);
   }, [cash]);
@@ -145,7 +142,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
   const filteredCashTransactions = useMemo(() => {
     return cashRowsRaw
       .filter((t) => isInSelectedPeriod(pickWhen(t)))
-      .filter((t) => !isReversalRow(t)); // hide reversal rows from the list
+      .filter((t) => !isReversalRow(t));
   }, [cashRowsRaw, reportType, selectedYear, selectedMonth]);
 
   const totalCashAdds = useMemo(() => {
@@ -163,7 +160,6 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     }, 0);
   }, [filteredCashTransactions]);
 
-  // Use server running total if present; otherwise fallback to local calc
   const availableCashBalance = useMemo(() => {
     if (cash && typeof cash.totalBalance === "number") {
       return Number(cash.totalBalance);
@@ -197,7 +193,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
         );
       })
       .map((e) => ({
-        bankID: e.bankID, // may be string or populated object
+        bankID: e.bankID,
         amount: Math.abs(Number(e.amount) || 0),
       }));
   }, [expenses, reportType, selectedYear, selectedMonth]);
@@ -233,7 +229,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
       try {
         setPlLoading(true);
         const params = {
-          period: reportType, // "daily" | "monthly" | "yearly"
+          period: reportType,
           year: selectedYear,
         };
         if (reportType === "daily") params.month = selectedMonth;
@@ -332,16 +328,16 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     {
       field: "createdAt",
       headerName: "Date",
-     valueGetter: (row) =>
+      valueGetter: (row) =>
         pickWhen(row)
           ? new Date(pickWhen(row)).toISOString().slice(0, 10)
-         : "-",
+          : "-",
     },
     {
       field: "amountDisplay",
       headerName: "Amount",
       align: "right",
-     renderCell: (row) => Math.abs(pickAmount(row)).toFixed(2),
+      renderCell: (row) => Math.abs(pickAmount(row)).toFixed(2),
     },
     {
       field: "type",
@@ -365,7 +361,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     {
       field: "description",
       headerName: "Description",
- renderCell: (row) => bestDescription(row, /* isBankTx */ false),
+      renderCell: (row) => bestDescription(row, false),
     },
   ];
 
@@ -447,7 +443,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     }
   };
 
-  // Download chosen bank’s full ledger
+  // ✅ PROFESSIONAL BANK PDF with Z&Z TRADERS logo
   const downloadBankPdf = () => {
     if (!selectedBankIdForPdf) {
       alert("Please select a bank first.");
@@ -460,6 +456,19 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
       .filter((t) => t.bankID === bank._id)
       .sort((a, b) => new Date(pickWhen(a) || 0) - new Date(pickWhen(b) || 0));
 
+    // Calculate running balance
+    let runningBalance = 0;
+    const txWithBalance = tx.map((t) => {
+      const isCredit = PDF_CREDIT_TYPES.has(String(t.type).toLowerCase());
+      const isDebit = PDF_DEBIT_TYPES.has(String(t.type).toLowerCase());
+      const amount = Math.abs(pickAmount(t));
+      
+      if (isCredit) runningBalance += amount;
+      if (isDebit) runningBalance -= amount;
+      
+      return { ...t, runningBalance };
+    });
+
     const totalCredits = tx.reduce((sum, t) => {
       const isCredit = PDF_CREDIT_TYPES.has(String(t.type).toLowerCase());
       return sum + (isCredit ? Math.abs(pickAmount(t)) : 0);
@@ -470,69 +479,267 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
       return sum + (isDebit ? Math.abs(pickAmount(t)) : 0);
     }, 0);
 
-    const doc = new jsPDF();
-    doc.text(`Bank Ledger - ${bank.bankName}`, 14, 12);
+    const doc = new jsPDF('landscape');
+    
+    // ✅ COMPANY LOGO/HEADER - ORANGE COLOR
+    doc.setFontSize(20);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(255, 87, 34); // Orange/Red color
+    doc.text("Z&Z TRADERS .CO", 148, 12, { align: "center" });
+    
+    // Decorative line under logo
+    doc.setLineWidth(0.8);
+    doc.setDrawColor(255, 87, 34);
+    doc.line(110, 15, 186, 15);
+    
+    // ✅ Bank name
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(0, 0, 0);
+    doc.text(`${bank.bankName}`, 14, 15);
+    
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "normal");
+    doc.text("Bank Ledger", 14, 22);
+    
+    // ✅ Date range
     doc.setFontSize(10);
-    doc.text(`Period: ${titleForPeriod}`, 14, 18);
-    doc.text(`Current Balance: ${Number(bank.balance || 0).toFixed(2)}`, 14, 24);
-    doc.text(
-      `Total Credits: ${totalCredits.toFixed(2)}   Total Debits: ${totalDebits.toFixed(2)}`,
-      14,
-      30
-    );
+    const today = new Date().toLocaleDateString();
+    const firstDate = tx.length > 0 
+      ? new Date(pickWhen(tx[0])).toLocaleDateString()
+      : today;
+    doc.text(`From Date: ${firstDate}`, 240, 15);
+    doc.text(`To Date: ${today}`, 240, 20);
 
-    const head = [["Date", "Type", "Amount", "Description"]];
-    const body = tx.map((t) => [
-      pickWhen(t) ? new Date(pickWhen(t)).toLocaleString() : "-",
-      String(t.type || "-"),
-      Math.abs(pickAmount(t)).toFixed(2),
-      bestDescription(t, true),
-    ]);
+    // ✅ Table columns
+    const tableColumn = [
+      "Date",
+      "Type",
+      "Description",
+      "Debit",
+      "Credit",
+      "Running Balance"
+    ];
 
-    autoTable(doc, {
-      head,
-      body,
-      startY: 36,
-      styles: { fontSize: 9, cellPadding: 2 },
-      headStyles: { fillColor: [33, 150, 243] },
+    const tableRows = txWithBalance.map((t) => {
+      const isCredit = PDF_CREDIT_TYPES.has(String(t.type).toLowerCase());
+      const isDebit = PDF_DEBIT_TYPES.has(String(t.type).toLowerCase());
+      const amount = Math.abs(pickAmount(t));
+      
+      return [
+        pickWhen(t) ? new Date(pickWhen(t)).toLocaleDateString() : "-",
+        String(t.type || "-").toUpperCase().substring(0, 3),
+        bestDescription(t, true),
+        isDebit ? amount.toFixed(2) : "0.00",
+        isCredit ? amount.toFixed(2) : "0.00",
+        t.runningBalance.toFixed(2),
+      ];
     });
 
-    doc.save(`Bank_${bank.bankName}_Ledger_${titleForPeriod}.pdf`);
+    // ✅ Add totals row
+    tableRows.push([
+      "",
+      "",
+      "Total:",
+      totalDebits.toFixed(2),
+      totalCredits.toFixed(2),
+      ""
+    ]);
+
+    // ✅ Professional table
+    autoTable(doc, {
+      head: [tableColumn],
+      body: tableRows,
+      startY: 28,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [33, 150, 243], // Blue for bank
+        textColor: 255,
+        fontStyle: 'bold',
+        halign: 'center',
+        fontSize: 9
+      },
+      bodyStyles: {
+        fontSize: 8,
+        cellPadding: 2
+      },
+      columnStyles: {
+        0: { cellWidth: 25, halign: 'center' },   // Date
+        1: { cellWidth: 20, halign: 'center' },   // Type
+        2: { cellWidth: 80, halign: 'left' },     // Description
+        3: { cellWidth: 30, halign: 'right', textColor: [255, 0, 0] },  // Debit (red)
+        4: { cellWidth: 30, halign: 'right', textColor: [0, 128, 0] },  // Credit (green)
+        5: { cellWidth: 35, halign: 'right', fontStyle: 'bold' }        // Running Balance
+      },
+      didParseCell: function(data) {
+        if (data.row.index === tableRows.length - 1) {
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fillColor = [240, 240, 240];
+        }
+      },
+      styles: {
+        overflow: 'linebreak',
+        cellWidth: 'wrap'
+      }
+    });
+
+    const finalY = doc.lastAutoTable.finalY || 28;
+    
+    // ✅ Summary at bottom
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text(`Total Debits: ${totalDebits.toFixed(2)}`, 14, finalY + 10);
+    doc.text(`Total Credits: ${totalCredits.toFixed(2)}`, 100, finalY + 10);
+    doc.text(`Current Balance: ${Number(bank.balance || 0).toFixed(2)}`, 200, finalY + 10);
+
+    doc.save(`Bank_${bank.bankName}_Ledger_${titleForPeriod.replace(/ /g, '_')}.pdf`);
   };
 
-  // Download cash ledger (current filtered list)
+  // ✅ PROFESSIONAL CASH PDF with Z&Z TRADERS logo
   const downloadCashPdf = () => {
     const tx = [...filteredCashTransactions].sort(
       (a, b) => new Date(pickWhen(a) || 0) - new Date(pickWhen(b) || 0)
     );
 
-    const doc = new jsPDF();
-    doc.text(`Cash Ledger`, 14, 12);
-    doc.setFontSize(10);
-    doc.text(`Period: ${titleForPeriod}`, 14, 18);
-    doc.text(
-      `Current Cash Balance: ${Number(availableCashBalance || 0).toFixed(2)}`,
-      14,
-      24
-    );
-
-    const head = [["Date", "Type", "Amount", "Description"]];
-    const body = tx.map((t) => [
-      pickWhen(t) ? new Date(pickWhen(t)).toLocaleString() : "-",
-      String(t.type || "-"),
-      Math.abs(pickAmount(t)).toFixed(2),
-      bestDescription(t, false),
-    ]);
-
-    autoTable(doc, {
-      head,
-      body,
-      startY: 30,
-      styles: { fontSize: 9, cellPadding: 2 },
-      headStyles: { fillColor: [76, 175, 80] },
+    // Calculate running balance
+    let runningBalance = 0;
+    const txWithBalance = tx.map((t) => {
+      const ttype = String(t.type || "").toLowerCase();
+      const isCredit = PDF_CREDIT_TYPES.has(ttype);
+      const isDebit = PDF_DEBIT_TYPES.has(ttype);
+      const amount = Math.abs(pickAmount(t));
+      
+      if (isCredit) runningBalance += amount;
+      if (isDebit) runningBalance -= amount;
+      
+      return { ...t, runningBalance };
     });
 
-    doc.save(`Cash_Ledger_${titleForPeriod}.pdf`);
+    const totalCredits = tx.reduce((sum, t) => {
+      const isCredit = PDF_CREDIT_TYPES.has(String(t.type).toLowerCase());
+      return sum + (isCredit ? Math.abs(pickAmount(t)) : 0);
+    }, 0);
+
+    const totalDebits = tx.reduce((sum, t) => {
+      const isDebit = PDF_DEBIT_TYPES.has(String(t.type).toLowerCase());
+      return sum + (isDebit ? Math.abs(pickAmount(t)) : 0);
+    }, 0);
+
+    const doc = new jsPDF('landscape');
+    
+    // ✅ COMPANY LOGO/HEADER - ORANGE COLOR
+    doc.setFontSize(20);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(255, 87, 34); // Orange/Red color
+    doc.text("Z&Z TRADERS .CO", 148, 12, { align: "center" });
+    
+    // Decorative line under logo
+    doc.setLineWidth(0.8);
+    doc.setDrawColor(255, 87, 34);
+    doc.line(110, 15, 186, 15);
+    
+    // ✅ Cash header
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(0, 0, 0);
+    doc.text("CASH ACCOUNT", 14, 15);
+    
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "normal");
+    doc.text("Cash Ledger", 14, 22);
+    
+    // ✅ Date range
+    doc.setFontSize(10);
+    const today = new Date().toLocaleDateString();
+    const firstDate = tx.length > 0 
+      ? new Date(pickWhen(tx[0])).toLocaleDateString()
+      : today;
+    doc.text(`From Date: ${firstDate}`, 240, 15);
+    doc.text(`To Date: ${today}`, 240, 20);
+
+    // ✅ Table columns
+    const tableColumn = [
+      "Date",
+      "Type",
+      "Description",
+      "Debit",
+      "Credit",
+      "Running Balance"
+    ];
+
+    const tableRows = txWithBalance.map((t) => {
+      const ttype = String(t.type || "").toLowerCase();
+      const isCredit = PDF_CREDIT_TYPES.has(ttype);
+      const isDebit = PDF_DEBIT_TYPES.has(ttype);
+      const amount = Math.abs(pickAmount(t));
+      
+      return [
+        pickWhen(t) ? new Date(pickWhen(t)).toLocaleDateString() : "-",
+        String(t.type || "-").toUpperCase().substring(0, 3),
+        bestDescription(t, false),
+        isDebit ? amount.toFixed(2) : "0.00",
+        isCredit ? amount.toFixed(2) : "0.00",
+        t.runningBalance.toFixed(2),
+      ];
+    });
+
+    // ✅ Add totals row
+    tableRows.push([
+      "",
+      "",
+      "Total:",
+      totalDebits.toFixed(2),
+      totalCredits.toFixed(2),
+      ""
+    ]);
+
+    // ✅ Professional table
+    autoTable(doc, {
+      head: [tableColumn],
+      body: tableRows,
+      startY: 28,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [76, 175, 80], // Green for cash
+        textColor: 255,
+        fontStyle: 'bold',
+        halign: 'center',
+        fontSize: 9
+      },
+      bodyStyles: {
+        fontSize: 8,
+        cellPadding: 2
+      },
+      columnStyles: {
+        0: { cellWidth: 25, halign: 'center' },   // Date
+        1: { cellWidth: 20, halign: 'center' },   // Type
+        2: { cellWidth: 80, halign: 'left' },     // Description
+        3: { cellWidth: 30, halign: 'right', textColor: [255, 0, 0] },  // Debit (red)
+        4: { cellWidth: 30, halign: 'right', textColor: [0, 128, 0] },  // Credit (green)
+        5: { cellWidth: 35, halign: 'right', fontStyle: 'bold' }        // Running Balance
+      },
+      didParseCell: function(data) {
+        if (data.row.index === tableRows.length - 1) {
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fillColor = [240, 240, 240];
+        }
+      },
+      styles: {
+        overflow: 'linebreak',
+        cellWidth: 'wrap'
+      }
+    });
+
+    const finalY = doc.lastAutoTable.finalY || 28;
+    
+    // ✅ Summary at bottom
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text(`Total Debits: ${totalDebits.toFixed(2)}`, 14, finalY + 10);
+    doc.text(`Total Credits: ${totalCredits.toFixed(2)}`, 100, finalY + 10);
+    doc.text(`Current Cash Balance: ${availableCashBalance.toFixed(2)}`, 200, finalY + 10);
+
+    doc.save(`Cash_Ledger_${titleForPeriod.replace(/ /g, '_')}.pdf`);
   };
 
   return (

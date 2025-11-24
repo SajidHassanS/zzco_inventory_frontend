@@ -11,7 +11,6 @@ const toNum = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 // Fallback: parse "Sale: 10 x house @ 200 = 2000"
 function parseQtyUnitFromDesc(desc) {
   const s = String(desc || "");
-  // capture: <qty> x ... @ <unit>
   const m = s.match(/(\d+)\s*[x×]\s.*?@\s*([0-9]+(?:\.[0-9]+)?)/i);
   if (!m) return { qty: null, unit: null };
   return { qty: Number(m[1]), unit: Number(m[2]) };
@@ -44,24 +43,37 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
 
         console.log("📦 RAW CUSTOMER TRANSACTION HISTORY:", history);
 
-        // ✅ SORT by date (oldest first) to calculate running balance correctly
+        // ✅ IMPROVED SORTING: Sort by date first, then by createdAt for same-day transactions
         history = history.sort((a, b) => {
+          // Get the primary date (transaction date)
           const dateA = new Date(a.date || a.createdAt || 0);
           const dateB = new Date(b.date || b.createdAt || 0);
-          return dateA - dateB; // Ascending order (oldest first)
+          
+          // Compare dates first (day level)
+          const dayA = new Date(dateA.getFullYear(), dateA.getMonth(), dateA.getDate()).getTime();
+          const dayB = new Date(dateB.getFullYear(), dateB.getMonth(), dateB.getDate()).getTime();
+          
+          if (dayA !== dayB) {
+            return dayA - dayB; // Sort by date (oldest first)
+          }
+          
+          // ✅ If same day, sort by createdAt (actual creation time)
+          const createdA = new Date(a.createdAt || a.date || 0).getTime();
+          const createdB = new Date(b.createdAt || b.date || 0).getTime();
+          
+          return createdA - createdB; // Sort by creation time (oldest first)
         });
 
-        console.log("📅 SORTED CUSTOMER HISTORY (oldest first):", history);
+        console.log("📅 SORTED CUSTOMER HISTORY (oldest first, by date + createdAt):", history);
 
         let balance = 0;
 
-        const ledger = history.map((t) => {
+        const ledger = history.map((t, index) => {
           const type = String(t?.type || "").toLowerCase();
 
           // prefer explicit fields if present
           let qty = toNum(t?.quantity);
-          let unitPrice =
-            t?.unitPrice != null ? toNum(t.unitPrice) : null;
+          let unitPrice = t?.unitPrice != null ? toNum(t.unitPrice) : null;
 
           // parse from description if needed (old rows)
           if (!qty || !unitPrice) {
@@ -76,13 +88,14 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
             lineTotal = qty * unitPrice;
           }
 
-          // ✅ For customers: CREDIT increases balance (sale/payment from customer), DEBIT decreases (payment to customer)
+          // ✅ For customers: CREDIT increases balance, DEBIT decreases
           const debit = type === "debit" ? lineTotal : 0;
           const credit = type === "credit" ? lineTotal : 0;
           balance += credit - debit;
 
           return {
             ...t,
+            _sortIndex: index, // ✅ Keep track of sort order
             quantity: qty || null,
             unitPrice: unitPrice != null ? unitPrice : null,
             lineTotal,
@@ -94,8 +107,7 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
 
         console.log("✅ PROCESSED CUSTOMER LEDGER (with running balance):", ledger);
 
-        // ✅ REMOVED REVERSE - Keep chronological order (oldest to newest)
-        setTransactions(ledger); // Don't reverse!
+        setTransactions(ledger);
         setTotalBalance(balance);
       } catch (err) {
         console.error("Error fetching transaction history:", err);
@@ -130,18 +142,15 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
   const downloadPDF = () => {
     const doc = new jsPDF('landscape');
     
- doc.setFontSize(20);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(255, 87, 34); // ✅ Orange/Red color (matching Admin logo)
-  doc.text("Z&Z TRADERS .CO", 148, 12, { align: "center" });
-  
-  // Decorative line under logo
-  doc.setLineWidth(0.8);
-  doc.setDrawColor(255, 87, 34); // ✅ Orange/Red color
-  doc.line(110, 15, 186, 15);
-
+    doc.setFontSize(20);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(255, 87, 34);
+    doc.text("Z&Z TRADERS .CO", 148, 12, { align: "center" });
     
-    // ✅ Customer name
+    doc.setLineWidth(0.8);
+    doc.setDrawColor(255, 87, 34);
+    doc.line(110, 15, 186, 15);
+
     doc.setFontSize(16);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(0, 0, 0);
@@ -151,7 +160,6 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
     doc.setFont("helvetica", "normal");
     doc.text("Ledger", 14, 22);
     
-    // ✅ Date range
     doc.setFontSize(10);
     const today = new Date().toLocaleDateString();
     const firstDate = transactions.length > 0 
@@ -160,7 +168,6 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
     doc.text(`From Date: ${firstDate}`, 240, 15);
     doc.text(`To Date: ${today}`, 240, 20);
 
-    // ✅ Complete table columns with all fields
     const tableColumn = [
       "Date",
       "Type",
@@ -192,7 +199,6 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
       ];
     });
 
-    // ✅ Add totals row
     const totalDebit = transactions.reduce((sum, tr) => sum + toNum(tr?.debit), 0);
     const totalCredit = transactions.reduce((sum, tr) => sum + toNum(tr?.credit), 0);
     
@@ -208,7 +214,6 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
       ""
     ]);
 
-    // ✅ Professional table with all columns
     autoTable(doc, {
       head: [tableColumn],
       body: tableRows,
@@ -226,24 +231,22 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
         cellPadding: 2
       },
       columnStyles: {
-        0: { cellWidth: 22, halign: 'center' },   // Date
-        1: { cellWidth: 15, halign: 'center' },   // Type
-        2: { cellWidth: 65, halign: 'left' },     // Description
-        3: { cellWidth: 20, halign: 'right' },    // Quantity
-        4: { cellWidth: 20, halign: 'right' },    // Rate
-        5: { cellWidth: 25, halign: 'right', textColor: [255, 0, 0] },  // Debit (red)
-        6: { cellWidth: 25, halign: 'right', textColor: [0, 128, 0] },  // Credit (green)
-        7: { cellWidth: 22, halign: 'center' },   // Cheque Date
-        8: { cellWidth: 30, halign: 'right', fontStyle: 'bold' }        // Running Balance
+        0: { cellWidth: 22, halign: 'center' },
+        1: { cellWidth: 15, halign: 'center' },
+        2: { cellWidth: 65, halign: 'left' },
+        3: { cellWidth: 20, halign: 'right' },
+        4: { cellWidth: 20, halign: 'right' },
+        5: { cellWidth: 25, halign: 'right', textColor: [255, 0, 0] },
+        6: { cellWidth: 25, halign: 'right', textColor: [0, 128, 0] },
+        7: { cellWidth: 22, halign: 'center' },
+        8: { cellWidth: 30, halign: 'right', fontStyle: 'bold' }
       },
-      // ✅ Highlight totals row
       didParseCell: function(data) {
         if (data.row.index === tableRows.length - 1) {
           data.cell.styles.fontStyle = 'bold';
           data.cell.styles.fillColor = [240, 240, 240];
         }
       },
-      // ✅ Prevent text overflow
       styles: {
         overflow: 'linebreak',
         cellWidth: 'wrap'
@@ -252,7 +255,6 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
 
     const finalY = doc.lastAutoTable.finalY || 28;
     
-    // ✅ Summary at bottom
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
 
@@ -274,7 +276,7 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
     doc.save(`Ledger_${customer?.username || "customer"}_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
-  // Table columns (adds Qty/Unit/Line Total + Image column)
+  // Table columns
   const columns = [
     {
       field: "date",
