@@ -26,22 +26,22 @@ export const registerUser = async userData => {
       error.message ||
       error.toString();
     toast.error(message);
+    throw new Error(message); // ✅ Throw error so Login.jsx can catch it
   }
 };
 
-// Login User
-// Login User in authService.js
+// ✅ UPDATED: Login User - Now accepts role
 export const loginUser = async userData => {
   try {
     const response = await axios.post(
       `${BACKEND_URL}api/users/login`,
-      userData,
-      { withCredentials: true } // 🔥 THIS IS ESSENTIAL
+      userData, // ✅ userData now includes { email, password, role }
+      { withCredentials: true }
     );
 
-    if (response.statusText === "OK") {
+    if (response.statusText === "OK" || response.status === 200) {
       const { role, name } = response.data;
-      console.log("Role:", role, "Name:", name);
+      console.log("✅ Login successful - Role:", role, "Name:", name);
       if (role) localStorage.setItem("userRole", role);
       if (name) localStorage.setItem("name", name);
       toast.success("Login Successful...");
@@ -54,6 +54,7 @@ export const loginUser = async userData => {
       error.message ||
       error.toString();
     toast.error(message);
+    throw new Error(message); // ✅ Throw error so Login.jsx can catch it
   }
 };
 
@@ -62,12 +63,13 @@ export const loginCustomer = async userData => {
   try {
     const response = await axios.post(
       `${BACKEND_URL}api/users/Customerlogin`,
-      userData
+      userData,
+      { withCredentials: true }
     );
-    if (response.statusText === "OK") {
+    if (response.statusText === "OK" || response.status === 200) {
       const { role } = response.data;
       if (role) {
-        localStorage.setItem("userRole", role); // Save role to local storage
+        localStorage.setItem("userRole", role);
         toast.success(`Logged in as ${role}`);
       } else {
         console.warn("Role is missing in the response data");
@@ -81,23 +83,25 @@ export const loginCustomer = async userData => {
       error.message ||
       error.toString();
     toast.error(message);
+    throw new Error(message);
   }
 };
 
-// Login Manager
+// ✅ UPDATED: Login Manager - Now uses same endpoint with role
 export const loginManager = async userData => {
   try {
     const response = await axios.post(
-      `${BACKEND_URL}api/users/managerlogin`,
-      userData
+      `${BACKEND_URL}api/users/login`, // ✅ Changed to same endpoint
+      { ...userData, role: "manager" }, // ✅ Add role to request
+      { withCredentials: true }
     );
-    if (response.statusText === "OK") {
-      const { role } = response.data;
+    if (response.statusText === "OK" || response.status === 200) {
+      const { role, name } = response.data;
       if (role) {
-        localStorage.setItem("userRole", role); // Save role to local storage
-        toast.success(`Logged in as ${role}`);
-      } else {
-        console.warn("Role is missing in the response data");
+        localStorage.setItem("userRole", role);
+      }
+      if (name) {
+        localStorage.setItem("name", name);
       }
       toast.success("Login Successful...");
     }
@@ -108,15 +112,18 @@ export const loginManager = async userData => {
       error.message ||
       error.toString();
     toast.error(message);
+    throw new Error(message); // ✅ Throw error so Login.jsx can catch it
   }
 };
 
 // Logout User
 export const logoutUser = async () => {
   try {
-    await axios.get(`${BACKEND_URL}api/users/logout`);
-    localStorage.removeItem("userRole"); // Clear role on logout
-    localStorage.removeItem("name"); // Clear name on logout
+    await axios.get(`${BACKEND_URL}api/users/logout`, {
+      withCredentials: true
+    });
+    localStorage.removeItem("userRole");
+    localStorage.removeItem("name");
     toast.info("Logged out successfully");
   } catch (error) {
     const message =
@@ -165,7 +172,7 @@ export const resetPassword = async (userData, resetToken) => {
 export const getLoginStatus = async () => {
   try {
     const response = await axios.get(`${BACKEND_URL}api/users/loggedin`, {
-      withCredentials: true // ✅ This is required for cookies
+      withCredentials: true
     });
     return response.data;
   } catch (error) {
@@ -181,7 +188,7 @@ export const getLoginStatus = async () => {
 export const getUser = async () => {
   try {
     const response = await axios.get(`${BACKEND_URL}api/users/getuser`, {
-      withCredentials: true // ✅ Add this
+      withCredentials: true
     });
     return response.data;
   } catch (error) {
@@ -199,7 +206,7 @@ export const updateUser = async formData => {
     const response = await axios.patch(
       `${BACKEND_URL}api/users/updateuser`,
       formData,
-      { withCredentials: true } // ✅ Add this
+      { withCredentials: true }
     );
     return response.data;
   } catch (error) {
@@ -217,7 +224,7 @@ export const changePassword = async formData => {
     const response = await axios.patch(
       `${BACKEND_URL}api/users/changepassword`,
       formData,
-      { withCredentials: true } // ✅ Add this
+      { withCredentials: true }
     );
     return response.data;
   } catch (error) {
@@ -226,6 +233,6 @@ export const changePassword = async formData => {
       error.message ||
       error.toString();
     toast.error(message);
-    throw error; // ✅ Re-throw the error so it can be caught in the component
+    throw error;
   }
 };

@@ -12,21 +12,16 @@ import {
   InputAdornment,
   IconButton
 } from "@mui/material";
-import { Visibility, VisibilityOff } from "@mui/icons-material"; // ✅ Import icons
+import { Visibility, VisibilityOff } from "@mui/icons-material";
 import heroImg from "../../assets/logom.png";
 
-import {
-  loginUser,
-  loginManager,
-  validateEmail
-} from "../../services/authService";
+import { loginUser, validateEmail } from "../../services/authService";
 import {
   SET_LOGIN,
   SET_ROLE,
   SET_USER
 } from "../../redux/features/auth/authSlice";
 import Loader from "../../components/loader/Loader";
-import SignupImage from "../../assets/signup.jpg";
 
 const initialState = {
   email: "",
@@ -39,7 +34,7 @@ const Login = () => {
   const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState(initialState);
-  const [showPassword, setShowPassword] = useState(false); // ✅ Password visibility state
+  const [showPassword, setShowPassword] = useState(false);
   const { email, password, role } = formData;
 
   const handleInputChange = e => {
@@ -51,7 +46,6 @@ const Login = () => {
     setFormData({ ...formData, role: e.target.value });
   };
 
-  // ✅ Toggle password visibility
   const handleClickShowPassword = () => {
     setShowPassword(!showPassword);
   };
@@ -71,30 +65,37 @@ const Login = () => {
       return toast.error("Please enter a valid email");
     }
 
-    const userData = { email, password };
+    // ✅ Include role in userData
+    const userData = { email, password, role };
 
     setIsLoading(true);
     try {
-      let data;
-      // ✅ Changed to lowercase for comparison
-      if (role === "admin") {
-        data = await loginUser(userData);
-      } else if (role === "manager") {
-        data = await loginManager(userData);
-      } else {
-        throw new Error("Invalid role selected");
+      // ✅ Clear old data before login
+      localStorage.removeItem("userRole");
+      localStorage.removeItem("name");
+      localStorage.removeItem("token");
+
+      // ✅ Use single loginUser function - it now handles role
+      const data = await loginUser(userData);
+
+      // ✅ Check if login was successful (data returned)
+      if (!data) {
+        throw new Error("Login failed - no data returned");
       }
 
       await dispatch(SET_LOGIN(true));
 
-      // ✅ Store the role with capital first letter for display/localStorage
-      const displayRole = role.charAt(0).toUpperCase() + role.slice(1); // "admin" -> "Admin", "manager" -> "Manager"
+      // ✅ Use role from response or the selected role
+      const displayRole =
+        (data.role || role).charAt(0).toUpperCase() +
+        (data.role || role).slice(1);
       await dispatch(SET_ROLE(displayRole));
       await dispatch(SET_USER(data));
 
       navigate("/dashboard");
     } catch (error) {
-      toast.error(error.message || "Login failed");
+      console.error("❌ Login error:", error);
+      // Toast is already shown in authService, so we don't need to show it again
     } finally {
       setIsLoading(false);
     }
@@ -147,7 +148,6 @@ const Login = () => {
               onChange={handleRoleChange}
               label="Role"
             >
-              {/* ✅ Changed values to lowercase */}
               <MenuItem value="admin">Admin</MenuItem>
               <MenuItem value="manager">Manager</MenuItem>
             </TextField>
@@ -164,7 +164,6 @@ const Login = () => {
               value={formData.email}
               onChange={handleInputChange}
             />
-            {/* ✅ Updated password field with eye icon */}
             <TextField
               variant="outlined"
               margin="normal"
@@ -172,7 +171,7 @@ const Login = () => {
               fullWidth
               name="password"
               label="Password"
-              type={showPassword ? "text" : "password"} // ✅ Toggle type
+              type={showPassword ? "text" : "password"}
               id="password"
               autoComplete="current-password"
               value={formData.password}
