@@ -7,6 +7,7 @@ import {
   MenuItem,
   Typography,
   Grid,
+  Alert,
 } from "@mui/material";
 import { useSelector, useDispatch } from "react-redux";
 import axios from "axios";
@@ -28,7 +29,7 @@ const initialState = {
 
 const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
   const [amount, setAmount] = useState(initialState.amount);
-  const [paymentMethod, setPaymentMethod] = useState(initialState.paymentMethod); // "cash" | "online" | "cheque" | "credit"
+  const [paymentMethod, setPaymentMethod] = useState(initialState.paymentMethod);
   const [chequeDate, setChequeDate] = useState(initialState.chequeDate);
   const [description, setDescription] = useState(initialState.description);
   const [selectedBank, setSelectedBank] = useState(initialState.selectedBank);
@@ -36,6 +37,7 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
   const [imagePreview, setImagePreview] = useState(initialState.imagePreview);
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  const [bankBalanceWarning, setBankBalanceWarning] = useState("");
 
   const RAW_BACKEND = process.env.REACT_APP_BACKEND_URL || "";
   const BASE = normBase(RAW_BACKEND);
@@ -49,6 +51,7 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
       dispatch(getBanks());
       setErrors({});
       setLoading(false);
+      setBankBalanceWarning("");
     } else {
       // reset on close
       setAmount(initialState.amount);
@@ -59,8 +62,31 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
       setImage(initialState.image);
       setImagePreview(initialState.imagePreview);
       setErrors({});
+      setBankBalanceWarning("");
     }
   }, [dispatch, open]);
+
+  // ✅ NEW: Check bank balance when amount or selected bank changes
+  useEffect(() => {
+    if ((paymentMethod === "online" || paymentMethod === "owncheque") && selectedBank && amount) {
+      const bank = banks.find((b) => b._id === selectedBank);
+      const amt = Number(amount);
+      if (bank && Number.isFinite(amt) && amt > 0) {
+        const bankBalance = Number(bank.balance || 0);
+        if (amt > bankBalance) {
+          setBankBalanceWarning(
+            `⚠️ Insufficient balance! Bank "${bank.bankName}" has only Rs ${bankBalance.toLocaleString()}, but you're trying to pay Rs ${amt.toLocaleString()}`
+          );
+        } else {
+          setBankBalanceWarning("");
+        }
+      } else {
+        setBankBalanceWarning("");
+      }
+    } else {
+      setBankBalanceWarning("");
+    }
+  }, [amount, selectedBank, paymentMethod, banks]);
 
   const validateForm = () => {
     const formErrors = {};
@@ -73,7 +99,7 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
       formErrors.paymentMethod = "Payment method is required";
     }
 
-    // ✅ UPDATED: Only require bank for ONLINE (not cheque)
+    // ✅ For ONLINE: require bank and image
     if (paymentMethod === "online") {
       if (!selectedBank) {
         formErrors.selectedBank = "Bank selection is required for online payment";
@@ -81,15 +107,45 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
       if (!image) {
         formErrors.image = "Image upload is required for online payment";
       }
+      // Check balance
+      if (selectedBank) {
+        const bank = banks.find((b) => b._id === selectedBank);
+        if (bank && amt > Number(bank.balance || 0)) {
+          formErrors.selectedBank = `Insufficient balance in ${bank.bankName} (Available: Rs ${bank.balance})`;
+        }
+      }
     }
 
-    // ✅ For cheque: only require chequeDate and image (NO bank required)
+    // ✅ For regular CHEQUE: only require chequeDate and image (NO bank required)
     if (paymentMethod === "cheque") {
       if (!chequeDate) {
         formErrors.chequeDate = "Cheque date is required for cheque payment";
       }
       if (!image) {
         formErrors.image = "Image upload is required for cheque payment";
+      }
+    }
+
+    // ✅ NEW: For OWN CHEQUE: require bank, chequeDate, image AND validate balance
+    if (paymentMethod === "owncheque") {
+      if (!selectedBank) {
+        formErrors.selectedBank = "Bank selection is required for own cheque";
+      }
+      if (!chequeDate) {
+        formErrors.chequeDate = "Cheque date is required";
+      }
+      if (!image) {
+        formErrors.image = "Image upload is required for cheque";
+      }
+      // ✅ Validate bank balance
+      if (selectedBank) {
+        const bank = banks.find((b) => b._id === selectedBank);
+        if (bank) {
+          const bankBalance = Number(bank.balance || 0);
+          if (amt > bankBalance) {
+            formErrors.selectedBank = `Insufficient balance! ${bank.bankName} has Rs ${bankBalance.toLocaleString()}, you need Rs ${amt.toLocaleString()}`;
+          }
+        }
       }
     }
 
@@ -116,17 +172,17 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
         (description && description.trim()) ||
         `Payout to ${customer?.username || customer?.name || "customer"}`;
 
-      // ✅ UPDATED: Only send bankId for online (not cheque)
+      // ✅ UPDATED: Send bankId for online AND owncheque
       const base = {
         amount: amt,
-        paymentMethod: method, // "cash" | "online" | "cheque" | "credit"
+        paymentMethod: method, // "cash" | "online" | "cheque" | "credit" | "owncheque"
         description: cleanDesc,
-        ...(method === "online" ? { bankId: selectedBank } : {}),
-        ...(method === "cheque" ? { chequeDate } : {}),
+        ...((method === "online" || method === "owncheque") ? { bankId: selectedBank } : {}),
+        ...((method === "cheque" || method === "owncheque") ? { chequeDate } : {}),
       };
 
       let resp;
-      if (image && (method === "online" || method === "cheque")) {
+      if (image && (method === "online" || method === "cheque" || method === "owncheque")) {
         const fd = new FormData();
         Object.entries(base).forEach(([k, v]) => fd.append(k, v));
         fd.append("image", image);
@@ -145,6 +201,10 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
       }
 
       toast.success(resp?.data?.message || "Balance added successfully");
+      
+      // ✅ Refresh banks to get updated balances
+      dispatch(getBanks());
+      
       onSuccess?.(resp?.data?.customer);
       onClose?.();
     } catch (err) {
@@ -171,6 +231,12 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
     setImagePreview(URL.createObjectURL(file));
   };
 
+  // ✅ Helper to get selected bank info
+  const getSelectedBankInfo = () => {
+    if (!selectedBank) return null;
+    return banks.find((b) => b._id === selectedBank);
+  };
+
   return (
     <Modal open={open} onClose={onClose}>
       <Box
@@ -181,11 +247,13 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           top: "50%",
           left: "50%",
           transform: "translate(-50%, -50%)",
-          width: 400,
+          width: 450,
           bgcolor: "background.paper",
           boxShadow: 24,
           p: 4,
           borderRadius: 2,
+          maxHeight: "90vh",
+          overflowY: "auto",
         }}
       >
         <Typography variant="h6" gutterBottom>
@@ -208,7 +276,11 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           label="Payment Method"
           select
           value={paymentMethod}
-          onChange={(e) => setPaymentMethod(e.target.value.toLowerCase())}
+          onChange={(e) => {
+            setPaymentMethod(e.target.value.toLowerCase());
+            setSelectedBank(""); // Reset bank selection when method changes
+            setBankBalanceWarning("");
+          }}
           fullWidth
           margin="normal"
           error={!!errors.paymentMethod}
@@ -216,42 +288,64 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
             errors.paymentMethod ||
             (paymentMethod === "credit"
               ? "Credit = ledger-only (no bank/cash movement)"
+              : paymentMethod === "cheque"
+              ? "Pending cheque - no immediate bank deduction"
+              : paymentMethod === "owncheque"
+              ? "Cheque from your bank account - immediate deduction"
               : "")
           }
         >
           <MenuItem value="cash">Cash</MenuItem>
-          <MenuItem value="online">Online</MenuItem>
-          <MenuItem value="cheque">Cheque</MenuItem>
+          <MenuItem value="online">Online Transfer</MenuItem>
+          <MenuItem value="cheque">Cheque (Pending)</MenuItem>
+          <MenuItem value="owncheque">Cheque from Own Account</MenuItem>
           <MenuItem value="credit">Credit</MenuItem>
         </TextField>
 
-        {/* ✅ UPDATED: Only show bank dropdown for ONLINE (not cheque) */}
-        {paymentMethod === "online" && (
-          <TextField
-            label="Select Bank"
-            select
-            value={selectedBank}
-            onChange={(e) => setSelectedBank(e.target.value)}
-            fullWidth
-            margin="normal"
-            error={!!errors.selectedBank}
-            helperText={errors.selectedBank}
-          >
-            {banks?.length ? (
-              banks.map((bank) => (
-                <MenuItem key={bank._id} value={bank._id}>
-                  {bank.bankName}
+        {/* ✅ Show bank dropdown for ONLINE and OWN CHEQUE */}
+        {(paymentMethod === "online" || paymentMethod === "owncheque") && (
+          <>
+            <TextField
+              label="Select Bank"
+              select
+              value={selectedBank}
+              onChange={(e) => setSelectedBank(e.target.value)}
+              fullWidth
+              margin="normal"
+              error={!!errors.selectedBank}
+              helperText={errors.selectedBank}
+            >
+              {banks?.length ? (
+                banks.map((bank) => (
+                  <MenuItem key={bank._id} value={bank._id}>
+                    {bank.bankName} (Balance: Rs {Number(bank.balance || 0).toLocaleString()})
+                  </MenuItem>
+                ))
+              ) : (
+                <MenuItem value="" disabled>
+                  No banks found
                 </MenuItem>
-              ))
-            ) : (
-              <MenuItem value="" disabled>
-                No banks found
-              </MenuItem>
+              )}
+            </TextField>
+
+            {/* ✅ Show bank balance warning */}
+            {bankBalanceWarning && (
+              <Alert severity="error" sx={{ mt: 1, mb: 1 }}>
+                {bankBalanceWarning}
+              </Alert>
             )}
-          </TextField>
+
+            {/* ✅ Show selected bank balance info */}
+            {getSelectedBankInfo() && !bankBalanceWarning && (
+              <Alert severity="info" sx={{ mt: 1, mb: 1 }}>
+                Available Balance: Rs {Number(getSelectedBankInfo().balance || 0).toLocaleString()}
+              </Alert>
+            )}
+          </>
         )}
 
-        {paymentMethod === "cheque" && (
+        {/* ✅ Show cheque date for CHEQUE and OWN CHEQUE */}
+        {(paymentMethod === "cheque" || paymentMethod === "owncheque") && (
           <TextField
             label="Cheque Date"
             type="date"
@@ -265,7 +359,8 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           />
         )}
 
-        {(paymentMethod === "cheque" || paymentMethod === "online") && (
+        {/* ✅ Show image upload for CHEQUE, ONLINE, and OWN CHEQUE */}
+        {(paymentMethod === "cheque" || paymentMethod === "online" || paymentMethod === "owncheque") && (
           <Grid item xs={12}>
             <TextField
               type="file"
@@ -304,7 +399,8 @@ const AddBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           color="primary"
           type="submit"
           fullWidth
-          disabled={loading}
+          disabled={loading || !!bankBalanceWarning}
+          sx={{ mt: 2 }}
         >
           {loading ? "Processing..." : "Add Balance"}
         </Button>

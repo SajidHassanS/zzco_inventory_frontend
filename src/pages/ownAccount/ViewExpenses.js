@@ -45,6 +45,9 @@ const KIND_LABEL = {
   supplier_manual: "Supplier Txn",
   stock_arrival: "Stock Arrival",
   warehouse_transfer: "WH Transfer",
+  product_return: "Product Return",
+  return_to_supplier: "Return → Supplier",    // ✅ NEW
+  return_from_customer: "Return ← Customer",  // ✅ NEW
 };
 
 // non-monetary kinds: ignore in running balance
@@ -163,7 +166,7 @@ useEffect(() => {
           .sort((a, b) => b._d - a._d); // newest first
 
         if (sameDay.length) {
-          map[id] = pickTxnDesc(sameDay[0]); // latest txn’s description for that cash entry
+          map[id] = pickTxnDesc(sameDay[0]); // latest txn's description for that cash entry
         }
       }
       if (!cancelled) setCashDescById(map);
@@ -234,17 +237,21 @@ useEffect(() => {
           fromWarehouseName: r.fromWarehouseName || null,
           toWarehouseName: r.toWarehouseName || null,
           productSku: r.productSku || null,
+          // ✅ Extra fields for product returns
+          refundReceived: r.refundReceived || false,
+          returnReason: r.returnReason || null,
+          warehouseName: r.warehouseName || null,
           raw: r,
         };
       });
 
       const tOnly = all
         .filter((x) => x.rawKind === "warehouse_transfer")
-        .sort((a, b) => b.date - a.date);
+        .sort((a, b) => new Date(a.date) - new Date(b.date)); // ✅ Ascending - oldest first
 
       const notTransfers = all
         .filter((x) => x.rawKind !== "warehouse_transfer")
-        .sort((a, b) => b.date - a.date);
+        .sort((a, b) => new Date(a.date) - new Date(b.date)); // ✅ Ascending - oldest first
 
       setTransfers(tOnly);
       setEntries(notTransfers);
@@ -503,7 +510,7 @@ const filterEntriesByDate = () => {
   const sel = selectedDate;
   const filtered = entries
     .filter((entry) => toLocalYMD(entry.date) === sel)
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
+    .sort((a, b) => new Date(a.date) - new Date(b.date)); // ✅ Ascending - oldest first
 
   setFilteredEntries(filtered);
   setPage(1);
@@ -519,7 +526,49 @@ const filterEntriesByDate = () => {
       headerName: "Date",
       renderCell: (row) => new Date(row.date).toLocaleString(),
     },
-    { field: "type", headerName: "Type" },
+   { 
+  field: "type", 
+  headerName: "Type",
+  renderCell: (row) => {
+    // ✅ Return TO Supplier
+    if (row.rawKind === "return_to_supplier") {
+      const status = row.raw?.refundStatus || "pending";
+      return (
+        <Chip 
+          size="small" 
+          label={status === "completed" ? "Return → Supplier ✓" : "Return → Supplier"} 
+          color={status === "completed" ? "success" : "warning"}
+          variant="outlined"
+        />
+      );
+    }
+    // ✅ Return FROM Customer
+    if (row.rawKind === "return_from_customer") {
+      const status = row.raw?.refundStatus || "pending";
+      return (
+        <Chip 
+          size="small" 
+          label={status === "completed" ? "Return ← Customer ✓" : "Return ← Customer"} 
+          color={status === "completed" ? "info" : "warning"}
+          variant="outlined"
+        />
+      );
+    }
+    // ✅ Old product_return (backward compatibility)
+    if (row.rawKind === "product_return") {
+      const status = row.raw?.refundStatus || (row.refundReceived ? "completed" : "pending");
+      return (
+        <Chip 
+          size="small" 
+          label={status === "completed" ? "Return ✓" : "Return (Pending)"} 
+          color={status === "completed" ? "success" : "warning"}
+          variant="outlined"
+        />
+      );
+    }
+    return row.type;
+  }
+},
     { field: "name", headerName: "Name", renderCell: (row) => row.name || "-" },
     { field: "description", headerName: "Description" },
     { field: "quantity", headerName: "Qty" },
@@ -548,7 +597,41 @@ const filterEntriesByDate = () => {
           ""
         ),
     },
-    { field: "paymentMethod", headerName: "Payment Method" },
+  { 
+  field: "paymentMethod", 
+  headerName: "Payment Method",
+  renderCell: (row) => {
+    const status = row.raw?.refundStatus || "pending";
+    
+    // ✅ Return TO Supplier - we RECEIVE money
+    if (row.rawKind === "return_to_supplier") {
+      return (
+        <Chip 
+          size="small" 
+          label={status === "completed" ? "Refund Received" : "Pending Refund"} 
+          color={status === "completed" ? "success" : "default"}
+          variant={status === "completed" ? "filled" : "outlined"}
+        />
+      );
+    }
+    // ✅ Return FROM Customer - we PAY money
+    if (row.rawKind === "return_from_customer") {
+      return (
+        <Chip 
+          size="small" 
+          label={status === "completed" ? "Refund Paid" : "Pending Refund"} 
+          color={status === "completed" ? "error" : "default"}
+          variant={status === "completed" ? "filled" : "outlined"}
+        />
+      );
+    }
+    // ✅ Old product_return (backward compatibility)
+    if (row.rawKind === "product_return") {
+      return row.refundReceived ? "Received" : "Pending";
+    }
+    return row.paymentMethod || "-";
+  }
+},
     // {
     //   field: "balance",
     //   headerName: "Running Balance",
@@ -607,7 +690,7 @@ const filterEntriesByDate = () => {
   const tRowsForDay = useMemo(() => {
     return transfers
       .filter((t) => toLocalYMD(t.date) === selectedDate)
-      .sort((a, b) => b.date - a.date)
+      .sort((a, b) => new Date(a.date) - new Date(b.date)) // ✅ Ascending
       .map((t) => ({
         id: t.id,
         date: t.date,
@@ -654,7 +737,7 @@ const filterEntriesByDate = () => {
       };
     });
 
-    return out.reverse(); // newest first in the table
+    return out; // ✅ Keep ascending order (oldest first)
   }, [cashData, selectedDate]);
 
   const cashColumns = [
@@ -720,7 +803,7 @@ const filterEntriesByDate = () => {
         });
       }
     }
-    return out.sort((a, b) => b.date - a.date);
+    return out.sort((a, b) => a.date - b.date); // ✅ Ascending
   }, [bankTxns, banks, selectedDate]);
 
   const bankColumns = [

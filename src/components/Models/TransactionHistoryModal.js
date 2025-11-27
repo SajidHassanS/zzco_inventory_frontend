@@ -369,7 +369,7 @@ const TransactionHistoryModal = ({ open, onClose, customer }) => {
             borderRadius: 1,
             overflow: "auto",
             maxHeight: "90vh",
-          }}
+          }} 
         >
           <Typography variant="h6" sx={{ mb: 2 }}>
             Ledger for {customer?.username}

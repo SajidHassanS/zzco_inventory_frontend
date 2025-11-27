@@ -3,8 +3,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import useRedirectLoggedOutUser from "../../customHook/useRedirectLoggedOutUser";
 import { selectIsLoggedIn } from "../../redux/features/auth/authSlice";
- 
-import { getPendingCheques } from "../../redux/features/cheque/chequeSlice"; // Add this
+import { getPendingCheques } from "../../redux/features/cheque/chequeSlice";
 import {
   Container,
   Card,
@@ -30,6 +29,9 @@ import {
   People as PeopleIcon,
   Assessment as ReportIcon,
   AttachMoney as CashIcon,
+  Undo as ReturnIcon,
+  LocalOffer as DiscountIcon,
+  LocalShipping as ShippingIcon,
 } from "@mui/icons-material";
 import axios from "axios";
 import jsPDF from "jspdf";
@@ -59,6 +61,7 @@ const MetricCard = ({ title, subtitle, value, count, icon: Icon, color, isCurren
       case "danger": return "#f44336";
       case "warning": return "#ff9800";
       case "info": return "#2196f3";
+      case "purple": return "#9c27b0";
       default: return "#1976d2";
     }
   };
@@ -106,7 +109,7 @@ const MetricCard = ({ title, subtitle, value, count, icon: Icon, color, isCurren
           </Typography>
           {count !== undefined && (
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, fontWeight: 500 }}>
-              {count} {count === 1 ? (title.includes("Cheque") ? "cheque" : "account") : (title.includes("Cheque") ? "cheques" : "accounts")}
+              {count} {count === 1 ? "item" : "items"}
             </Typography>
           )}
         </Box>
@@ -118,11 +121,11 @@ const MetricCard = ({ title, subtitle, value, count, icon: Icon, color, isCurren
 function Report() {
   useRedirectLoggedOutUser("/login");
   const isLoggedIn = useSelector(selectIsLoggedIn);
-const dispatch = useDispatch();
-const chequesFromStore = useSelector((state) => state.cheque.cheques);
+  const dispatch = useDispatch();
+  const chequesFromStore = useSelector((state) => state.cheque.cheques);
   const [loading, setLoading] = useState(true);
   
-  // Date filters - EXACT same as BankList
+  // Date filters
   const [reportType, setReportType] = useState("monthly");
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
@@ -134,10 +137,11 @@ const chequesFromStore = useSelector((state) => state.cheque.cheques);
   const [bankTransactions, setBankTransactions] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  const [shippers, setShippers] = useState([]);
   const [plData, setPlData] = useState(null);
   const [plLoading, setPlLoading] = useState(false);
 
-  // ===== Helper functions - EXACT same as BankList =====
+  // ===== Helper functions =====
   const toNum = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
   const pickWhen = (tx) => tx?.createdAt || tx?.date || tx?._displayDate || null;
   
@@ -181,22 +185,22 @@ const chequesFromStore = useSelector((state) => state.cheque.cheques);
     }
   }, [isLoggedIn, reportType, selectedYear, selectedMonth]);
 
-  // Fetch cheques from Redux
-useEffect(() => {
-  if (isLoggedIn) {
-    dispatch(getPendingCheques({ status: "all" }));
-  }
-}, [dispatch, isLoggedIn]);
+  useEffect(() => {
+    if (isLoggedIn) {
+      dispatch(getPendingCheques({ status: "all" }));
+    }
+  }, [dispatch, isLoggedIn]);
 
   const fetchAllData = async () => {
     setLoading(true);
     try {
       await Promise.all([
         fetchBanks(),
-        fetchCashBalance(), // Changed function name
+        fetchCashBalance(),
         fetchExpenses(),
         fetchCustomers(),
         fetchSuppliers(),
+        fetchShippers(),
         fetchProfitLoss(),
       ]);
     } catch (error) {
@@ -210,10 +214,8 @@ useEffect(() => {
     try {
       const { data } = await axios.get(`${API_BASE}/banks/all`, { withCredentials: true });
       const bankList = Array.isArray(data) ? data : data?.banks || [];
-      console.log("🏦 Banks fetched:", bankList.length);
       setBanks(bankList);
 
-      // Fetch bank transactions
       let allTx = [];
       for (const bank of bankList) {
         const res = await axios.get(`${API_BASE}/banks/${bank._id}/transactions`, { withCredentials: true });
@@ -228,7 +230,6 @@ useEffect(() => {
           })),
         ];
       }
-      console.log("💳 Bank transactions fetched:", allTx.length);
       setBankTransactions(allTx);
     } catch (error) {
       console.error("❌ Error fetching banks:", error);
@@ -237,7 +238,6 @@ useEffect(() => {
     }
   };
 
-  // Try multiple possible endpoints for cash data
   const fetchCashBalance = async () => {
     const possibleEndpoints = [
       "/cash/balance",
@@ -249,20 +249,13 @@ useEffect(() => {
 
     for (const endpoint of possibleEndpoints) {
       try {
-        console.log(`🔍 Trying endpoint: ${API_BASE}${endpoint}`);
         const { data } = await axios.get(`${API_BASE}${endpoint}`, { withCredentials: true });
-        console.log(`✅ Cash data found at ${endpoint}:`, data);
         setCash(data);
-        return; // Success, exit
+        return;
       } catch (error) {
-        console.log(`❌ ${endpoint} not found, trying next...`);
         continue;
       }
     }
-
-    // If all endpoints fail, log error
-    console.error("❌ Could not find cash endpoint. Tried:", possibleEndpoints);
-    console.log("💡 TIP: Check your AddBank component to see where it fetches cash from");
     setCash(null);
   };
 
@@ -270,7 +263,6 @@ useEffect(() => {
     try {
       const { data } = await axios.get(`${API_BASE}/expenses/all`, { withCredentials: true });
       const expenseList = Array.isArray(data) ? data : [];
-      console.log("💸 Expenses fetched:", expenseList.length);
       setExpenses(expenseList);
     } catch (error) {
       console.error("❌ Error fetching expenses:", error);
@@ -282,7 +274,6 @@ useEffect(() => {
     try {
       const { data } = await axios.get(`${API_BASE}/customers/allcustomer`, { withCredentials: true });
       const customerList = Array.isArray(data) ? data : [];
-      console.log("👥 Customers fetched:", customerList.length);
       setCustomers(customerList);
     } catch (error) {
       console.error("❌ Error fetching customers:", error);
@@ -294,11 +285,21 @@ useEffect(() => {
     try {
       const { data } = await axios.get(`${API_BASE}/suppliers`, { withCredentials: true });
       const supplierList = Array.isArray(data) ? data : [];
-      console.log("🏭 Suppliers fetched:", supplierList.length);
       setSuppliers(supplierList);
     } catch (error) {
       console.error("❌ Error fetching suppliers:", error);
       setSuppliers([]);
+    }
+  };
+
+  const fetchShippers = async () => {
+    try {
+      const { data } = await axios.get(`${API_BASE}/shippers`, { withCredentials: true });
+      const shipperList = Array.isArray(data) ? data : [];
+      setShippers(shipperList);
+    } catch (error) {
+      console.error("❌ Error fetching shippers:", error);
+      setShippers([]);
     }
   };
 
@@ -309,7 +310,7 @@ useEffect(() => {
         period: reportType,
         year: selectedYear,
       };
-      if (reportType === "daily") params.month = selectedMonth;
+      if (reportType === "daily" || reportType === "monthly") params.month = selectedMonth;
 
       const { data } = await axios.get(`${API_BASE}/reports/profit-loss`, { 
         params,
@@ -325,10 +326,9 @@ useEffect(() => {
     }
   };
 
-  // ===== CASH calculations - EXACT same as BankList =====
+  // ===== CASH calculations =====
   const cashRowsRaw = useMemo(() => {
     const rows = cash?.transactions || cash?.allEntries || [];
-    console.log("📝 Cash rows raw:", rows.length, "transactions");
     return rows;
   }, [cash]);
 
@@ -336,7 +336,6 @@ useEffect(() => {
     const filtered = cashRowsRaw
       .filter((t) => isInSelectedPeriod(pickWhen(t)))
       .filter((t) => !isReversalRow(t));
-    console.log("✅ Filtered cash transactions:", filtered.length);
     return filtered;
   }, [cashRowsRaw, reportType, selectedYear, selectedMonth]);
 
@@ -346,7 +345,6 @@ useEffect(() => {
       const isCredit = ttype === "add" || ttype === "credit" || ttype === "deposit";
       return sum + (isCredit ? Math.abs(pickAmount(t)) : 0);
     }, 0);
-    console.log("💰 TOTAL CASH ADDS:", total);
     return total;
   }, [filteredCashTransactions]);
 
@@ -354,17 +352,14 @@ useEffect(() => {
     const total = filteredCashTransactions.reduce((sum, t) => {
       return sum + (isCashOutType(t.type) ? Math.abs(pickAmount(t)) : 0);
     }, 0);
-    console.log("💸 TOTAL CASH DEDUCTS:", total);
     return total;
   }, [filteredCashTransactions]);
 
   const availableCashBalance = useMemo(() => {
     if (cash && typeof cash.totalBalance === "number") {
-      console.log("🏦 Using server totalBalance:", cash.totalBalance);
       return Number(cash.totalBalance);
     }
     const calculated = totalCashAdds - totalCashDeductsFromModule;
-    console.log("🧮 Calculated cash balance:", calculated);
     return calculated;
   }, [cash, totalCashAdds, totalCashDeductsFromModule]);
 
@@ -375,14 +370,12 @@ useEffect(() => {
         isInSelectedPeriod(e.expenseDate || e.createdAt)
       )
       .reduce((sum, e) => sum + Math.abs(Number(e.amount) || 0), 0);
-    console.log("💵 Cash expenses from API:", total);
     return total;
   }, [expenses, reportType, selectedYear, selectedMonth]);
 
   // ===== Bank calculations =====
   const totalBankBalance = useMemo(() => {
     const total = banks.reduce((sum, bank) => sum + (Number(bank.balance) || 0), 0);
-    console.log("🏦 Total bank balance:", total);
     return total;
   }, [banks]);
 
@@ -400,7 +393,6 @@ useEffect(() => {
 
   const totalBankExpenses = useMemo(() => {
     const total = bankExpensesFromExpensesApi.reduce((sum, r) => sum + r.amount, 0);
-    console.log("💳 Total bank expenses:", total);
     return total;
   }, [bankExpensesFromExpensesApi]);
 
@@ -438,28 +430,43 @@ useEffect(() => {
     );
   }, [suppliers]);
 
-// ===== Pending cheques - EXACT logic from ChequeDetails =====
-const pendingCheques = useMemo(() => {
-  if (!Array.isArray(chequesFromStore)) {
-    console.log("⚠️ No cheques in store");
-    return { count: 0, amount: 0 };
-  }
+  // ===== Shipper dues =====
+  const shipperDues = useMemo(() => {
+    return shippers.reduce(
+      (acc, shipper) => {
+        const bal = Number(shipper.balance || 0);
+        if (bal > 0) {
+          acc.payable += bal;
+          acc.payableCount++;
+        } else if (bal < 0) {
+          acc.receivable += Math.abs(bal);
+          acc.receivableCount++;
+        }
+        return acc;
+      },
+      { payable: 0, payableCount: 0, receivable: 0, receivableCount: 0 }
+    );
+  }, [shippers]);
 
-  const pending = chequesFromStore.filter((c) => {
-    return c.status === false && !c.cancelled && !c.transferred;
-  });
+  // ===== Pending cheques =====
+  const pendingCheques = useMemo(() => {
+    if (!Array.isArray(chequesFromStore)) {
+      return { count: 0, amount: 0 };
+    }
 
-  const totalAmount = pending.reduce((sum, c) => {
-    return sum + (Number(c.amount) || 0);
-  }, 0);
+    const pending = chequesFromStore.filter((c) => {
+      return c.status === false && !c.cancelled && !c.transferred;
+    });
 
-  console.log("💳 Pending cheques:", pending.length, "Amount:", totalAmount);
+    const totalAmount = pending.reduce((sum, c) => {
+      return sum + (Number(c.amount) || 0);
+    }, 0);
 
-  return {
-    count: pending.length,
-    amount: totalAmount,
-  };
-}, [chequesFromStore]);
+    return {
+      count: pending.length,
+      amount: totalAmount,
+    };
+  }, [chequesFromStore]);
 
   // ===== Title for period =====
   const titleForPeriod = useMemo(() => {
@@ -469,260 +476,360 @@ const pendingCheques = useMemo(() => {
     return `${selectedYear}`;
   }, [reportType, selectedYear, selectedMonth]);
 
-// ===== PDF Export - PROFESSIONAL VERSION WITH LOGO =====
-const downloadComprehensiveReport = () => {
-  const doc = new jsPDF('portrait');
-  
-  // ===== COMPANY LOGO/HEADER - ORANGE COLOR =====
-  doc.setFontSize(22);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(255, 87, 34); // ✅ Orange/Red color (matching Admin logo)
-  doc.text("Z&Z TRADERS .CO", 105, 12, { align: "center" });
-  
-  // Decorative line under logo
-  doc.setLineWidth(0.8);
-  doc.setDrawColor(255, 87, 34); // ✅ Orange/Red color
-  doc.line(60, 15, 150, 15);
-  
-  // ===== REPORT TITLE =====
-  doc.setFontSize(16);
-  doc.setTextColor(0, 0, 0);
-  doc.text("FINANCIAL REPORT", 105, 22, { align: "center" });
-  
-  doc.setFontSize(11);
-  doc.setFont("helvetica", "normal");
-  doc.text(`Period: ${titleForPeriod}`, 105, 28, { align: "center" });
-  doc.text(`Generated: ${new Date().toLocaleString()}`, 105, 33, { align: "center" });
-  
-  // Add line separator
-  doc.setLineWidth(0.5);
-  doc.setDrawColor(0, 0, 0);
-  doc.line(14, 37, 196, 37);
-  
-  let yPos = 45;
+  // ===== PDF Export =====
+  const downloadComprehensiveReport = () => {
+    const doc = new jsPDF('portrait');
+    
+    // ===== COMPANY LOGO/HEADER =====
+    doc.setFontSize(22);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(255, 87, 34);
+    doc.text("Z&Z TRADERS .CO", 105, 12, { align: "center" });
+    
+    doc.setLineWidth(0.8);
+    doc.setDrawColor(255, 87, 34);
+    doc.line(60, 15, 150, 15);
+    
+    doc.setFontSize(16);
+    doc.setTextColor(0, 0, 0);
+    doc.text("FINANCIAL REPORT", 105, 22, { align: "center" });
+    
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Period: ${titleForPeriod}`, 105, 28, { align: "center" });
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 105, 33, { align: "center" });
+    
+    doc.setLineWidth(0.5);
+    doc.setDrawColor(0, 0, 0);
+    doc.line(14, 37, 196, 37);
+    
+    let yPos = 45;
 
-  // ===== SECTION 1: CASH & BANK SUMMARY =====
-  doc.setFontSize(13);
-  doc.setFont(undefined, "bold");
-  doc.setFillColor(41, 128, 185);
-  doc.rect(14, yPos - 5, 182, 8, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.text("CASH & BANK SUMMARY", 16, yPos);
-  yPos += 10;
-  
-  doc.setTextColor(0, 0, 0);
-  doc.setFont(undefined, "normal");
-  doc.setFontSize(10);
-  
-  // Table-like format
-  doc.text("Total Cash Balance:", 20, yPos);
-  doc.text(`Rs ${availableCashBalance.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
-  yPos += 6;
-  
-  doc.text("Total Bank Balance:", 20, yPos);
-  doc.text(`Rs ${totalBankBalance.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
-  yPos += 6;
-  
-  doc.text("Pending Cheques:", 20, yPos);
-  doc.text(`Rs ${pendingCheques.amount.toLocaleString('en-PK', {minimumFractionDigits: 2})} (${pendingCheques.count} cheques)`, 140, yPos, { align: "right" });
-  yPos += 6;
-  
-  // Subtotal line
-  doc.setLineWidth(0.3);
-  doc.line(20, yPos, 140, yPos);
-  yPos += 5;
-  
-  doc.setFont(undefined, "bold");
-  doc.text("Total Liquid Assets:", 20, yPos);
-  doc.text(`Rs ${(availableCashBalance + totalBankBalance).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
-  yPos += 12;
-
-  // ===== SECTION 2: CUSTOMER ACCOUNTS =====
-  doc.setFont(undefined, "bold");
-  doc.setFillColor(76, 175, 80);
-  doc.rect(14, yPos - 5, 182, 8, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.text("CUSTOMER ACCOUNTS", 16, yPos);
-  yPos += 10;
-  
-  doc.setTextColor(0, 0, 0);
-  doc.setFont(undefined, "normal");
-  
-  doc.text(`Dues FROM Customers (Receivable):`, 20, yPos);
-  doc.text(`Rs ${customerDues.receivable.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
-  doc.setFontSize(8);
-  doc.setTextColor(100, 100, 100);
-  doc.text(`(${customerDues.receivableCount} customers)`, 145, yPos);
-  yPos += 6;
-  
-  doc.setFontSize(10);
-  doc.setTextColor(0, 0, 0);
-  doc.text(`Dues TO Customers (Payable):`, 20, yPos);
-  doc.text(`Rs ${customerDues.payable.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
-  doc.setFontSize(8);
-  doc.setTextColor(100, 100, 100);
-  doc.text(`(${customerDues.payableCount} customers)`, 145, yPos);
-  yPos += 6;
-  
-  doc.setLineWidth(0.3);
-  doc.line(20, yPos, 140, yPos);
-  yPos += 5;
-  
-  doc.setFontSize(10);
-  doc.setFont(undefined, "bold");
-  const customerNet = customerDues.receivable - customerDues.payable;
-  doc.setTextColor(customerNet >= 0 ? 0 : 255, customerNet >= 0 ? 128 : 0, 0);
-  doc.text("Net Customer Position:", 20, yPos);
-  doc.text(`Rs ${customerNet.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
-  yPos += 12;
-
-  // ===== SECTION 3: SUPPLIER ACCOUNTS =====
-  doc.setTextColor(0, 0, 0);
-  doc.setFont(undefined, "bold");
-  doc.setFillColor(255, 152, 0);
-  doc.rect(14, yPos - 5, 182, 8, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.text("SUPPLIER ACCOUNTS", 16, yPos);
-  yPos += 10;
-  
-  doc.setTextColor(0, 0, 0);
-  doc.setFont(undefined, "normal");
-  
-  doc.text(`Dues TO Suppliers (Payable):`, 20, yPos);
-  doc.text(`Rs ${supplierDues.payable.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
-  doc.setFontSize(8);
-  doc.setTextColor(100, 100, 100);
-  doc.text(`(${supplierDues.payableCount} suppliers)`, 145, yPos);
-  yPos += 6;
-  
-  doc.setFontSize(10);
-  doc.setTextColor(0, 0, 0);
-  doc.text(`Dues FROM Suppliers (Receivable):`, 20, yPos);
-  doc.text(`Rs ${supplierDues.receivable.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
-  doc.setFontSize(8);
-  doc.setTextColor(100, 100, 100);
-  doc.text(`(${supplierDues.receivableCount} suppliers)`, 145, yPos);
-  yPos += 6;
-  
-  doc.setLineWidth(0.3);
-  doc.line(20, yPos, 140, yPos);
-  yPos += 5;
-  
-  doc.setFontSize(10);
-  doc.setFont(undefined, "bold");
-  const supplierNet = supplierDues.receivable - supplierDues.payable;
-  doc.setTextColor(supplierNet >= 0 ? 0 : 255, supplierNet >= 0 ? 128 : 0, 0);
-  doc.text("Net Supplier Position:", 20, yPos);
-  doc.text(`Rs ${supplierNet.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
-  yPos += 12;
-
-  // ===== SECTION 4: EXPENSES SUMMARY =====
-  doc.setTextColor(0, 0, 0);
-  doc.setFont(undefined, "bold");
-  doc.setFillColor(244, 67, 54);
-  doc.rect(14, yPos - 5, 182, 8, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.text("EXPENSES SUMMARY", 16, yPos);
-  yPos += 10;
-  
-  doc.setTextColor(0, 0, 0);
-  doc.setFont(undefined, "normal");
-  
-  doc.text("Cash Expenses:", 20, yPos);
-  doc.text(`Rs ${cashExpensesFromExpensesApi.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
-  yPos += 6;
-  
-  doc.text("Bank Expenses:", 20, yPos);
-  doc.text(`Rs ${totalBankExpenses.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
-  yPos += 6;
-  
-  doc.setLineWidth(0.3);
-  doc.line(20, yPos, 140, yPos);
-  yPos += 5;
-  
-  doc.setFont(undefined, "bold");
-  doc.text("Total Expenses:", 20, yPos);
-  doc.text(`Rs ${(cashExpensesFromExpensesApi + totalBankExpenses).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
-  yPos += 12;
-
-  // Check if we need a new page
-  if (yPos > 250) {
-    doc.addPage();
-    yPos = 20;
-  }
-
-  // ===== SECTION 5: PROFIT & LOSS =====
-  if (plData) {
+    // ===== SECTION 1: CASH & BANK SUMMARY =====
+    doc.setFontSize(13);
     doc.setFont(undefined, "bold");
-    doc.setFillColor(33, 150, 243);
+    doc.setFillColor(41, 128, 185);
     doc.rect(14, yPos - 5, 182, 8, 'F');
     doc.setTextColor(255, 255, 255);
-    doc.text("PROFIT & LOSS STATEMENT", 16, yPos);
+    doc.text("CASH & BANK SUMMARY", 16, yPos);
     yPos += 10;
     
     doc.setTextColor(0, 0, 0);
     doc.setFont(undefined, "normal");
+    doc.setFontSize(10);
     
-    doc.text("Total Revenue:", 20, yPos);
-    doc.setTextColor(0, 128, 0);
-    doc.text(`Rs ${(plData.revenue || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    doc.text("Total Cash Balance:", 20, yPos);
+    doc.text(`Rs ${availableCashBalance.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
     yPos += 6;
     
-    doc.setTextColor(0, 0, 0);
-    doc.text("Cost of Goods Sold (COGS):", 20, yPos);
-    doc.setTextColor(255, 0, 0);
-    doc.text(`Rs ${(plData.cogs || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    doc.text("Total Bank Balance:", 20, yPos);
+    doc.text(`Rs ${totalBankBalance.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    yPos += 6;
+    
+    doc.text("Pending Cheques:", 20, yPos);
+    doc.text(`Rs ${pendingCheques.amount.toLocaleString('en-PK', {minimumFractionDigits: 2})} (${pendingCheques.count} cheques)`, 140, yPos, { align: "right" });
     yPos += 6;
     
     doc.setLineWidth(0.3);
     doc.line(20, yPos, 140, yPos);
     yPos += 5;
     
-    doc.setTextColor(0, 0, 0);
     doc.setFont(undefined, "bold");
-    doc.text("Gross Profit:", 20, yPos);
-    doc.setTextColor(0, 100, 200);
-    doc.text(`Rs ${(plData.grossProfit || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
-    yPos += 8;
+    doc.text("Total Liquid Assets:", 20, yPos);
+    doc.text(`Rs ${(availableCashBalance + totalBankBalance).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    yPos += 12;
+
+    // ===== SECTION 2: CUSTOMER ACCOUNTS =====
+    doc.setFont(undefined, "bold");
+    doc.setFillColor(76, 175, 80);
+    doc.rect(14, yPos - 5, 182, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.text("CUSTOMER ACCOUNTS", 16, yPos);
+    yPos += 10;
     
     doc.setTextColor(0, 0, 0);
     doc.setFont(undefined, "normal");
-    doc.text("Operating Expenses:", 20, yPos);
-    doc.setTextColor(255, 0, 0);
-    doc.text(`Rs ${(plData.expenses || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    
+    doc.text(`Dues FROM Customers (Receivable):`, 20, yPos);
+    doc.text(`Rs ${customerDues.receivable.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
     yPos += 6;
     
-    if (plData.damageLoss !== undefined && plData.damageLoss > 0) {
+    doc.text(`Dues TO Customers (Payable):`, 20, yPos);
+    doc.text(`Rs ${customerDues.payable.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    yPos += 6;
+    
+    doc.setLineWidth(0.3);
+    doc.line(20, yPos, 140, yPos);
+    yPos += 5;
+    
+    doc.setFont(undefined, "bold");
+    const customerNet = customerDues.receivable - customerDues.payable;
+    doc.setTextColor(customerNet >= 0 ? 0 : 255, customerNet >= 0 ? 128 : 0, 0);
+    doc.text("Net Customer Position:", 20, yPos);
+    doc.text(`Rs ${customerNet.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    yPos += 12;
+
+    // ===== SECTION 3: SUPPLIER ACCOUNTS =====
+    doc.setTextColor(0, 0, 0);
+    doc.setFont(undefined, "bold");
+    doc.setFillColor(255, 152, 0);
+    doc.rect(14, yPos - 5, 182, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.text("SUPPLIER ACCOUNTS", 16, yPos);
+    yPos += 10;
+    
+    doc.setTextColor(0, 0, 0);
+    doc.setFont(undefined, "normal");
+    
+    doc.text(`Dues TO Suppliers (Payable):`, 20, yPos);
+    doc.text(`Rs ${supplierDues.payable.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    yPos += 6;
+    
+    doc.text(`Dues FROM Suppliers (Receivable):`, 20, yPos);
+    doc.text(`Rs ${supplierDues.receivable.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    yPos += 6;
+    
+    doc.setLineWidth(0.3);
+    doc.line(20, yPos, 140, yPos);
+    yPos += 5;
+    
+    doc.setFont(undefined, "bold");
+    const supplierNet = supplierDues.receivable - supplierDues.payable;
+    doc.setTextColor(supplierNet >= 0 ? 0 : 255, supplierNet >= 0 ? 128 : 0, 0);
+    doc.text("Net Supplier Position:", 20, yPos);
+    doc.text(`Rs ${supplierNet.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    yPos += 12;
+
+    // ===== SECTION 4: SHIPPER ACCOUNTS (NEW) =====
+    doc.setTextColor(0, 0, 0);
+    doc.setFont(undefined, "bold");
+    doc.setFillColor(121, 85, 72);
+    doc.rect(14, yPos - 5, 182, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.text("SHIPPER ACCOUNTS", 16, yPos);
+    yPos += 10;
+    
+    doc.setTextColor(0, 0, 0);
+    doc.setFont(undefined, "normal");
+    
+    doc.text(`Dues TO Shippers (Payable):`, 20, yPos);
+    doc.text(`Rs ${shipperDues.payable.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    yPos += 6;
+    
+    doc.text(`Overpaid to Shippers (Receivable):`, 20, yPos);
+    doc.text(`Rs ${shipperDues.receivable.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    yPos += 6;
+
+    doc.text(`Shipping Expenses (Period):`, 20, yPos);
+    doc.setTextColor(255, 0, 0);
+    doc.text(`Rs ${(plData?.shippingExpenses || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    yPos += 6;
+
+    doc.setTextColor(0, 0, 0);
+    doc.text(`Shipper Discounts Received:`, 20, yPos);
+    doc.setTextColor(0, 128, 0);
+    doc.text(`Rs ${(plData?.shipperDiscounts || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    yPos += 6;
+    
+    doc.setLineWidth(0.3);
+    doc.line(20, yPos, 140, yPos);
+    yPos += 5;
+    
+    doc.setFont(undefined, "bold");
+    const shipperNet = shipperDues.receivable - shipperDues.payable;
+    doc.setTextColor(shipperNet >= 0 ? 0 : 255, shipperNet >= 0 ? 128 : 0, 0);
+    doc.text("Net Shipper Position:", 20, yPos);
+    doc.text(`Rs ${shipperNet.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    yPos += 12;
+
+    // ===== SECTION 5: PROFIT & LOSS =====
+    if (plData) {
       doc.setTextColor(0, 0, 0);
-      doc.text("Damage & Loss:", 20, yPos);
+      doc.setFont(undefined, "bold");
+      doc.setFillColor(33, 150, 243);
+      doc.rect(14, yPos - 5, 182, 8, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.text("PROFIT & LOSS", 16, yPos);
+      yPos += 10;
+      
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, "normal");
+      
+      doc.text("Total Revenue:", 20, yPos);
+      doc.setTextColor(0, 128, 0);
+      doc.text(`Rs ${(plData.revenue || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+      yPos += 6;
+      
+      doc.setTextColor(0, 0, 0);
+      doc.text("Cost of Goods Sold (COGS):", 20, yPos);
+      doc.setTextColor(255, 152, 0);
+      doc.text(`Rs ${(plData.cogs || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+      yPos += 6;
+      
+      doc.setTextColor(0, 0, 0);
+      doc.text("Total Expenses:", 20, yPos);
+      doc.setTextColor(255, 0, 0);
+      doc.text(`Rs ${(plData.totalExpenses || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+      yPos += 6;
+
+      doc.setTextColor(0, 0, 0);
+      doc.text("Other Income (Discounts Received):", 20, yPos);
+      doc.setTextColor(0, 128, 0);
+      doc.text(`Rs ${(plData.otherIncome || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+      yPos += 6;
+      
+      doc.setLineWidth(0.3);
+      doc.line(20, yPos, 140, yPos);
+      yPos += 5;
+      
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, "bold");
+      doc.text("Gross Profit:", 20, yPos);
+      doc.setTextColor(0, 100, 200);
+      doc.text(`Rs ${(plData.grossProfit || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+      yPos += 6;
+      
+      const netProfit = plData.netProfit || 0;
+      doc.setTextColor(0, 0, 0);
+      doc.text("Net Profit:", 20, yPos);
+      doc.setTextColor(netProfit >= 0 ? 0 : 255, netProfit >= 0 ? 128 : 0, 0);
+      doc.text(`Rs ${netProfit.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+      yPos += 12;
+    }
+
+    // ===== SECTION 6: SHIPPING SUMMARY (NEW) =====
+    if (plData && ((plData.shippingExpenses || 0) > 0 || (plData.shipperDiscounts || 0) > 0)) {
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, "bold");
+      doc.setFillColor(121, 85, 72);
+      doc.rect(14, yPos - 5, 182, 8, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.text("SHIPPING SUMMARY", 16, yPos);
+      yPos += 10;
+      
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, "normal");
+      
+      doc.text("Shipping Expenses:", 20, yPos);
+      doc.setTextColor(255, 0, 0);
+      doc.text(`Rs ${(plData.shippingExpenses || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})} (${plData.shippingCount || 0} shipments)`, 140, yPos, { align: "right" });
+      yPos += 6;
+      
+      doc.setTextColor(0, 0, 0);
+      doc.text("Shipper Discounts Received:", 20, yPos);
+      doc.setTextColor(0, 128, 0);
+      doc.text(`Rs ${(plData.shipperDiscounts || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})} (${plData.shipperDiscountCount || 0} times)`, 140, yPos, { align: "right" });
+      yPos += 6;
+      
+      doc.setLineWidth(0.3);
+      doc.line(20, yPos, 140, yPos);
+      yPos += 5;
+      
+      doc.setFont(undefined, "bold");
+      const netShippingCost = (plData.shippingExpenses || 0) - (plData.shipperDiscounts || 0);
+      doc.setTextColor(netShippingCost > 0 ? 255 : 0, netShippingCost > 0 ? 0 : 128, 0);
+      doc.text("Net Shipping Cost:", 20, yPos);
+      doc.text(`Rs ${netShippingCost.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+      yPos += 12;
+    }
+
+    // ===== SECTION 7: RETURNS SUMMARY =====
+    if (plData && ((plData.supplierRefunds || 0) > 0 || (plData.customerRefunds || 0) > 0 || (plData.supplierReturnCount || 0) > 0 || (plData.customerReturnCount || 0) > 0)) {
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, "bold");
+      doc.setFillColor(156, 39, 176);
+      doc.rect(14, yPos - 5, 182, 8, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.text("RETURNS SUMMARY", 16, yPos);
+      yPos += 10;
+      
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, "normal");
+      
+      doc.text("Returns TO Supplier:", 20, yPos);
+      doc.text(`${plData.supplierReturnCount || 0} returns, ${plData.supplierReturnQty || 0} items`, 100, yPos);
+      doc.setTextColor(0, 128, 0);
+      doc.text(`Rs ${(plData.supplierRefunds || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+      yPos += 6;
+      
+      doc.setTextColor(0, 0, 0);
+      doc.text("Returns FROM Customer:", 20, yPos);
+      doc.text(`${plData.customerReturnCount || 0} returns, ${plData.customerReturnQty || 0} items`, 100, yPos);
+      doc.setTextColor(255, 0, 0);
+      doc.text(`Rs ${(plData.customerRefunds || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+      yPos += 12;
+    }
+
+    // ===== SECTION 8: DISCOUNTS SUMMARY =====
+    if (plData && ((plData.customerDiscounts || 0) > 0 || (plData.supplierDiscounts || 0) > 0 || (plData.shipperDiscounts || 0) > 0)) {
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, "bold");
+      doc.setFillColor(103, 58, 183);
+      doc.rect(14, yPos - 5, 182, 8, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.text("DISCOUNTS SUMMARY", 16, yPos);
+      yPos += 10;
+      
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, "normal");
+      
+      doc.text("Discounts Given to Customers:", 20, yPos);
+      doc.setTextColor(255, 0, 0);
+      doc.text(`Rs ${(plData.customerDiscounts || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})} (${plData.customerDiscountCount || 0} times)`, 140, yPos, { align: "right" });
+      yPos += 6;
+      
+      doc.setTextColor(0, 0, 0);
+      doc.text("Discounts Received from Suppliers:", 20, yPos);
+      doc.setTextColor(0, 128, 0);
+      doc.text(`Rs ${(plData.supplierDiscounts || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})} (${plData.supplierDiscountCount || 0} times)`, 140, yPos, { align: "right" });
+      yPos += 6;
+
+      doc.setTextColor(0, 0, 0);
+      doc.text("Discounts Received from Shippers:", 20, yPos);
+      doc.setTextColor(0, 128, 0);
+      doc.text(`Rs ${(plData.shipperDiscounts || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})} (${plData.shipperDiscountCount || 0} times)`, 140, yPos, { align: "right" });
+      yPos += 6;
+      
+      doc.setLineWidth(0.3);
+      doc.line(20, yPos, 140, yPos);
+      yPos += 5;
+      
+      doc.setFont(undefined, "bold");
+      const netDiscountImpact = (plData.supplierDiscounts || 0) + (plData.shipperDiscounts || 0) - (plData.customerDiscounts || 0);
+      doc.setTextColor(netDiscountImpact >= 0 ? 0 : 255, netDiscountImpact >= 0 ? 128 : 0, 0);
+      doc.text("Net Discount Impact:", 20, yPos);
+      doc.text(`Rs ${netDiscountImpact.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+      yPos += 12;
+    }
+
+    // ===== SECTION 9: DAMAGE & LOSS =====
+    if (plData && (plData.damageLoss || 0) > 0) {
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, "bold");
+      doc.setFillColor(244, 67, 54);
+      doc.rect(14, yPos - 5, 182, 8, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.text("DAMAGE & LOSS", 16, yPos);
+      yPos += 10;
+      
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, "normal");
+      
+      doc.text("Total Damage Loss:", 20, yPos);
       doc.setTextColor(255, 0, 0);
       doc.text(`Rs ${(plData.damageLoss || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
-      yPos += 6;
+      yPos += 10;
     }
-    
-    doc.setLineWidth(0.5);
-    doc.line(20, yPos, 140, yPos);
-    yPos += 6;
-    
-    const netProfit = plData.netProfit || 0;
-    doc.setFont(undefined, "bold");
-    doc.setFontSize(12);
-    doc.setTextColor(0, 0, 0);
-    doc.text("NET PROFIT:", 20, yPos);
-    doc.setTextColor(netProfit >= 0 ? 0 : 255, netProfit >= 0 ? 128 : 0, 0);
-    doc.text(`Rs ${netProfit.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
-    yPos += 10;
-  }
 
-  // ===== FOOTER =====
-  doc.setTextColor(100, 100, 100);
-  doc.setFontSize(8);
-  doc.setFont(undefined, "italic");
-  doc.text("This is a computer-generated report. No signature required.", 105, 285, { align: "center" });
-  doc.text(`Page 1 of ${doc.internal.getNumberOfPages()}`, 105, 290, { align: "center" });
+    // ===== FOOTER =====
+    doc.setTextColor(100, 100, 100);
+    doc.setFontSize(8);
+    doc.setFont(undefined, "italic");
+    doc.text("This is a computer-generated report. No signature required.", 105, 285, { align: "center" });
+    doc.text(`Page 1 of ${doc.internal.getNumberOfPages()}`, 105, 290, { align: "center" });
 
-  doc.save(`Financial_Report_${titleForPeriod.replace(/ /g, '_')}.pdf`);
-};
+    doc.save(`Financial_Report_${titleForPeriod.replace(/ /g, '_')}.pdf`);
+  };
 
   if (loading) {
     return (
@@ -953,7 +1060,60 @@ const downloadComprehensiveReport = () => {
 
           <Divider sx={{ mb: 4 }} />
 
-          {/* Profit & Loss */}
+          {/* Shipper Accounts (NEW) */}
+          <Box mb={4}>
+            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
+              Shipper Accounts
+            </Typography>
+            <Grid container spacing={3}>
+              <Grid item xs={12} sm={6} md={3}>
+                <MetricCard
+                  title="Total Shippers"
+                  subtitle="Active shipper accounts"
+                  value={shippers.length}
+                  icon={ShippingIcon}
+                  color="info"
+                  isCurrency={false}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <MetricCard
+                  title="Dues TO Shippers"
+                  subtitle="Amount you owe shippers"
+                  value={shipperDues.payable}
+                  count={shipperDues.payableCount}
+                  icon={ShippingIcon}
+                  color="danger"
+                  isCurrency={true}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <MetricCard
+                  title="Overpaid to Shippers"
+                  subtitle="Advance payments"
+                  value={shipperDues.receivable}
+                  count={shipperDues.receivableCount}
+                  icon={ShippingIcon}
+                  color="success"
+                  isCurrency={true}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <MetricCard
+                  title="Net Shipper Position"
+                  subtitle="Overpaid - Payable"
+                  value={shipperDues.receivable - shipperDues.payable}
+                  icon={ReportIcon}
+                  color={shipperDues.receivable - shipperDues.payable >= 0 ? "success" : "danger"}
+                  isCurrency={true}
+                />
+              </Grid>
+            </Grid>
+          </Box>
+
+          <Divider sx={{ mb: 4 }} />
+
+          {/* PROFIT & LOSS - 5 cards */}
           <Box mb={4}>
             <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
               <Typography variant="h6" sx={{ fontWeight: 600 }}>
@@ -985,7 +1145,8 @@ const downloadComprehensiveReport = () => {
                 <Grid item xs={12} sm={6} md={2.4}>
                   <MetricCard
                     title="Total Expenses"
-                    value={plData.expenses || 0}
+                    subtitle="Expenses + Damage + Discounts + Shipping"
+                    value={plData.totalExpenses || 0}
                     icon={LossIcon}
                     color="danger"
                     isCurrency={true}
@@ -1005,7 +1166,7 @@ const downloadComprehensiveReport = () => {
                     title="Net Profit"
                     value={plData.netProfit || 0}
                     icon={ReportIcon}
-                    color={plData.netProfit >= 0 ? "success" : "danger"}
+                    color={(plData.netProfit || 0) >= 0 ? "success" : "danger"}
                     isCurrency={true}
                   />
                 </Grid>
@@ -1019,99 +1180,246 @@ const downloadComprehensiveReport = () => {
 
           <Divider sx={{ mb: 4 }} />
 
-        {/* Expenses Summary */}
-          <Box mb={2}>
+          {/* SHIPPING SUMMARY (NEW) */}
+          <Box mb={4}>
             <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
-              Expenses Summary
+              Shipping Summary (Period)
             </Typography>
             <Grid container spacing={3}>
-              <Grid item xs={12} sm={6} md={4}>
+              <Grid item xs={12} sm={6} md={3}>
                 <MetricCard
-                  title="Cash Expenses"
-                  subtitle="Expenses paid in cash"
-                  value={cashExpensesFromExpensesApi}
-                  icon={CashIcon}
+                  title="Shipping Expenses"
+                  subtitle="Paid to shippers (reduces profit)"
+                  value={plData?.shippingExpenses || 0}
+                  count={plData?.shippingCount || 0}
+                  icon={ShippingIcon}
                   color="danger"
                   isCurrency={true}
                 />
               </Grid>
-              <Grid item xs={12} sm={6} md={4}>
+              <Grid item xs={12} sm={6} md={3}>
                 <MetricCard
-                  title="Bank Expenses"
-                  subtitle="Expenses via online/cheque"
-                  value={totalBankExpenses}
-                  icon={BankIcon}
-                  color="danger"
+                  title="Shipper Discounts"
+                  subtitle="Discounts from shippers (adds to profit)"
+                  value={plData?.shipperDiscounts || 0}
+                  count={plData?.shipperDiscountCount || 0}
+                  icon={DiscountIcon}
+                  color="success"
                   isCurrency={true}
                 />
               </Grid>
-              <Grid item xs={12} sm={6} md={4}>
+              <Grid item xs={12} sm={6} md={3}>
                 <MetricCard
-                  title="Total Expenses"
-                  subtitle="All payment methods"
-                  value={cashExpensesFromExpensesApi + totalBankExpenses}
-                  icon={MoneyIcon}
-                  color="warning"
+                  title="Net Shipping Cost"
+                  subtitle="Expenses - Discounts"
+                  value={(plData?.shippingExpenses || 0) - (plData?.shipperDiscounts || 0)}
+                  icon={ShippingIcon}
+                  color={(plData?.shippingExpenses || 0) - (plData?.shipperDiscounts || 0) > 0 ? "warning" : "success"}
                   isCurrency={true}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <MetricCard
+                  title="Total Shipments"
+                  subtitle="Number of shipping transactions"
+                  value={plData?.shippingCount || 0}
+                  icon={ShippingIcon}
+                  color="info"
+                  isCurrency={false}
                 />
               </Grid>
             </Grid>
           </Box>
 
-          {/* Damage Loss Summary - NEW SECTION */}
-          <Divider sx={{ mb: 4, mt: 4 }} />
+          <Divider sx={{ mb: 4 }} />
 
-          <Box mb={2}>
+          {/* RETURNS SUMMARY */}
+          <Box mb={4}>
             <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
-              Damage & Loss Summary
+              Returns Summary
             </Typography>
             <Grid container spacing={3}>
-              {plData && plData.damageLoss !== undefined ? (
-                <>
-                  <Grid item xs={12} sm={6} md={4}>
-                    <MetricCard
-                      title="Total Damage Loss"
-                      subtitle="Products marked as damaged"
-                      value={plData.damageLoss || 0}
-                      icon={LossIcon}
-                      color="danger"
-                      isCurrency={true}
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={6} md={4}>
-                    <MetricCard
-                      title="Regular Expenses"
-                      subtitle="Operational expenses"
-                      value={plData.expenses || 0}
-                      icon={MoneyIcon}
-                      color="warning"
-                      isCurrency={true}
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={6} md={4}>
-                    <MetricCard
-                      title="Combined Expenses + Loss"
-                      subtitle="Total expenses including damage"
-                      value={(plData.expenses || 0) + (plData.damageLoss || 0)}
-                      icon={MoneyIcon}
-                      color="danger"
-                      isCurrency={true}
-                    />
-                  </Grid>
-                </>
-              ) : (
-                <Grid item xs={12}>
-                  <Typography variant="body2" color="text.secondary">
-                    No damage loss data available for this period. Check the Damage Products section to record damages.
-                  </Typography>
-                </Grid>
-              )}
+              <Grid item xs={12} sm={6} md={3}>
+                <MetricCard
+                  title="Returns TO Supplier"
+                  subtitle="Refund received from suppliers"
+                  value={plData?.supplierRefunds || 0}
+                  count={plData?.supplierReturnCount || 0}
+                  icon={ReturnIcon}
+                  color="success"
+                  isCurrency={true}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <MetricCard
+                  title="Supplier Return Qty"
+                  subtitle="Items returned to suppliers"
+                  value={plData?.supplierReturnQty || 0}
+                  icon={ReturnIcon}
+                  color="info"
+                  isCurrency={false}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <MetricCard
+                  title="Returns FROM Customer"
+                  subtitle="Refund paid to customers"
+                  value={plData?.customerRefunds || 0}
+                  count={plData?.customerReturnCount || 0}
+                  icon={ReturnIcon}
+                  color="danger"
+                  isCurrency={true}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <MetricCard
+                  title="Customer Return Qty"
+                  subtitle="Items returned by customers"
+                  value={plData?.customerReturnQty || 0}
+                  icon={ReturnIcon}
+                  color="purple"
+                  isCurrency={false}
+                />
+              </Grid>
             </Grid>
           </Box>
-        </CardContent>
-      </Card>
-    </Container>
-  );
+<Divider sx={{ mb: 4 }} />
+
+      {/* DISCOUNTS SUMMARY */}
+      <Box mb={4}>
+        <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
+          Discounts Summary
+        </Typography>
+        <Grid container spacing={3}>
+          <Grid item xs={12} sm={6} md={3}>
+            <MetricCard
+              title="Discounts Given"
+              subtitle="Discounts to customers (reduces profit)"
+              value={plData?.customerDiscounts || 0}
+              count={plData?.customerDiscountCount || 0}
+              icon={DiscountIcon}
+              color="danger"
+              isCurrency={true}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <MetricCard
+              title="Discounts Received"
+              subtitle="Discounts from suppliers (adds to profit)"
+              value={plData?.supplierDiscounts || 0}
+              count={plData?.supplierDiscountCount || 0}
+              icon={DiscountIcon}
+              color="success"
+              isCurrency={true}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <MetricCard
+              title="Net Discount Impact"
+              subtitle="Received - Given"
+              value={(plData?.supplierDiscounts || 0) + (plData?.shipperDiscounts || 0) - (plData?.customerDiscounts || 0)}
+              icon={ReportIcon}
+              color={(plData?.supplierDiscounts || 0) + (plData?.shipperDiscounts || 0) - (plData?.customerDiscounts || 0) >= 0 ? "success" : "danger"}
+              isCurrency={true}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <MetricCard
+              title="Other Income"
+              subtitle="Supplier + Shipper discounts"
+              value={plData?.otherIncome || 0}
+              icon={ProfitIcon}
+              color="info"
+              isCurrency={true}
+            />
+          </Grid>
+        </Grid>
+      </Box>
+
+      <Divider sx={{ mb: 4 }} />
+
+      {/* DAMAGE & LOSS */}
+      <Box mb={4}>
+        <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
+          Damage & Loss Summary
+        </Typography>
+        <Grid container spacing={3}>
+          <Grid item xs={12} sm={6} md={4}>
+            <MetricCard
+              title="Total Damage Loss"
+              subtitle="Products marked as damaged"
+              value={plData?.damageLoss || 0}
+              icon={LossIcon}
+              color="danger"
+              isCurrency={true}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <MetricCard
+              title="Regular Expenses"
+              subtitle="Operational expenses"
+              value={plData?.expenses || 0}
+              icon={MoneyIcon}
+              color="warning"
+              isCurrency={true}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <MetricCard
+              title="Combined Expenses + Loss"
+              subtitle="Total expenses including damage"
+              value={(plData?.expenses || 0) + (plData?.damageLoss || 0)}
+              icon={MoneyIcon}
+              color="danger"
+              isCurrency={true}
+            />
+          </Grid>
+        </Grid>
+      </Box>
+
+      <Divider sx={{ mb: 4 }} />
+
+      {/* Expenses Summary */}
+      <Box mb={2}>
+        <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
+          Expenses Summary
+        </Typography>
+        <Grid container spacing={3}>
+          <Grid item xs={12} sm={6} md={4}>
+            <MetricCard
+              title="Cash Expenses"
+              subtitle="Expenses paid in cash"
+              value={cashExpensesFromExpensesApi}
+              icon={CashIcon}
+              color="danger"
+              isCurrency={true}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <MetricCard
+              title="Bank Expenses"
+              subtitle="Expenses via online/cheque"
+              value={totalBankExpenses}
+              icon={BankIcon}
+              color="danger"
+              isCurrency={true}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <MetricCard
+              title="Total Expenses"
+              subtitle="All payment methods"
+              value={cashExpensesFromExpensesApi + totalBankExpenses}
+              icon={MoneyIcon}
+              color="warning"
+              isCurrency={true}
+            />
+          </Grid>
+        </Grid>
+      </Box>
+    </CardContent>
+  </Card>
+</Container>
+);
 }
-
 export default Report;

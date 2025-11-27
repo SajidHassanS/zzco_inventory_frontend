@@ -8,8 +8,9 @@ import ChequeReducer from "../redux/features/cheque/chequeSlice";
 import supplierReducer from "../redux/features/supplier/supplierSlice";
 import customerReducer from "../redux/features/cutomer/customerSlice";
 import cashReducer from "../redux/features/cash/cashSlice";
-import damageProductReducer from "../redux/features/damageProduct/damageProductSlice"; // ✅ NEW
-
+import damageProductReducer from "../redux/features/damageProduct/damageProductSlice";
+import returnProductReducer from "../redux/features/return/returnProductSlice"; // ✅ NEW
+import shipperReducer from "../redux/features/shipper/shipperSlice";
 export const store = configureStore({
   reducer: {
     auth: authReducer,
@@ -21,6 +22,8 @@ export const store = configureStore({
     supplier: supplierReducer,
     customer: customerReducer,
     cash: cashReducer,
-    damageProduct: damageProductReducer // ✅ NEW
+    damageProduct: damageProductReducer,
+    returnProduct: returnProductReducer,
+    shipper: shipperReducer
   }
 });

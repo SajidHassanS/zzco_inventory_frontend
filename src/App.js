@@ -9,7 +9,6 @@ import Dashboard from "./pages/dashboard/Dashboard";
 import Sidebar from "./components/sidebar/Sidebar";
 import Layout from "./components/layout/Layout";
 import axios from "axios";
-// import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { useDispatch } from "react-redux";
 import { getLoginStatus } from "./services/authService";
@@ -37,11 +36,19 @@ import ViewExpenses from "./pages/ownAccount/ViewExpenses.js";
 import ViewWarehouse from "./pages/Warehouse/ViewWarehouse.js";
 import AddBank from "./pages/ownAccount/bank-accounts/AddBank.jsx";
 import ChequeDetails from "./pages/CheuqeDetail/CheuqeDetails.js";
-import Report from "./pages/Report/Report.js"; // ✅ Material-UI styled Report
+import Report from "./pages/Report/Report.js";
 
-// ✅ NEW: Import Damage Product Components
+// ✅ Damage Product Components
 import AddDamageProduct from "./pages/damageProduct/AddDamageProduct";
 import DamageProductList from "./pages/damageProduct/DamageProductList";
+
+// ✅ Return Product Components
+import AddReturnProduct from "./pages/returnProduct/AddReturnProduct";
+import ReturnProductList from "./pages/returnProduct/ReturnProductList";
+
+// ✅ NEW: Shipper Components
+import AddShipper from "./pages/shipper/AddShipper.jsx";
+import ShipperList from "./pages/shipper/ShipperList.jsx";
 
 axios.defaults.withCredentials = true;
 
@@ -61,15 +68,10 @@ function App() {
 
   return (
     <BrowserRouter>
-      {/* <ToastContainer /> */}
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-
-        {/* 
-        <Route path="/forgot" element={<Forgot />} />
-        <Route path="/resetpassword/:resetToken" element={<Reset />} /> */}
 
         <Route
           path="/dashboard"
@@ -131,16 +133,6 @@ function App() {
             </Sidebar>
           }
         />
-        {/* <Route
-          path="/order"
-          element={
-            <Sidebar>
-              <Layout>
-                <Order />
-              </Layout>
-            </Sidebar>
-          }
-        /> */}
         <Route
           path="/product-detail/:id"
           element={
@@ -201,7 +193,6 @@ function App() {
             </Sidebar>
           }
         />
-
         <Route
           path="/view-warehouse"
           element={
@@ -212,7 +203,6 @@ function App() {
             </Sidebar>
           }
         />
-
         <Route
           path="/bank-accounts"
           element={
@@ -223,8 +213,6 @@ function App() {
             </Sidebar>
           }
         />
-
-        {/* ✅ Added Report Route */}
         <Route
           path="/report"
           element={
@@ -235,7 +223,6 @@ function App() {
             </Sidebar>
           }
         />
-
         <Route
           path="/Add-sale"
           element={
@@ -247,7 +234,7 @@ function App() {
           }
         />
 
-        {/* ✅ NEW: Damage Product Routes */}
+        {/* ✅ Damage Product Routes */}
         <Route
           path="/add-damage-product"
           element={
@@ -258,7 +245,6 @@ function App() {
             </Sidebar>
           }
         />
-
         <Route
           path="/damage-products"
           element={
@@ -269,7 +255,51 @@ function App() {
             </Sidebar>
           }
         />
-        {/* ✅ END: Damage Product Routes */}
+
+        {/* ✅ Return Product Routes */}
+        <Route
+          path="/add-return-product"
+          element={
+            <Sidebar>
+              <Layout>
+                <AddReturnProduct />
+              </Layout>
+            </Sidebar>
+          }
+        />
+        <Route
+          path="/return-products"
+          element={
+            <Sidebar>
+              <Layout>
+                <ReturnProductList />
+              </Layout>
+            </Sidebar>
+          }
+        />
+
+        {/* ✅ NEW: Shipper Routes */}
+        <Route
+          path="/add-shipper"
+          element={
+            <Sidebar>
+              <Layout>
+                <AddShipper />
+              </Layout>
+            </Sidebar>
+          }
+        />
+        <Route
+          path="/shippers"
+          element={
+            <Sidebar>
+              <Layout>
+                <ShipperList />
+              </Layout>
+            </Sidebar>
+          }
+        />
+        {/* ✅ END: Shipper Routes */}
 
         <Route
           path="/contact-us"

@@ -7,7 +7,8 @@ import { MdAccountBalance } from "react-icons/md";
 import { FaWarehouse } from "react-icons/fa6";
 import { FaMoneyCheckDollar } from "react-icons/fa6";
 import { TbReportAnalytics } from "react-icons/tb";
-import { MdBrokenImage } from "react-icons/md"; // ✅ New icon for damage
+import { MdBrokenImage } from "react-icons/md";
+import { FaTruck } from "react-icons/fa"; // ✅ Shipping icon
 
 const menu = [
   {
@@ -26,6 +27,12 @@ const menu = [
     path: "/add-supplier"
   },
   {
+    // ✅ NEW: Shipper Detail
+    title: "Shipper Detail",
+    icon: <FaTruck />,
+    path: "/add-shipper"
+  },
+  {
     title: "Buying Product",
     icon: <FaCartPlus />,
     path: "/add-product"
@@ -36,9 +43,18 @@ const menu = [
     path: "/add-sale"
   },
   {
-    title: "Damage Product", // ✅ NEW
+    title: "Damage / Return",
     icon: <MdBrokenImage />,
-    path: "/damage-products"
+    childrens: [
+      {
+        title: "Damage Products",
+        path: "/damage-products"
+      },
+      {
+        title: "Return Products",
+        path: "/return-products"
+      }
+    ]
   },
   {
     title: "Cheque Detail",

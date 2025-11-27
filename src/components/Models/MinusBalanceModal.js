@@ -7,6 +7,7 @@ import {
   Typography,
   MenuItem,
   Grid,
+  Alert,
 } from "@mui/material";
 import axios from "axios";
 import { useSelector, useDispatch } from "react-redux";
@@ -29,8 +30,8 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
-  // ✅ NEW: Transfer Cheque State
-  const [transferTo, setTransferTo] = useState(""); // "customer" | "supplier"
+  // Transfer State (for both cheque and online transfer)
+  const [transferTo, setTransferTo] = useState("");
   const [transferToId, setTransferToId] = useState("");
   const [customers, setCustomers] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
@@ -48,10 +49,21 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
       fetchEntities();
       setErrors({});
       setLoading(false);
+    } else {
+      // Reset on close
+      setAmount("");
+      setPaymentMethod("");
+      setChequeDate("");
+      setDescription("");
+      setSelectedBank("");
+      setImage(null);
+      setImagePreview("");
+      setTransferTo("");
+      setTransferToId("");
+      setErrors({});
     }
   }, [dispatch, open]);
 
-  // ✅ Fetch customers and suppliers for transfer
   const fetchEntities = async () => {
     try {
       const baseUrl = BASE;
@@ -60,10 +72,10 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
         axios.get(`${baseUrl}api/suppliers`, { withCredentials: true }),
       ]);
 
-      const customersData = Array.isArray(custResp.data) 
-        ? custResp.data 
+      const customersData = Array.isArray(custResp.data)
+        ? custResp.data
         : custResp.data?.customers || [];
-      
+
       const suppliersData = Array.isArray(suppResp.data)
         ? suppResp.data
         : suppResp.data?.suppliers || [];
@@ -73,6 +85,12 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
     } catch (err) {
       console.error("Error fetching entities:", err);
     }
+  };
+
+  // Helper to get selected bank info
+  const getSelectedBankInfo = () => {
+    if (!selectedBank) return null;
+    return banks.find((b) => b._id === selectedBank);
   };
 
   const validateForm = () => {
@@ -86,9 +104,8 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
       formErrors.paymentMethod = "Payment method is required";
     }
 
-    // ✅ Transfer Cheque validations
+    // Transfer Cheque validations
     if (paymentMethod === "transfercheque") {
-     
       if (!chequeDate) {
         formErrors.chequeDate = "Cheque date is required";
       }
@@ -103,7 +120,20 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
       }
     }
 
-    // ✅ UPDATED: Only validate bank for ONLINE (not cheque)
+    // ✅ NEW: Transfer Online validations
+    if (paymentMethod === "transferonline") {
+      if (!image) {
+        formErrors.image = "Screenshot/proof is required for online transfer";
+      }
+      if (!transferTo) {
+        formErrors.transferTo = "Please select transfer destination type";
+      }
+      if (!transferToId) {
+        formErrors.transferToId = "Please select who to transfer to";
+      }
+    }
+
+    // Online: require bank and image
     if (paymentMethod === "online") {
       if (!selectedBank) {
         formErrors.selectedBank = "Bank selection is required for online payment";
@@ -113,13 +143,26 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
       }
     }
 
-    // ✅ For cheque: only require chequeDate and image (NO bank)
+    // Regular cheque: only require chequeDate and image (NO bank)
     if (paymentMethod === "cheque") {
       if (!chequeDate) {
         formErrors.chequeDate = "Cheque date is required for cheque payment";
       }
       if (!image) {
         formErrors.image = "Image is required for cheque payment";
+      }
+    }
+
+    // Own Cheque: require bank, chequeDate, and image
+    if (paymentMethod === "owncheque") {
+      if (!selectedBank) {
+        formErrors.selectedBank = "Bank selection is required for own cheque";
+      }
+      if (!chequeDate) {
+        formErrors.chequeDate = "Cheque date is required";
+      }
+      if (!image) {
+        formErrors.image = "Image is required for cheque";
       }
     }
 
@@ -145,28 +188,25 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
         (description && description.trim()) ||
         `Payment received from ${customer?.username || customer?.name || "customer"}`;
 
-      // ✅ UPDATED: Only send bankId for online and transfercheque (not regular cheque)
       const base = {
         amount: amt,
         paymentMethod: method,
         description: cleanDesc,
-        ...(method === "online" 
-          ? { bankId: selectedBank } 
-          : {}),
-        ...(method === "cheque" || method === "transfercheque" 
-          ? { chequeDate } 
-          : {}),
-        // ✅ Add transfer details for transfercheque
-        ...(method === "transfercheque" 
-          ? { 
-              transferTo, 
+        // Send bankId for online and owncheque
+        ...((method === "online" || method === "owncheque") ? { bankId: selectedBank } : {}),
+        // Send chequeDate for cheque, transfercheque, and owncheque
+        ...((method === "cheque" || method === "transfercheque" || method === "owncheque") ? { chequeDate } : {}),
+        // Add transfer details for transfercheque AND transferonline
+        ...((method === "transfercheque" || method === "transferonline")
+          ? {
+              transferTo,
               transferToId,
-            } 
+            }
           : {}),
       };
 
       let resp;
-      if (image && (method === "online" || method === "cheque" || method === "transfercheque")) {
+      if (image && (method === "online" || method === "cheque" || method === "transfercheque" || method === "owncheque" || method === "transferonline")) {
         const fd = new FormData();
         Object.entries(base).forEach(([k, v]) => fd.append(k, v));
         fd.append("image", image);
@@ -185,6 +225,10 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
       }
 
       toast.success(resp?.data?.message || "Balance subtracted successfully");
+      
+      // Refresh banks to get updated balances
+      dispatch(getBanks());
+      
       onSuccess?.(resp?.data?.customer);
       onClose?.();
     } catch (err) {
@@ -210,6 +254,9 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
     setImage(file);
     setImagePreview(URL.createObjectURL(file));
   };
+
+  // Check if current method is a transfer method
+  const isTransferMethod = paymentMethod === "transfercheque" || paymentMethod === "transferonline";
 
   return (
     <Modal open={open} onClose={onClose}>
@@ -253,8 +300,9 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           value={paymentMethod}
           onChange={(e) => {
             setPaymentMethod(e.target.value.toLowerCase());
-            // Reset transfer fields when changing payment method
-            if (e.target.value.toLowerCase() !== "transfercheque") {
+            setSelectedBank("");
+            // Reset transfer fields when changing to non-transfer method
+            if (!["transfercheque", "transferonline"].includes(e.target.value.toLowerCase())) {
               setTransferTo("");
               setTransferToId("");
             }
@@ -267,46 +315,67 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
             (paymentMethod === "credit"
               ? "Credit = ledger-only (no bank/cash movement)"
               : paymentMethod === "transfercheque"
-              ? "Transfer this cheque to another customer or supplier"
+              ? "Transfer this cheque to another customer or supplier (pending)"
+              : paymentMethod === "transferonline"
+              ? "Transfer online payment to another customer or supplier (immediate)"
+              : paymentMethod === "cheque"
+              ? "Pending cheque - no immediate bank addition"
+              : paymentMethod === "owncheque"
+              ? "Cheque deposited to your bank - immediate addition"
               : "")
           }
           disabled={loading}
         >
           <MenuItem value="cash">Cash</MenuItem>
-          <MenuItem value="online">Online</MenuItem>
-          <MenuItem value="cheque">Cheque</MenuItem>
+          <MenuItem value="online">Online Transfer</MenuItem>
+          <MenuItem value="cheque">Cheque (Pending)</MenuItem>
+          <MenuItem value="owncheque">Cheque to Own Account</MenuItem>
           <MenuItem value="credit">Credit</MenuItem>
           <MenuItem value="transfercheque">Transfer Cheque</MenuItem>
+          <MenuItem value="transferonline">Transfer Online</MenuItem>
         </TextField>
 
-        {/* ✅ UPDATED: Only show bank for ONLINE and TRANSFERCHEQUE (not regular cheque) */}
-        {(paymentMethod === "online" ) && (
-          <TextField
-            label="Select Bank"
-            select
-            value={selectedBank}
-            onChange={(e) => setSelectedBank(e.target.value)}
-            fullWidth
-            margin="normal"
-            error={!!errors.selectedBank}
-            helperText={errors.selectedBank}
-            disabled={loading}
-          >
-            {banks?.length ? (
-              banks.map((bank) => (
-                <MenuItem key={bank._id} value={bank._id}>
-                  {bank.bankName}
+        {/* Show bank dropdown for ONLINE and OWN CHEQUE */}
+        {(paymentMethod === "online" || paymentMethod === "owncheque") && (
+          <>
+            <TextField
+              label="Select Bank"
+              select
+              value={selectedBank}
+              onChange={(e) => setSelectedBank(e.target.value)}
+              fullWidth
+              margin="normal"
+              error={!!errors.selectedBank}
+              helperText={errors.selectedBank}
+              disabled={loading}
+            >
+              {banks?.length ? (
+                banks.map((bank) => (
+                  <MenuItem key={bank._id} value={bank._id}>
+                    {bank.bankName} (Balance: Rs {Number(bank.balance || 0).toLocaleString()})
+                  </MenuItem>
+                ))
+              ) : (
+                <MenuItem value="" disabled>
+                  No banks found
                 </MenuItem>
-              ))
-            ) : (
-              <MenuItem value="" disabled>
-                No banks found
-              </MenuItem>
+              )}
+            </TextField>
+
+            {/* Show selected bank balance info */}
+            {getSelectedBankInfo() && (
+              <Alert severity="info" sx={{ mt: 1, mb: 1 }}>
+                Current Balance: Rs {Number(getSelectedBankInfo().balance || 0).toLocaleString()}
+                {amount && (
+                  <> → After deposit: Rs {(Number(getSelectedBankInfo().balance || 0) + Number(amount || 0)).toLocaleString()}</>
+                )}
+              </Alert>
             )}
-          </TextField>
+          </>
         )}
 
-        {(paymentMethod === "cheque" || paymentMethod === "transfercheque") && (
+        {/* Show cheque date for CHEQUE, TRANSFERCHEQUE, and OWN CHEQUE */}
+        {(paymentMethod === "cheque" || paymentMethod === "transfercheque" || paymentMethod === "owncheque") && (
           <TextField
             label="Cheque Date"
             type="date"
@@ -321,11 +390,12 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           />
         )}
 
-        {(paymentMethod === "online" || paymentMethod === "cheque" || paymentMethod === "transfercheque") && (
+        {/* Show image upload for ONLINE, CHEQUE, TRANSFERCHEQUE, OWN CHEQUE, and TRANSFERONLINE */}
+        {(paymentMethod === "online" || paymentMethod === "cheque" || paymentMethod === "transfercheque" || paymentMethod === "owncheque" || paymentMethod === "transferonline") && (
           <Grid item xs={12}>
             <TextField
               type="file"
-              label="Upload Image"
+              label={paymentMethod === "transferonline" ? "Upload Screenshot/Proof" : "Upload Image"}
               name="image"
               onChange={handleImageChange}
               fullWidth
@@ -345,16 +415,22 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           </Grid>
         )}
 
-        {/* ✅ Transfer Cheque Options */}
-        {paymentMethod === "transfercheque" && (
+        {/* Transfer Options (for both Transfer Cheque and Transfer Online) */}
+        {isTransferMethod && (
           <>
+            <Alert severity="warning" sx={{ mt: 2, mb: 1 }}>
+              {paymentMethod === "transfercheque" 
+                ? "⚠️ This will transfer the cheque to another entity (pending status)"
+                : "⚠️ This will transfer the online payment to another entity (completed immediately)"}
+            </Alert>
+            
             <TextField
               label="Transfer To"
               select
               value={transferTo}
               onChange={(e) => {
                 setTransferTo(e.target.value);
-                setTransferToId(""); // Reset selection when changing type
+                setTransferToId("");
               }}
               fullWidth
               margin="normal"
@@ -384,7 +460,6 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
                 </MenuItem>
                 {(transferTo === "customer" ? customers : suppliers)
                   .filter((entity) => {
-                    // ✅ Safe filtering with null checks
                     if (!entity || !entity._id) return false;
                     if (!customer || !customer._id) return true;
                     return entity._id !== customer._id;
@@ -410,8 +485,12 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           placeholder={
             paymentMethod === "transfercheque"
               ? `e.g. Cheque transferred to ${transferTo || "..."}`
+              : paymentMethod === "transferonline"
+              ? `e.g. Online payment transferred to ${transferTo || "..."}`
               : paymentMethod === "credit"
               ? `e.g. Credit adjustment for ${customer?.username || customer?.name || "customer"}`
+              : paymentMethod === "owncheque"
+              ? `e.g. Cheque deposited from ${customer?.username || customer?.name || "customer"}`
               : `e.g. Payment received from ${customer?.username || customer?.name || "customer"}`
           }
           disabled={loading}

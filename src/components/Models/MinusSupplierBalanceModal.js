@@ -1,14 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { Modal, Box, TextField, Button, Typography, MenuItem, Grid } from "@mui/material";
+import { Modal, Box, TextField, Button, Typography, MenuItem, Grid, Alert } from "@mui/material";
 import axios from "axios";
 import { useSelector, useDispatch } from "react-redux";
 import { getBanks } from "../../redux/features/Bank/bankSlice";
 import { toast } from "react-toastify";
 
-// Normalize BACKEND_URL to always have a trailing slash
 const withSlash = (u = "") => (u.endsWith("/") ? u : `${u}/`);
 
-// Format number into "lac" with sign, e.g., -420000 => "-4.20 lac"
 function formatLac(value) {
   const num = Number(value || 0);
   const sign = num < 0 ? "-" : "";
@@ -18,7 +16,7 @@ function formatLac(value) {
 
 const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
   const [amount, setAmount] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState(""); // "cash" | "online" | "cheque" | "credit"
+  const [paymentMethod, setPaymentMethod] = useState("");
   const [chequeDate, setChequeDate] = useState("");
   const [description, setDescription] = useState("");
   const [selectedBank, setSelectedBank] = useState("");
@@ -34,13 +32,33 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
   const banks = useSelector((state) => state.bank.banks || []);
 
   useEffect(() => {
-    if (open) dispatch(getBanks());
+    if (open) {
+      dispatch(getBanks());
+      setErrors({});
+      setLoading(false);
+    } else {
+      // Reset on close
+      setAmount("");
+      setPaymentMethod("");
+      setChequeDate("");
+      setDescription("");
+      setSelectedBank("");
+      setImage(null);
+      setImagePreview("");
+      setErrors({});
+    }
   }, [dispatch, open]);
 
   const API_URL = `${BACKEND_URL}api/suppliers`;
   const CASH_API_URL = `${BACKEND_URL}api/cash`;
 
   const currentBalance = Number(supplier?.balance || 0);
+
+  // Helper to get selected bank info
+  const getSelectedBankInfo = () => {
+    if (!selectedBank) return null;
+    return banks.find((b) => b._id === selectedBank);
+  };
 
   const validateForm = () => {
     const formErrors = {};
@@ -53,7 +71,7 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
       formErrors.paymentMethod = "Payment method is required";
     }
 
-    // ✅ UPDATED: Only enforce bank for ONLINE (not cheque)
+    // Online: require bank and image
     if (paymentMethod === "online") {
       if (!selectedBank) {
         formErrors.selectedBank = "Bank selection is required for online payment";
@@ -63,7 +81,7 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
       }
     }
 
-    // ✅ For cheque: only require chequeDate and image (NO bank)
+    // Regular cheque: only require chequeDate and image (NO bank)
     if (paymentMethod === "cheque") {
       if (!chequeDate) {
         formErrors.chequeDate = "Cheque date is required for cheque payment";
@@ -72,7 +90,19 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
         formErrors.image = "Image upload is required for cheque payment";
       }
     }
-    // credit: no extra fields required
+
+    // ✅ Own Cheque: require bank, chequeDate, and image
+    if (paymentMethod === "owncheque") {
+      if (!selectedBank) {
+        formErrors.selectedBank = "Bank selection is required for own cheque";
+      }
+      if (!chequeDate) {
+        formErrors.chequeDate = "Cheque date is required";
+      }
+      if (!image) {
+        formErrors.image = "Image is required for cheque";
+      }
+    }
 
     setErrors(formErrors);
     return Object.keys(formErrors).length === 0;
@@ -100,21 +130,23 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
       const method = (paymentMethod || "").toLowerCase().trim();
       const cleanDesc = (description || "").trim();
 
-      // 1) Tell backend to subtract supplier balance
+      // Build form data
       const formData = new FormData();
       formData.append("balance", numericAmount.toString());
       formData.append("paymentMethod", method);
       formData.append("description", cleanDesc);
-      formData.append("desc", cleanDesc); // some backends read 'desc'
+      formData.append("desc", cleanDesc);
       
-      // ✅ UPDATED: Only send bankId for ONLINE (not cheque)
-      if (method === "online") {
-        formData.append("bankId", selectedBank); // MUST be an ObjectId string
+      // Send bankId for online and owncheque
+      if (method === "online" || method === "owncheque") {
+        formData.append("bankId", selectedBank);
       }
       
-      if (method === "cheque") {
+      // Send chequeDate for cheque and owncheque
+      if (method === "cheque" || method === "owncheque") {
         formData.append("chequeDate", chequeDate || "");
       }
+      
       if (image) formData.append("image", image);
 
       const supplierRes = await axios.post(
@@ -125,43 +157,44 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
 
       toast.success(supplierRes.data?.message || "Balance subtracted from supplier");
 
-      // 2) Ledger entry (cash/bank). For cheque we only record pending; bank updates on clearance.
+      // Ledger entry handling
       let ledgerRes;
       if (method === "cash") {
-        // money in → cash add
         ledgerRes = await axios.post(
           `${CASH_API_URL}/add`,
           {
             balance: numericAmount,
             type: "add",
-            description:
-              cleanDesc || `Payment received from supplier ${supplier?.username || ""}`.trim(),
+            description: cleanDesc || `Payment received from supplier ${supplier?.username || ""}`.trim(),
           },
           { withCredentials: true }
         );
       } else if (method === "online") {
-        // money in → bank add now
         ledgerRes = await axios.post(
           `${BACKEND_URL}api/banks/${selectedBank}/transaction`,
           {
             amount: numericAmount,
             type: "add",
-            description:
-              cleanDesc || `Online payment received from supplier ${supplier?.username || ""}`.trim(),
+            description: cleanDesc || `Online payment received from supplier ${supplier?.username || ""}`.trim(),
           },
           { withCredentials: true }
         );
+      } else if (method === "owncheque") {
+        // Own cheque - bank already updated by backend
+        toast.success("Cheque deposited to bank immediately.");
       } else if (method === "cheque") {
-        // pending — bank will increase when cheque is cleared
         toast.info("Cheque recorded as pending. Cash/Bank will increase when the cheque is cleared.");
       } else if (method === "credit") {
-        // credit note / ledger-only decrease; no cash/bank movement
         toast.info("Credit recorded (no immediate cash/bank movement).");
       }
+
+      // Refresh banks to get updated balances
+      dispatch(getBanks());
 
       if (
         method === "cheque" ||
         method === "credit" ||
+        method === "owncheque" ||
         ledgerRes?.status === 200 ||
         ledgerRes?.status === 201
       ) {
@@ -206,14 +239,14 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
     setImagePreview(URL.createObjectURL(file));
   };
 
-  // ✅ UPDATED: Disable submit logic - bank only required for online
   const disableSubmit =
     loading ||
     !amount ||
     parseFloat(amount) <= 0 ||
     !paymentMethod ||
     (paymentMethod === "online" && (!selectedBank || !image)) ||
-    (paymentMethod === "cheque" && (!chequeDate || !image));
+    (paymentMethod === "cheque" && (!chequeDate || !image)) ||
+    (paymentMethod === "owncheque" && (!selectedBank || !chequeDate || !image));
 
   return (
     <Modal open={open} onClose={onClose}>
@@ -225,11 +258,13 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
           top: "50%",
           left: "50%",
           transform: "translate(-50%, -50%)",
-          width: 400,
+          width: 450,
           bgcolor: "background.paper",
           boxShadow: 24,
           p: 4,
           borderRadius: 2,
+          maxHeight: "90vh",
+          overflowY: "auto",
         }}
       >
         <Typography variant="h6" gutterBottom>
@@ -263,11 +298,9 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
           onChange={(e) => {
             const v = e.target.value;
             setPaymentMethod(v);
-            // reset dependent fields on method switch
             setSelectedBank("");
-            if (v !== "cheque") setChequeDate("");
-            if (v === "credit") {
-              // wipe bank/image for clarity
+            if (v !== "cheque" && v !== "owncheque") setChequeDate("");
+            if (v === "credit" || v === "cash") {
               setImage(null);
               setImagePreview("");
             }
@@ -279,42 +312,60 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
             errors.paymentMethod ||
             (paymentMethod === "credit"
               ? "Credit = supplier ledger only (no bank/cash movement now)"
+              : paymentMethod === "cheque"
+              ? "Pending cheque - no immediate bank addition"
+              : paymentMethod === "owncheque"
+              ? "Cheque deposited to your bank - immediate addition"
               : "")
           }
         >
           <MenuItem value="cash">Cash</MenuItem>
-          <MenuItem value="online">Online</MenuItem>
-          <MenuItem value="cheque">Cheque</MenuItem>
+          <MenuItem value="online">Online Transfer</MenuItem>
+          <MenuItem value="cheque">Cheque (Pending)</MenuItem>
+          <MenuItem value="owncheque">Cheque to Own Account</MenuItem>
           <MenuItem value="credit">Credit</MenuItem>
         </TextField>
 
-        {/* ✅ UPDATED: Only show bank for ONLINE (not cheque) */}
-        {paymentMethod === "online" && (
-          <TextField
-            label="Select Bank"
-            select
-            value={selectedBank}
-            onChange={(e) => setSelectedBank(e.target.value)}
-            fullWidth
-            margin="normal"
-            error={!!errors.selectedBank}
-            helperText={errors.selectedBank}
-          >
-            {banks.length ? (
-              banks.map((bank) => (
-                <MenuItem key={bank._id} value={bank._id}>
-                  {bank.bankName}
+        {/* Show bank dropdown for ONLINE and OWN CHEQUE */}
+        {(paymentMethod === "online" || paymentMethod === "owncheque") && (
+          <>
+            <TextField
+              label="Select Bank"
+              select
+              value={selectedBank}
+              onChange={(e) => setSelectedBank(e.target.value)}
+              fullWidth
+              margin="normal"
+              error={!!errors.selectedBank}
+              helperText={errors.selectedBank}
+            >
+              {banks.length ? (
+                banks.map((bank) => (
+                  <MenuItem key={bank._id} value={bank._id}>
+                    {bank.bankName} (Balance: Rs {Number(bank.balance || 0).toLocaleString()})
+                  </MenuItem>
+                ))
+              ) : (
+                <MenuItem value="" disabled>
+                  No banks found
                 </MenuItem>
-              ))
-            ) : (
-              <MenuItem value="" disabled>
-                No banks found
-              </MenuItem>
+              )}
+            </TextField>
+
+            {/* Show selected bank balance info */}
+            {getSelectedBankInfo() && (
+              <Alert severity="info" sx={{ mt: 1, mb: 1 }}>
+                Current Balance: Rs {Number(getSelectedBankInfo().balance || 0).toLocaleString()}
+                {amount && (
+                  <> → After deposit: Rs {(Number(getSelectedBankInfo().balance || 0) + Number(amount || 0)).toLocaleString()}</>
+                )}
+              </Alert>
             )}
-          </TextField>
+          </>
         )}
 
-        {paymentMethod === "cheque" && (
+        {/* Show cheque date for CHEQUE and OWN CHEQUE */}
+        {(paymentMethod === "cheque" || paymentMethod === "owncheque") && (
           <TextField
             label="Cheque Date"
             type="date"
@@ -328,7 +379,8 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
           />
         )}
 
-        {(paymentMethod === "online" || paymentMethod === "cheque") && (
+        {/* Show image upload for ONLINE, CHEQUE, and OWN CHEQUE */}
+        {(paymentMethod === "online" || paymentMethod === "cheque" || paymentMethod === "owncheque") && (
           <Grid item xs={12}>
             <TextField
               type="file"
@@ -362,6 +414,8 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
           placeholder={
             paymentMethod === "credit"
               ? "e.g. Credit note / write-off / adjustment"
+              : paymentMethod === "owncheque"
+              ? `e.g. Cheque deposited from supplier ${supplier?.username || ""}`
               : `e.g. Payment received from supplier ${supplier?.username || ""}`
           }
         />
