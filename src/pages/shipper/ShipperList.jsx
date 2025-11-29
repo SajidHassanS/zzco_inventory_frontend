@@ -287,56 +287,56 @@ const ShipperList = () => {
                       <Chip label="Settled" color="default" size="small" />
                     )}
                   </TableCell>
-                  <TableCell align="center">
-                    <Box sx={{ display: "flex", gap: 0.5, justifyContent: "center" }}>
-                      <Tooltip title="Pay Shipper (Add Balance)">
-                        <IconButton
-                          size="small"
-                          color="error"
-                          onClick={() => setAddBalanceShipper(shipper)}
-                        >
-                          <AddBalanceIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Receive from Shipper (Minus Balance)">
-                        <IconButton
-                          size="small"
-                          color="success"
-                          onClick={() => setMinusBalanceShipper(shipper)}
-                        >
-                          <MinusBalanceIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Apply Discount">
-                        <IconButton
-                          size="small"
-                          color="warning"
-                          onClick={() => setDiscountShipper(shipper)}
-                          disabled={Number(shipper.balance || 0) <= 0}
-                        >
-                          <DiscountIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="View History">
-                        <IconButton
-                          size="small"
-                          color="info"
-                          onClick={() => setViewHistoryShipper(shipper)}
-                        >
-                          <ViewIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Delete">
-                        <IconButton
-                          size="small"
-                          color="error"
-                          onClick={() => setDeleteId(shipper._id)}
-                        >
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
-                  </TableCell>
+                <TableCell align="center">
+  <Box sx={{ display: "flex", gap: 0.5, justifyContent: "center" }}>
+    <Tooltip title="Pay Shipper (Add Balance)">
+      <IconButton
+        size="small"
+        color="error"
+        onClick={() => setAddBalanceShipper(shipper)}
+      >
+        <AddBalanceIcon fontSize="small" />
+      </IconButton>
+    </Tooltip>
+    {/* <Tooltip title="Receive from Shipper (Minus Balance)">
+      <IconButton
+        size="small"
+        color="success"
+        onClick={() => setMinusBalanceShipper(shipper)}
+      >
+        <MinusBalanceIcon fontSize="small" />
+      </IconButton>
+    </Tooltip> */}
+    <Tooltip title="Apply Discount">
+      <IconButton
+        size="small"
+        color="warning"
+        onClick={() => setDiscountShipper(shipper)}
+        disabled={Number(shipper.balance || 0) <= 0}
+      >
+        <DiscountIcon fontSize="small" />
+      </IconButton>
+    </Tooltip>
+    <Tooltip title="View History">
+      <IconButton
+        size="small"
+        color="info"
+        onClick={() => setViewHistoryShipper(shipper)}
+      >
+        <ViewIcon fontSize="small" />
+      </IconButton>
+    </Tooltip>
+    <Tooltip title="Delete">
+      <IconButton
+        size="small"
+        color="error"
+        onClick={() => setDeleteId(shipper._id)}
+      >
+        <DeleteIcon fontSize="small" />
+      </IconButton>
+    </Tooltip>
+  </Box>
+</TableCell>
                 </TableRow>
               ))
             )}

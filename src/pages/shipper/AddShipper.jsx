@@ -51,6 +51,9 @@ const AddShipper = () => {
     state => state.shipper
   );
 
+  // Track if form was submitted
+  const [submitted, setSubmitted] = useState(false);
+
   // Form state
   const [formData, setFormData] = useState({
     username: "",
@@ -76,25 +79,23 @@ const AddShipper = () => {
     capacity: ""
   });
 
-  // Reset on success
+  // Reset state on mount
   useEffect(
     () => {
-      if (isSuccess) {
+      dispatch(reset());
+    },
+    [dispatch]
+  );
+
+  // Redirect on success ONLY after form submission
+  useEffect(
+    () => {
+      if (isSuccess && submitted) {
         dispatch(reset());
         navigate("/shippers");
       }
     },
-    [isSuccess, dispatch, navigate]
-  );
-
-  // Cleanup
-  useEffect(
-    () => {
-      return () => {
-        dispatch(reset());
-      };
-    },
-    [dispatch]
+    [isSuccess, submitted, dispatch, navigate]
   );
 
   const handleInputChange = e => {
@@ -147,6 +148,7 @@ const AddShipper = () => {
       vehicles
     };
 
+    setSubmitted(true);
     dispatch(createShipper(shipperData));
   };
 

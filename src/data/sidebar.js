@@ -30,7 +30,7 @@ const menu = [
     // ✅ NEW: Shipper Detail
     title: "Shipper Detail",
     icon: <FaTruck />,
-    path: "/add-shipper"
+    path: "/shippers"
   },
   {
     title: "Buying Product",

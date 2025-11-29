@@ -27,6 +27,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { getBanks } from "../../redux/features/Bank/bankSlice";
 import axios from "axios";
 import CustomTable from "../../components/CustomTable/CustomTable";
+
 // utils (top of file)
 const toLocalYMD = (d = new Date()) => {
   const dt = new Date(d);
@@ -46,8 +47,8 @@ const KIND_LABEL = {
   stock_arrival: "Stock Arrival",
   warehouse_transfer: "WH Transfer",
   product_return: "Product Return",
-  return_to_supplier: "Return → Supplier",    // ✅ NEW
-  return_from_customer: "Return ← Customer",  // ✅ NEW
+  return_to_supplier: "Return → Supplier",
+  return_from_customer: "Return ← Customer",
 };
 
 // non-monetary kinds: ignore in running balance
@@ -71,17 +72,20 @@ const ViewExpenses = () => {
   const [cashData, setCashData] = useState({ totalBalance: 0, allEntries: [] });
   const [bankTxns, setBankTxns] = useState([]);
 
-const [selectedDate, setSelectedDate] = useState(toLocalYMD());
+  const [selectedDate, setSelectedDate] = useState(toLocalYMD());
   const [filteredEntries, setFilteredEntries] = useState([]);
-  // const [runningBalance, setRunningBalance] = useState(0);
 
   // main table pagination
-  const [page, setPage] = useState(1); // 1-based local
+  const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(ITEMS_PER_PAGE);
 
   // transfers table pagination
   const [tPage, setTPage] = useState(1);
   const [tRowsPerPage, setTRowsPerPage] = useState(ITEMS_PER_PAGE);
+
+  // stock arrivals table pagination
+  const [saPage, setSaPage] = useState(1);
+  const [saRowsPerPage, setSaRowsPerPage] = useState(ITEMS_PER_PAGE);
 
   // cash table pagination
   const [cPage, setCPage] = useState(1);
@@ -99,7 +103,7 @@ const [selectedDate, setSelectedDate] = useState(toLocalYMD());
     expenseName: "",
     amount: "",
     description: "",
-   expenseDate: toLocalYMD(),
+    expenseDate: toLocalYMD(),
     paymentMethod: "",
     bankID: "",
     chequeDate: "",
@@ -110,73 +114,73 @@ const [selectedDate, setSelectedDate] = useState(toLocalYMD());
   const RAW = process.env.REACT_APP_BACKEND_URL || "";
   const BASE = RAW.endsWith("/") ? RAW : `${RAW}/`;
   const API_URL = `${BASE}api`;
-// state
-const [cashDescById, setCashDescById] = useState({});
 
-// helper: pick the best description from a transaction object
-const pickTxnDesc = (tx) => {
-  const fields = [
-    tx?.description, tx?.note, tx?.details, tx?.remark, tx?.narration,
-    tx?.meta?.description, tx?.source?.description, tx?.reference?.description,
-    tx?.related?.description, tx?.title, tx?.message, tx?.memo
-  ];
-  for (const v of fields) {
-    if (v !== undefined && v !== null) {
-      const s = String(v).trim();
-      if (s) return s;
-    }
-  }
-  return "-";
-};
-useEffect(() => {
-  const day = selectedDate;
-  // find entries that fall on this day
-  const todays = (cashData.allEntries || [])
-    .map(c => {
-      const when = c.effectiveDate || c.createdAt || c.date || c.updatedAt;
-      return when ? { id: c._id, _ts: new Date(when) } : null;
-    })
-    .filter(Boolean)
-    .filter(c => toLocalYMD(c._ts) === day);
+  // state
+  const [cashDescById, setCashDescById] = useState({});
 
-  if (!todays.length) {
-    setCashDescById({});
-    return;
-  }
-
-  let cancelled = false;
-
-  (async () => {
-    try {
-      const results = await Promise.all(
-        todays.map(t =>
-          axios
-            .get(`${API_URL}/cash/${t.id}/transactions`, { withCredentials: true })
-            .then(({ data }) => ({ id: t.id, txns: Array.isArray(data) ? data : [] }))
-            .catch(() => ({ id: t.id, txns: [] }))
-        )
-      );
-
-      const map = {};
-      for (const { id, txns } of results) {
-        // keep only txns whose date is the selected day
-        const sameDay = txns
-          .map(tx => ({ ...tx, _d: new Date(tx.date || tx.createdAt || 0) }))
-          .filter(tx => toLocalYMD(tx._d) === day)
-          .sort((a, b) => b._d - a._d); // newest first
-
-        if (sameDay.length) {
-          map[id] = pickTxnDesc(sameDay[0]); // latest txn's description for that cash entry
-        }
+  // helper: pick the best description from a transaction object
+  const pickTxnDesc = (tx) => {
+    const fields = [
+      tx?.description, tx?.note, tx?.details, tx?.remark, tx?.narration,
+      tx?.meta?.description, tx?.source?.description, tx?.reference?.description,
+      tx?.related?.description, tx?.title, tx?.message, tx?.memo
+    ];
+    for (const v of fields) {
+      if (v !== undefined && v !== null) {
+        const s = String(v).trim();
+        if (s) return s;
       }
-      if (!cancelled) setCashDescById(map);
-    } catch (e) {
-      if (!cancelled) setCashDescById({});
     }
-  })();
+    return "-";
+  };
 
-  return () => { cancelled = true; };
-}, [API_URL, cashData.allEntries, selectedDate]);
+  useEffect(() => {
+    const day = selectedDate;
+    const todays = (cashData.allEntries || [])
+      .map(c => {
+        const when = c.effectiveDate || c.createdAt || c.date || c.updatedAt;
+        return when ? { id: c._id, _ts: new Date(when) } : null;
+      })
+      .filter(Boolean)
+      .filter(c => toLocalYMD(c._ts) === day);
+
+    if (!todays.length) {
+      setCashDescById({});
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const results = await Promise.all(
+          todays.map(t =>
+            axios
+              .get(`${API_URL}/cash/${t.id}/transactions`, { withCredentials: true })
+              .then(({ data }) => ({ id: t.id, txns: Array.isArray(data) ? data : [] }))
+              .catch(() => ({ id: t.id, txns: [] }))
+          )
+        );
+
+        const map = {};
+        for (const { id, txns } of results) {
+          const sameDay = txns
+            .map(tx => ({ ...tx, _d: new Date(tx.date || tx.createdAt || 0) }))
+            .filter(tx => toLocalYMD(tx._d) === day)
+            .sort((a, b) => b._d - a._d);
+
+          if (sameDay.length) {
+            map[id] = pickTxnDesc(sameDay[0]);
+          }
+        }
+        if (!cancelled) setCashDescById(map);
+      } catch (e) {
+        if (!cancelled) setCashDescById({});
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [API_URL, cashData.allEntries, selectedDate]);
 
   /* -------------------------------- effects -------------------------------- */
   useEffect(() => {
@@ -227,7 +231,7 @@ useEffect(() => {
           description:
             r.description ||
             (isTransfer ? `Internal transfer ${r.quantity ?? ""}` : ""),
-          amount: Number(r.amount) || 0, // signed
+          amount: Number(r.amount) || 0,
           paymentMethod: r.paymentMethod || "-",
           bankID: r.bankID || null,
           chequeDate: r.chequeDate || null,
@@ -237,7 +241,6 @@ useEffect(() => {
           fromWarehouseName: r.fromWarehouseName || null,
           toWarehouseName: r.toWarehouseName || null,
           productSku: r.productSku || null,
-          // ✅ Extra fields for product returns
           refundReceived: r.refundReceived || false,
           returnReason: r.returnReason || null,
           warehouseName: r.warehouseName || null,
@@ -247,11 +250,11 @@ useEffect(() => {
 
       const tOnly = all
         .filter((x) => x.rawKind === "warehouse_transfer")
-        .sort((a, b) => new Date(a.date) - new Date(b.date)); // ✅ Ascending - oldest first
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
 
       const notTransfers = all
         .filter((x) => x.rawKind !== "warehouse_transfer")
-        .sort((a, b) => new Date(a.date) - new Date(b.date)); // ✅ Ascending - oldest first
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
 
       setTransfers(tOnly);
       setEntries(notTransfers);
@@ -261,52 +264,47 @@ useEffect(() => {
       setEntries([]);
     }
   };
-const getCashDescription = (c) => {
-  // try the cached txn description first
-  const descFromTx = cashDescById[c._id];
-  if (descFromTx) return descFromTx;
 
-  // fallbacks if your cash doc itself has something
-  const fields = [
-    c?.description, c?.note, c?.details, c?.remark, c?.narration,
-    c?.meta?.description, c?.source?.description, c?.reference?.description,
-    c?.related?.description, c?.productName, c?.title, c?.message, c?.memo
-  ];
-  for (const v of fields) {
-    if (v !== undefined && v !== null) {
-      const s = String(v).trim();
-      if (s) return s;
+  const getCashDescription = (c) => {
+    const descFromTx = cashDescById[c._id];
+    if (descFromTx) return descFromTx;
+
+    const fields = [
+      c?.description, c?.note, c?.details, c?.remark, c?.narration,
+      c?.meta?.description, c?.source?.description, c?.reference?.description,
+      c?.related?.description, c?.productName, c?.title, c?.message, c?.memo
+    ];
+    for (const v of fields) {
+      if (v !== undefined && v !== null) {
+        const s = String(v).trim();
+        if (s) return s;
+      }
     }
-  }
-  return "-";
-};
-
-
+    return "-";
+  };
 
   /* ------------------------------- fetch cash -------------------------------- */
-const fetchCash = async () => {
-  try {
-    const { data } = await axios.get(`${API_URL}/cash/all`, { withCredentials: true });
+  const fetchCash = async () => {
+    try {
+      const { data } = await axios.get(`${API_URL}/cash/all`, { withCredentials: true });
 
-    let totalBalance = 0;
-    let allEntries = [];
+      let totalBalance = 0;
+      let allEntries = [];
 
-    if (Array.isArray(data)) {
-      allEntries = data;
-      // If docs have "balance"/"amount", sum a safe numeric field for a total
-      totalBalance = data.reduce((sum, c) => sum + Number(c?.balance ?? 0), 0);
-    } else {
-      totalBalance = Number(data?.totalBalance ?? 0);
-      allEntries  = Array.isArray(data?.allEntries) ? data.allEntries : [];
+      if (Array.isArray(data)) {
+        allEntries = data;
+        totalBalance = data.reduce((sum, c) => sum + Number(c?.balance ?? 0), 0);
+      } else {
+        totalBalance = Number(data?.totalBalance ?? 0);
+        allEntries = Array.isArray(data?.allEntries) ? data.allEntries : [];
+      }
+
+      setCashData({ totalBalance, allEntries });
+    } catch (e) {
+      console.error("❌ Failed to fetch cash from /api/cash/all", e?.response?.data || e);
+      setCashData({ totalBalance: 0, allEntries: [] });
     }
-
-    setCashData({ totalBalance, allEntries });
-  } catch (e) {
-    console.error("❌ Failed to fetch cash from /api/cash/all", e?.response?.data || e);
-    setCashData({ totalBalance: 0, allEntries: [] });
-  }
-};
-
+  };
 
   /* --------------------------- fetch bank transactions ----------------------- */
   const fetchBankTransactions = async () => {
@@ -371,7 +369,7 @@ const fetchCash = async () => {
       expenseName: "",
       amount: "",
       description: "",
-  expenseDate: toLocalYMD(),
+      expenseDate: toLocalYMD(),
       paymentMethod: "",
       bankID: "",
       chequeDate: "",
@@ -421,7 +419,7 @@ const fetchCash = async () => {
     fd.append("expenseName", name);
     fd.append("amount", String(amt));
     fd.append("description", desc);
-  fd.append("expenseDate", expense.expenseDate || toLocalYMD());
+    fd.append("expenseDate", expense.expenseDate || toLocalYMD());
     fd.append("paymentMethod", method || "cash");
     if (isBank) fd.append("bankID", bankId);
     if (method === "cheque" && expense.chequeDate) fd.append("chequeDate", expense.chequeDate);
@@ -477,7 +475,7 @@ const fetchCash = async () => {
         expenseName: "",
         amount: "",
         description: "",
-       expenseDate: toLocalYMD(),
+        expenseDate: toLocalYMD(),
         paymentMethod: "",
         bankID: "",
         chequeDate: "",
@@ -489,35 +487,19 @@ const fetchCash = async () => {
 
   /* -------------------------------- helpers --------------------------------- */
 
+  const filterEntriesByDate = () => {
+    const sel = selectedDate;
+    const filtered = entries
+      .filter((entry) => toLocalYMD(entry.date) === sel)
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
 
-
-  // running balance only over monetary rows
-  // const calculateRunningBalance = (entriesList) => {
-  //   let balance = 0;
-  //   const oldestToNewest = [...entriesList].reverse();
-
-  //   const withBalance = oldestToNewest.map((entry) => {
-  //     const isMoney = !NON_MONETARY_KINDS.has(entry.rawKind);
-  //     if (isMoney) balance += entry.amount;
-  //     return { ...entry, balance: isMoney ? balance : undefined };
-  //   });
-
-  //   setRunningBalance(balance);
-  //   return withBalance.reverse();
-  // };
-
-const filterEntriesByDate = () => {
-  const sel = selectedDate;
-  const filtered = entries
-    .filter((entry) => toLocalYMD(entry.date) === sel)
-    .sort((a, b) => new Date(a.date) - new Date(b.date)); // ✅ Ascending - oldest first
-
-  setFilteredEntries(filtered);
-  setPage(1);
-  setTPage(1);
-  setCPage(1);
-  setBPage(1);
-};
+    setFilteredEntries(filtered);
+    setPage(1);
+    setTPage(1);
+    setSaPage(1);
+    setCPage(1);
+    setBPage(1);
+  };
 
   /* ------------------------------ main table cols --------------------------- */
   const columns = [
@@ -526,49 +508,46 @@ const filterEntriesByDate = () => {
       headerName: "Date",
       renderCell: (row) => new Date(row.date).toLocaleString(),
     },
-   { 
-  field: "type", 
-  headerName: "Type",
-  renderCell: (row) => {
-    // ✅ Return TO Supplier
-    if (row.rawKind === "return_to_supplier") {
-      const status = row.raw?.refundStatus || "pending";
-      return (
-        <Chip 
-          size="small" 
-          label={status === "completed" ? "Return → Supplier ✓" : "Return → Supplier"} 
-          color={status === "completed" ? "success" : "warning"}
-          variant="outlined"
-        />
-      );
-    }
-    // ✅ Return FROM Customer
-    if (row.rawKind === "return_from_customer") {
-      const status = row.raw?.refundStatus || "pending";
-      return (
-        <Chip 
-          size="small" 
-          label={status === "completed" ? "Return ← Customer ✓" : "Return ← Customer"} 
-          color={status === "completed" ? "info" : "warning"}
-          variant="outlined"
-        />
-      );
-    }
-    // ✅ Old product_return (backward compatibility)
-    if (row.rawKind === "product_return") {
-      const status = row.raw?.refundStatus || (row.refundReceived ? "completed" : "pending");
-      return (
-        <Chip 
-          size="small" 
-          label={status === "completed" ? "Return ✓" : "Return (Pending)"} 
-          color={status === "completed" ? "success" : "warning"}
-          variant="outlined"
-        />
-      );
-    }
-    return row.type;
-  }
-},
+    {
+      field: "type",
+      headerName: "Type",
+      renderCell: (row) => {
+        if (row.rawKind === "return_to_supplier") {
+          const status = row.raw?.refundStatus || "pending";
+          return (
+            <Chip
+              size="small"
+              label={status === "completed" ? "Return → Supplier ✓" : "Return → Supplier"}
+              color={status === "completed" ? "success" : "warning"}
+              variant="outlined"
+            />
+          );
+        }
+        if (row.rawKind === "return_from_customer") {
+          const status = row.raw?.refundStatus || "pending";
+          return (
+            <Chip
+              size="small"
+              label={status === "completed" ? "Return ← Customer ✓" : "Return ← Customer"}
+              color={status === "completed" ? "info" : "warning"}
+              variant="outlined"
+            />
+          );
+        }
+        if (row.rawKind === "product_return") {
+          const status = row.raw?.refundStatus || (row.refundReceived ? "completed" : "pending");
+          return (
+            <Chip
+              size="small"
+              label={status === "completed" ? "Return ✓" : "Return (Pending)"}
+              color={status === "completed" ? "success" : "warning"}
+              variant="outlined"
+            />
+          );
+        }
+        return row.type;
+      }
+    },
     { field: "name", headerName: "Name", renderCell: (row) => row.name || "-" },
     { field: "description", headerName: "Description" },
     { field: "quantity", headerName: "Qty" },
@@ -597,47 +576,38 @@ const filterEntriesByDate = () => {
           ""
         ),
     },
-  { 
-  field: "paymentMethod", 
-  headerName: "Payment Method",
-  renderCell: (row) => {
-    const status = row.raw?.refundStatus || "pending";
-    
-    // ✅ Return TO Supplier - we RECEIVE money
-    if (row.rawKind === "return_to_supplier") {
-      return (
-        <Chip 
-          size="small" 
-          label={status === "completed" ? "Refund Received" : "Pending Refund"} 
-          color={status === "completed" ? "success" : "default"}
-          variant={status === "completed" ? "filled" : "outlined"}
-        />
-      );
-    }
-    // ✅ Return FROM Customer - we PAY money
-    if (row.rawKind === "return_from_customer") {
-      return (
-        <Chip 
-          size="small" 
-          label={status === "completed" ? "Refund Paid" : "Pending Refund"} 
-          color={status === "completed" ? "error" : "default"}
-          variant={status === "completed" ? "filled" : "outlined"}
-        />
-      );
-    }
-    // ✅ Old product_return (backward compatibility)
-    if (row.rawKind === "product_return") {
-      return row.refundReceived ? "Received" : "Pending";
-    }
-    return row.paymentMethod || "-";
-  }
-},
-    // {
-    //   field: "balance",
-    //   headerName: "Running Balance",
-    //   renderCell: (row) =>
-    //     Number.isFinite(row.balance) ? Number(row.balance).toFixed(2) : "",
-    // },
+    {
+      field: "paymentMethod",
+      headerName: "Payment Method",
+      renderCell: (row) => {
+        const status = row.raw?.refundStatus || "pending";
+
+        if (row.rawKind === "return_to_supplier") {
+          return (
+            <Chip
+              size="small"
+              label={status === "completed" ? "Refund Received" : "Pending Refund"}
+              color={status === "completed" ? "success" : "default"}
+              variant={status === "completed" ? "filled" : "outlined"}
+            />
+          );
+        }
+        if (row.rawKind === "return_from_customer") {
+          return (
+            <Chip
+              size="small"
+              label={status === "completed" ? "Refund Paid" : "Pending Refund"}
+              color={status === "completed" ? "error" : "default"}
+              variant={status === "completed" ? "filled" : "outlined"}
+            />
+          );
+        }
+        if (row.rawKind === "product_return") {
+          return row.refundReceived ? "Received" : "Pending";
+        }
+        return row.paymentMethod || "-";
+      }
+    },
     {
       field: "actions",
       headerName: "Actions",
@@ -663,10 +633,11 @@ const filterEntriesByDate = () => {
     },
   ];
 
-  // MAIN table rows (paged here)
-  const mainTotal = filteredEntries.length;
+  // MAIN table rows - exclude stock_arrival (shown in separate section)
+  const mainFilteredEntries = filteredEntries.filter((e) => e.rawKind !== "stock_arrival");
+  const mainTotal = mainFilteredEntries.length;
   const mainStart = (page - 1) * rowsPerPage;
-  const mainRows = filteredEntries
+  const mainRows = mainFilteredEntries
     .slice(mainStart, mainStart + rowsPerPage)
     .map((entry) => ({
       ...entry,
@@ -690,7 +661,7 @@ const filterEntriesByDate = () => {
   const tRowsForDay = useMemo(() => {
     return transfers
       .filter((t) => toLocalYMD(t.date) === selectedDate)
-      .sort((a, b) => new Date(a.date) - new Date(b.date)) // ✅ Ascending
+      .sort((a, b) => new Date(a.date) - new Date(b.date))
       .map((t) => ({
         id: t.id,
         date: t.date,
@@ -706,6 +677,68 @@ const filterEntriesByDate = () => {
   const tStart = (tPage - 1) * tRowsPerPage;
   const tRowsPaged = tRowsForDay.slice(tStart, tStart + tRowsPerPage);
 
+  /* ---------------------- STOCK ARRIVALS (this day) ---------------------- */
+  const stockArrivalRows = useMemo(() => {
+    return filteredEntries
+      .filter((e) => e.rawKind === "stock_arrival")
+      .sort((a, b) => new Date(a.date) - new Date(b.date))
+      .map((e) => ({
+        id: e.id,
+        date: e.date,
+        product: e.name || e.raw?.meta?.productName || e.raw?.productName || "-",
+        sku: e.productSku || e.raw?.meta?.productSku || e.raw?.productSku || "-",
+        quantity: e.quantity || e.raw?.meta?.quantity || e.raw?.quantity || 0,
+        warehouse: e.warehouseName || e.raw?.meta?.warehouseName || e.raw?.warehouseName || "-",
+        supplier: e.counterparty || e.raw?.meta?.supplierName || e.raw?.counterpartyName || "International",
+        remaining: e.raw?.meta?.remainingInShipping ?? e.raw?.remainingInShipping ?? "-",
+        description: e.description || "-",
+      }));
+  }, [filteredEntries]);
+
+  const stockArrivalColumns = [
+    {
+      field: "date",
+      headerName: "Date",
+      renderCell: (row) => new Date(row.date).toLocaleString(),
+    },
+    { field: "product", headerName: "Product" },
+    { field: "sku", headerName: "SKU" },
+    {
+      field: "quantity",
+      headerName: "Qty Received",
+      renderCell: (row) => (
+        <Chip
+          size="small"
+          label={`+${row.quantity}`}
+          color="success"
+          variant="outlined"
+        />
+      ),
+    },
+    { field: "warehouse", headerName: "Warehouse" },
+    { field: "supplier", headerName: "Supplier" },
+    {
+      field: "remaining",
+      headerName: "Still in Shipping",
+      renderCell: (row) =>
+        row.remaining !== "-" ? (
+          <Chip
+            size="small"
+            label={row.remaining}
+            color={row.remaining > 0 ? "warning" : "default"}
+            variant="outlined"
+          />
+        ) : (
+          "-"
+        ),
+    },
+    { field: "description", headerName: "Note" },
+  ];
+
+  const saTotal = stockArrivalRows.length;
+  const saStart = (saPage - 1) * saRowsPerPage;
+  const stockArrivalRowsPaged = stockArrivalRows.slice(saStart, saStart + saRowsPerPage);
+
   /* ------------------------ CASH MOVEMENTS (this day) ----------------------- */
   const cashRowsForDay = useMemo(() => {
     const day = selectedDate;
@@ -715,30 +748,29 @@ const filterEntriesByDate = () => {
         return { ...c, _ts: new Date(when) };
       })
       .filter((c) => toLocalYMD(c._ts) === day)
-      .sort((a, b) => a._ts - b._ts); // oldest -> newest
+      .sort((a, b) => a._ts - b._ts);
 
     let bal = 0;
     const out = asc.map((c) => {
       const type = toPM(c.type);
-    const amt = Math.abs(toNum(c.amount ?? c.balance));
+      const amt = Math.abs(toNum(c.amount ?? c.balance));
       const credit = CREDIT_TYPES.has(type) ? amt : 0;
-      const debit  = DEBIT_TYPES.has(type) ? amt : 0;
+      const debit = DEBIT_TYPES.has(type) ? amt : 0;
       bal += credit - debit;
 
       return {
         id: c._id,
         date: c._ts,
         type,
-      description: getCashDescription(c),
-
+        description: getCashDescription(c),
         debit,
         credit,
         running: bal,
       };
     });
 
-    return out; // ✅ Keep ascending order (oldest first)
-  }, [cashData, selectedDate]);
+    return out;
+  }, [cashData, selectedDate, cashDescById]);
 
   const cashColumns = [
     { field: "date", headerName: "Date", renderCell: (r) => r.date.toLocaleString() },
@@ -781,7 +813,7 @@ const filterEntriesByDate = () => {
 
     const out = [];
     for (const [bankId, list] of byBank) {
-      list.sort((a, b) => a._date - b._date); // oldest -> newest
+      list.sort((a, b) => a._date - b._date);
       let bal = 0;
       for (const t of list) {
         const ttype = toPM(t.type);
@@ -803,7 +835,7 @@ const filterEntriesByDate = () => {
         });
       }
     }
-    return out.sort((a, b) => a.date - b.date); // ✅ Ascending
+    return out.sort((a, b) => a.date - b.date);
   }, [bankTxns, banks, selectedDate]);
 
   const bankColumns = [
@@ -867,18 +899,15 @@ const filterEntriesByDate = () => {
           <Typography variant="h5" gutterBottom>
             Daily Book for {new Date(selectedDate).toDateString()}
           </Typography>
-          {/* <Typography variant="h6" gutterBottom>
-            Daily Balance (monetary only): {Number(runningBalance || 0).toFixed(2)}
-          </Typography> */}
 
-          {filteredEntries.length === 0 ? (
+          {mainFilteredEntries.length === 0 ? (
             <Typography variant="body1">No entries for the selected date.</Typography>
           ) : (
             <CustomTable
               columns={columns}
               data={mainRows}
               count={mainTotal}
-              page={page - 1} // 0-based for MUI
+              page={page - 1}
               rowsPerPage={rowsPerPage}
               rowsPerPageOptions={[10, 25, 50, 100]}
               onPageChange={(_e, newPage) => setPage(newPage + 1)}
@@ -917,6 +946,39 @@ const filterEntriesByDate = () => {
                 if (Number.isFinite(newValue) && newValue > 0) {
                   setTRowsPerPage(newValue);
                   setTPage(1);
+                }
+              }}
+            />
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ======================== Stock Arrivals ========================= */}
+      <Card sx={{ mt: 3 }}>
+        <CardContent>
+          <Typography variant="h5" gutterBottom sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            📦 Stock Arrivals - International ({new Date(selectedDate).toDateString()})
+          </Typography>
+          <Typography variant="body2" color="text.secondary" gutterBottom>
+            Products received from international shipping
+          </Typography>
+
+          {saTotal === 0 ? (
+            <Typography variant="body1">No stock arrivals for the selected date.</Typography>
+          ) : (
+            <CustomTable
+              columns={stockArrivalColumns}
+              data={stockArrivalRowsPaged}
+              count={saTotal}
+              page={saPage - 1}
+              rowsPerPage={saRowsPerPage}
+              rowsPerPageOptions={[10, 25, 50, 100]}
+              onPageChange={(_e, newPage) => setSaPage(newPage + 1)}
+              onRowsPerPageChange={(arg) => {
+                const newValue = Number(typeof arg === "number" ? arg : arg?.target?.value);
+                if (Number.isFinite(newValue) && newValue > 0) {
+                  setSaRowsPerPage(newValue);
+                  setSaPage(1);
                 }
               }}
             />

@@ -284,7 +284,7 @@ function App() {
           element={
             <Sidebar>
               <Layout>
-                <AddShipper />
+                <AddShipper /> 
               </Layout>
             </Sidebar>
           }
