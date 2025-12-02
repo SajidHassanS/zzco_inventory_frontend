@@ -1,4 +1,4 @@
-// components/Models/ShipperDiscountModal.jsx
+// pages/Shipper/ShipperDiscountModal.jsx
 import React, { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -9,123 +9,159 @@ import {
   Button,
   TextField,
   Grid,
-  Alert,
-  CircularProgress,
   Typography,
-  Paper,
+  CircularProgress,
+  Alert,
+  Box
 } from "@mui/material";
 import { Discount as DiscountIcon } from "@mui/icons-material";
-import { applyShipperDiscount, getShippers } from "../../redux/features/shipper/shipperSlice";
+import {
+  applyShipperDiscount,
+  getShippers
+} from "../../redux/features/shipper/shipperSlice";
 
 const ShipperDiscountModal = ({ open, onClose, shipper }) => {
   const dispatch = useDispatch();
-  const { isLoading } = useSelector((state) => state.shipper);
 
-  const [amount, setAmount] = useState("");
-  const [description, setDescription] = useState("");
+  const { isLoading } = useSelector(state => state.shipper);
 
-  useEffect(() => {
-    if (open) {
-      setAmount("");
-      setDescription("");
-    }
-  }, [open]);
+  // Form state
+  const [formData, setFormData] = useState({
+    amount: "",
+    description: ""
+  });
+  const [error, setError] = useState("");
 
-  const currentBalance = Number(shipper?.balance || 0);
-  const maxDiscount = currentBalance > 0 ? currentBalance : 0;
+  // Reset form when modal opens
+  useEffect(
+    () => {
+      if (open) {
+        setFormData({
+          amount: "",
+          description: ""
+        });
+        setError("");
+      }
+    },
+    [open]
+  );
+
+  const handleInputChange = e => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+    setError("");
+  };
 
   const handleSubmit = async () => {
-    if (!amount || Number(amount) <= 0) return;
+    const amount = parseFloat(formData.amount);
+    if (!amount || amount <= 0) {
+      setError("Please enter a valid discount amount");
+      return;
+    }
 
-    const result = await dispatch(
-      applyShipperDiscount({
-        id: shipper._id,
-        discountData: {
-          amount: Number(amount),
-          description: description || `Discount from ${shipper?.username}`,
-        },
-      })
-    );
+    const currentBalance = Number(shipper.balance || 0);
+    if (amount > currentBalance) {
+      setError(
+        `Discount cannot be more than what you owe (Rs ${currentBalance})`
+      );
+      return;
+    }
 
-    if (applyShipperDiscount.fulfilled.match(result)) {
+    try {
+      await dispatch(
+        applyShipperDiscount({
+          id: shipper._id,
+          data: {
+            amount: formData.amount,
+            description:
+              formData.description || `Discount from ${shipper.username}`
+          }
+        })
+      ).unwrap();
+
       dispatch(getShippers());
       onClose();
+    } catch (err) {
+      setError(err.message || "Failed to apply discount");
     }
   };
+
+  if (!shipper) return null;
+
+  const currentBalance = Number(shipper.balance || 0);
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
         <DiscountIcon color="warning" />
-        Apply Discount - {shipper?.username}
+        Apply Discount: {shipper.username}
       </DialogTitle>
-      <DialogContent>
-        <Alert severity="info" sx={{ mb: 2, mt: 1 }}>
-          <strong>Discount:</strong> Shipper is giving you a discount. This will reduce how much you owe them (no cash/bank movement).
-        </Alert>
 
-        {/* Current Balance */}
-        <Paper sx={{ p: 2, mb: 2, bgcolor: "grey.50" }}>
+      <DialogContent>
+        {error &&
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>}
+
+        <Box sx={{ mb: 2, p: 2, bgcolor: "grey.100", borderRadius: 1 }}>
           <Typography variant="body2" color="text.secondary">
             Current Balance (You Owe)
           </Typography>
           <Typography variant="h5" color="error.main">
             Rs {currentBalance.toLocaleString()}
           </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Maximum discount: Rs {maxDiscount.toLocaleString()}
-          </Typography>
-        </Paper>
+        </Box>
 
         <Grid container spacing={2}>
+          {/* Amount */}
           <Grid item xs={12}>
             <TextField
               fullWidth
               label="Discount Amount *"
+              name="amount"
               type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              inputProps={{ min: 1, max: maxDiscount }}
-              error={Number(amount) > maxDiscount}
-              helperText={Number(amount) > maxDiscount ? `Cannot exceed Rs ${maxDiscount}` : ""}
+              value={formData.amount}
+              onChange={handleInputChange}
+              placeholder="Enter discount amount"
+              InputProps={{
+                startAdornment: <Typography sx={{ mr: 1 }}>Rs</Typography>
+              }}
+              helperText={`Max discount: Rs ${currentBalance.toLocaleString()}`}
             />
           </Grid>
 
+          {/* Description */}
           <Grid item xs={12}>
             <TextField
               fullWidth
               label="Description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              name="description"
+              value={formData.description}
+              onChange={handleInputChange}
+              placeholder="Reason for discount"
               multiline
               rows={2}
-              placeholder="e.g., Bulk order discount"
             />
           </Grid>
-
-          {/* Balance Preview */}
-          {amount && Number(amount) <= maxDiscount && (
-            <Grid item xs={12}>
-              <Paper sx={{ p: 2, bgcolor: "success.light" }}>
-                <Typography variant="body2" color="success.contrastText">
-                  After discount:
-                </Typography>
-                <Typography variant="h6" color="success.contrastText">
-                  New Balance: Rs {(currentBalance - Number(amount)).toLocaleString()}
-                </Typography>
-              </Paper>
-            </Grid>
-          )}
         </Grid>
+
+        <Alert severity="info" sx={{ mt: 2 }}>
+          This discount will reduce the amount you owe to this shipper.
+        </Alert>
       </DialogContent>
+
       <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={onClose} disabled={isLoading}>
+          Cancel
+        </Button>
         <Button
           variant="contained"
           color="warning"
           onClick={handleSubmit}
-          disabled={isLoading || !amount || Number(amount) <= 0 || Number(amount) > maxDiscount}
-          startIcon={isLoading ? <CircularProgress size={20} /> : null}
+          disabled={isLoading || !formData.amount}
+          startIcon={
+            isLoading ? <CircularProgress size={20} /> : <DiscountIcon />
+          }
         >
           {isLoading ? "Applying..." : "Apply Discount"}
         </Button>

@@ -30,14 +30,11 @@ import {
 import {
   Add as AddIcon,
   Delete as DeleteIcon,
-  Edit as EditIcon,
   LocalShipping as ShipperIcon,
   AddCircle as AddBalanceIcon,
-  RemoveCircle as MinusBalanceIcon,
   Visibility as ViewIcon,
   FilterList as FilterIcon,
   Phone as PhoneIcon,
-  Business as BusinessIcon,
   Discount as DiscountIcon,
 } from "@mui/icons-material";
 import {
@@ -46,7 +43,6 @@ import {
   reset,
 } from "../../redux/features/shipper/shipperSlice";
 import AddShipperBalanceModal from "./AddShipperBalanceModal";
-import MinusShipperBalanceModal from "./MinusShipperBalanceModal";
 import ShipperDiscountModal from "./ShipperDiscountModal";
 import ShipperTransactionHistory from "./ShipperTransactionHistory";
 
@@ -62,7 +58,6 @@ const ShipperList = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [deleteId, setDeleteId] = useState(null);
   const [addBalanceShipper, setAddBalanceShipper] = useState(null);
-  const [minusBalanceShipper, setMinusBalanceShipper] = useState(null);
   const [discountShipper, setDiscountShipper] = useState(null);
   const [viewHistoryShipper, setViewHistoryShipper] = useState(null);
 
@@ -77,25 +72,20 @@ const ShipperList = () => {
 
   // Filter shippers
   const filteredShippers = (shippers || []).filter((s) => {
+    if (!s) return false;
     if (!searchTerm) return true;
     const search = searchTerm.toLowerCase();
     return (
       s.username?.toLowerCase().includes(search) ||
-      s.name?.toLowerCase().includes(search) ||
-      s.companyName?.toLowerCase().includes(search) ||
       s.phone?.includes(search)
     );
   });
 
-  // Calculate totals
+  // Calculate total owed
   const totalOwed = filteredShippers.reduce((sum, s) => {
+    if (!s) return sum;
     const bal = Number(s.balance || 0);
     return bal > 0 ? sum + bal : sum;
-  }, 0);
-
-  const totalOverpaid = filteredShippers.reduce((sum, s) => {
-    const bal = Number(s.balance || 0);
-    return bal < 0 ? sum + Math.abs(bal) : sum;
   }, 0);
 
   // Handle delete
@@ -113,12 +103,6 @@ const ShipperList = () => {
       return (
         <Typography color="error.main" fontWeight="medium">
           Rs {bal.toLocaleString()}
-        </Typography>
-      );
-    } else if (bal < 0) {
-      return (
-        <Typography color="success.main" fontWeight="medium">
-          Rs {Math.abs(bal).toLocaleString()}
         </Typography>
       );
     }
@@ -154,7 +138,7 @@ const ShipperList = () => {
 
       {/* Summary Cards */}
       <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid item xs={12} sm={4}>
+        <Grid item xs={12} sm={6}>
           <Card>
             <CardContent>
               <Typography variant="body2" color="text.secondary">
@@ -164,7 +148,7 @@ const ShipperList = () => {
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={12} sm={4}>
+        <Grid item xs={12} sm={6}>
           <Card sx={{ bgcolor: "error.light" }}>
             <CardContent>
               <Typography variant="body2" color="error.contrastText">
@@ -176,25 +160,13 @@ const ShipperList = () => {
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={12} sm={4}>
-          <Card sx={{ bgcolor: "success.light" }}>
-            <CardContent>
-              <Typography variant="body2" color="success.contrastText">
-                Overpaid / Advance
-              </Typography>
-              <Typography variant="h4" color="success.contrastText">
-                Rs {totalOverpaid.toLocaleString()}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
       </Grid>
 
       {/* Search */}
       <Box sx={{ mb: 2 }}>
         <TextField
           fullWidth
-          placeholder="Search by name, company, or phone..."
+          placeholder="Search by name or phone..."
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           InputProps={{
@@ -209,10 +181,8 @@ const ShipperList = () => {
         <Table>
           <TableHead>
             <TableRow sx={{ bgcolor: "grey.100" }}>
-              <TableCell>Shipper</TableCell>
-              <TableCell>Contact</TableCell>
-              <TableCell>Type</TableCell>
-              <TableCell align="center">Shipments</TableCell>
+              <TableCell>Shipper Name</TableCell>
+              <TableCell>Phone</TableCell>
               <TableCell align="right">Balance</TableCell>
               <TableCell align="center">Status</TableCell>
               <TableCell align="center">Actions</TableCell>
@@ -221,13 +191,13 @@ const ShipperList = () => {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} align="center" sx={{ py: 5 }}>
+                <TableCell colSpan={5} align="center" sx={{ py: 5 }}>
                   <CircularProgress />
                 </TableCell>
               </TableRow>
             ) : filteredShippers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} align="center" sx={{ py: 5 }}>
+                <TableCell colSpan={5} align="center" sx={{ py: 5 }}>
                   <Typography color="text.secondary">No shippers found</Typography>
                 </TableCell>
               </TableRow>
@@ -235,19 +205,9 @@ const ShipperList = () => {
               filteredShippers.map((shipper) => (
                 <TableRow key={shipper._id} hover>
                   <TableCell>
-                    <Box>
-                      <Typography variant="body1" fontWeight="medium">
-                        {shipper.username}
-                      </Typography>
-                      {shipper.companyName && (
-                        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                          <BusinessIcon fontSize="small" color="action" />
-                          <Typography variant="caption" color="text.secondary">
-                            {shipper.companyName}
-                          </Typography>
-                        </Box>
-                      )}
-                    </Box>
+                    <Typography variant="body1" fontWeight="medium">
+                      {shipper.username}
+                    </Typography>
                   </TableCell>
                   <TableCell>
                     <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
@@ -255,88 +215,55 @@ const ShipperList = () => {
                       <Typography variant="body2">{shipper.phone || "N/A"}</Typography>
                     </Box>
                   </TableCell>
-                  <TableCell>
-                    <Chip
-                      label={shipper.shipperType || "individual"}
-                      size="small"
-                      color={
-                        shipper.shipperType === "company"
-                          ? "primary"
-                          : shipper.shipperType === "logistics"
-                          ? "secondary"
-                          : "default"
-                      }
-                      variant="outlined"
-                    />
-                  </TableCell>
-                  <TableCell align="center">
-                    <Chip
-                      icon={<ShipperIcon fontSize="small" />}
-                      label={shipper.totalShipments || 0}
-                      size="small"
-                      color="info"
-                    />
-                  </TableCell>
                   <TableCell align="right">{formatBalance(shipper.balance)}</TableCell>
                   <TableCell align="center">
                     {Number(shipper.balance || 0) > 0 ? (
                       <Chip label="You Owe" color="error" size="small" />
-                    ) : Number(shipper.balance || 0) < 0 ? (
-                      <Chip label="Overpaid" color="success" size="small" />
                     ) : (
                       <Chip label="Settled" color="default" size="small" />
                     )}
                   </TableCell>
-                <TableCell align="center">
-  <Box sx={{ display: "flex", gap: 0.5, justifyContent: "center" }}>
-    <Tooltip title="Pay Shipper (Add Balance)">
-      <IconButton
-        size="small"
-        color="error"
-        onClick={() => setAddBalanceShipper(shipper)}
-      >
-        <AddBalanceIcon fontSize="small" />
-      </IconButton>
-    </Tooltip>
-    {/* <Tooltip title="Receive from Shipper (Minus Balance)">
-      <IconButton
-        size="small"
-        color="success"
-        onClick={() => setMinusBalanceShipper(shipper)}
-      >
-        <MinusBalanceIcon fontSize="small" />
-      </IconButton>
-    </Tooltip> */}
-    <Tooltip title="Apply Discount">
-      <IconButton
-        size="small"
-        color="warning"
-        onClick={() => setDiscountShipper(shipper)}
-        disabled={Number(shipper.balance || 0) <= 0}
-      >
-        <DiscountIcon fontSize="small" />
-      </IconButton>
-    </Tooltip>
-    <Tooltip title="View History">
-      <IconButton
-        size="small"
-        color="info"
-        onClick={() => setViewHistoryShipper(shipper)}
-      >
-        <ViewIcon fontSize="small" />
-      </IconButton>
-    </Tooltip>
-    <Tooltip title="Delete">
-      <IconButton
-        size="small"
-        color="error"
-        onClick={() => setDeleteId(shipper._id)}
-      >
-        <DeleteIcon fontSize="small" />
-      </IconButton>
-    </Tooltip>
-  </Box>
-</TableCell>
+                  <TableCell align="center">
+                    <Box sx={{ display: "flex", gap: 0.5, justifyContent: "center" }}>
+                      <Tooltip title="Pay Shipper (Add Balance)">
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => setAddBalanceShipper(shipper)}
+                        >
+                          <AddBalanceIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Apply Discount">
+                        <IconButton
+                          size="small"
+                          color="warning"
+                          onClick={() => setDiscountShipper(shipper)}
+                          disabled={Number(shipper.balance || 0) <= 0}
+                        >
+                          <DiscountIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="View History">
+                        <IconButton
+                          size="small"
+                          color="info"
+                          onClick={() => setViewHistoryShipper(shipper)}
+                        >
+                          <ViewIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Delete">
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => setDeleteId(shipper._id)}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </Box>
+                  </TableCell>
                 </TableRow>
               ))
             )}
@@ -365,13 +292,6 @@ const ShipperList = () => {
         open={!!addBalanceShipper}
         onClose={() => setAddBalanceShipper(null)}
         shipper={addBalanceShipper}
-      />
-
-      {/* Minus Balance Modal */}
-      <MinusShipperBalanceModal
-        open={!!minusBalanceShipper}
-        onClose={() => setMinusBalanceShipper(null)}
-        shipper={minusBalanceShipper}
       />
 
       {/* Discount Modal */}

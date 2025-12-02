@@ -1,31 +1,40 @@
 // redux/features/shipper/shipperSlice.js
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import shipperService from "./shipperService";
-import { toast } from "react-toastify";
 
 const initialState = {
   shippers: [],
   shipper: null,
   transactionHistory: [],
-  isError: false,
-  isSuccess: false,
   isLoading: false,
-  message: ""
+  isSuccess: false,
+  isError: false,
+  message: "",
 };
+
+// Create shipper
+export const createShipper = createAsyncThunk(
+  "shipper/create",
+  async (shipperData, thunkAPI) => {
+    try {
+      return await shipperService.createShipper(shipperData);
+    } catch (error) {
+      const message =
+        error.response?.data?.message || error.message || "Failed to create shipper";
+      return thunkAPI.rejectWithValue(message);
+    }
+  }
+);
 
 // Get all shippers
 export const getShippers = createAsyncThunk(
-  "shippers/getAll",
+  "shipper/getAll",
   async (_, thunkAPI) => {
     try {
-      return await shipperService.getShippers();
+      return await shipperService.getAllShippers();
     } catch (error) {
       const message =
-        (error.response &&
-          error.response.data &&
-          error.response.data.message) ||
-        error.message ||
-        error.toString();
+        error.response?.data?.message || error.message || "Failed to fetch shippers";
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -33,38 +42,13 @@ export const getShippers = createAsyncThunk(
 
 // Get single shipper
 export const getShipper = createAsyncThunk(
-  "shippers/getOne",
+  "shipper/get",
   async (id, thunkAPI) => {
     try {
       return await shipperService.getShipper(id);
     } catch (error) {
       const message =
-        (error.response &&
-          error.response.data &&
-          error.response.data.message) ||
-        error.message ||
-        error.toString();
-      return thunkAPI.rejectWithValue(message);
-    }
-  }
-);
-
-// Create shipper
-export const createShipper = createAsyncThunk(
-  "shippers/create",
-  async (shipperData, thunkAPI) => {
-    try {
-      const response = await shipperService.createShipper(shipperData);
-      toast.success("Shipper added successfully");
-      return response;
-    } catch (error) {
-      const message =
-        (error.response &&
-          error.response.data &&
-          error.response.data.message) ||
-        error.message ||
-        error.toString();
-      toast.error(message);
+        error.response?.data?.message || error.message || "Failed to fetch shipper";
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -72,20 +56,13 @@ export const createShipper = createAsyncThunk(
 
 // Update shipper
 export const updateShipper = createAsyncThunk(
-  "shippers/update",
-  async ({ id, shipperData }, thunkAPI) => {
+  "shipper/update",
+  async ({ id, data }, thunkAPI) => {
     try {
-      const response = await shipperService.updateShipper(id, shipperData);
-      toast.success("Shipper updated successfully");
-      return response;
+      return await shipperService.updateShipper(id, data);
     } catch (error) {
       const message =
-        (error.response &&
-          error.response.data &&
-          error.response.data.message) ||
-        error.message ||
-        error.toString();
-      toast.error(message);
+        error.response?.data?.message || error.message || "Failed to update shipper";
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -93,20 +70,14 @@ export const updateShipper = createAsyncThunk(
 
 // Delete shipper
 export const deleteShipper = createAsyncThunk(
-  "shippers/delete",
+  "shipper/delete",
   async (id, thunkAPI) => {
     try {
       await shipperService.deleteShipper(id);
-      toast.success("Shipper deleted successfully");
       return id;
     } catch (error) {
       const message =
-        (error.response &&
-          error.response.data &&
-          error.response.data.message) ||
-        error.message ||
-        error.toString();
-      toast.error(message);
+        error.response?.data?.message || error.message || "Failed to delete shipper";
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -114,59 +85,13 @@ export const deleteShipper = createAsyncThunk(
 
 // Add balance (pay shipper)
 export const addShipperBalance = createAsyncThunk(
-  "shippers/addBalance",
-  async ({ id, formData }, thunkAPI) => {
+  "shipper/addBalance",
+  async ({ id, data }, thunkAPI) => {
     try {
-      const response = await shipperService.addBalance(id, formData);
-      toast.success(response.message || "Shipping fare recorded");
-      return response;
+      return await shipperService.addBalance(id, data);
     } catch (error) {
       const message =
-        (error.response &&
-          error.response.data &&
-          error.response.data.message) ||
-        error.message ||
-        error.toString();
-      toast.error(message);
-      return thunkAPI.rejectWithValue(message);
-    }
-  }
-);
-
-// Minus balance (shipper pays you)
-export const minusShipperBalance = createAsyncThunk(
-  "shippers/minusBalance",
-  async ({ id, formData }, thunkAPI) => {
-    try {
-      const response = await shipperService.minusBalance(id, formData);
-      toast.success(response.message || "Payment received from shipper");
-      return response;
-    } catch (error) {
-      const message =
-        (error.response &&
-          error.response.data &&
-          error.response.data.message) ||
-        error.message ||
-        error.toString();
-      toast.error(message);
-      return thunkAPI.rejectWithValue(message);
-    }
-  }
-);
-
-// Get transaction history
-export const getShipperTransactions = createAsyncThunk(
-  "shippers/getTransactions",
-  async (id, thunkAPI) => {
-    try {
-      return await shipperService.getTransactionHistory(id);
-    } catch (error) {
-      const message =
-        (error.response &&
-          error.response.data &&
-          error.response.data.message) ||
-        error.message ||
-        error.toString();
+        error.response?.data?.message || error.message || "Failed to add balance";
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -174,20 +99,27 @@ export const getShipperTransactions = createAsyncThunk(
 
 // Apply discount
 export const applyShipperDiscount = createAsyncThunk(
-  "shippers/applyDiscount",
-  async ({ id, discountData }, thunkAPI) => {
+  "shipper/discount",
+  async ({ id, data }, thunkAPI) => {
     try {
-      const response = await shipperService.applyDiscount(id, discountData);
-      toast.success(response.message || "Discount applied successfully");
-      return response;
+      return await shipperService.applyDiscount(id, data);
     } catch (error) {
       const message =
-        (error.response &&
-          error.response.data &&
-          error.response.data.message) ||
-        error.message ||
-        error.toString();
-      toast.error(message);
+        error.response?.data?.message || error.message || "Failed to apply discount";
+      return thunkAPI.rejectWithValue(message);
+    }
+  }
+);
+
+// Get transaction history
+export const getShipperTransactions = createAsyncThunk(
+  "shipper/getTransactions",
+  async (id, thunkAPI) => {
+    try {
+      return await shipperService.getTransactionHistory(id);
+    } catch (error) {
+      const message =
+        error.response?.data?.message || error.message || "Failed to fetch transactions";
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -197,44 +129,20 @@ const shipperSlice = createSlice({
   name: "shipper",
   initialState,
   reducers: {
-    reset: state => initialState,
-    clearShipper: state => {
+    reset: (state) => {
+      state.isLoading = false;
+      state.isSuccess = false;
+      state.isError = false;
+      state.message = "";
+    },
+    clearShipper: (state) => {
       state.shipper = null;
-      state.transactionHistory = [];
-    }
+    },
   },
-  extraReducers: builder => {
+  extraReducers: (builder) => {
     builder
-      // Get all shippers
-      .addCase(getShippers.pending, state => {
-        state.isLoading = true;
-      })
-      .addCase(getShippers.fulfilled, (state, action) => {
-        state.isLoading = false;
-        state.isSuccess = true;
-        state.shippers = action.payload;
-      })
-      .addCase(getShippers.rejected, (state, action) => {
-        state.isLoading = false;
-        state.isError = true;
-        state.message = action.payload;
-      })
-      // Get single shipper
-      .addCase(getShipper.pending, state => {
-        state.isLoading = true;
-      })
-      .addCase(getShipper.fulfilled, (state, action) => {
-        state.isLoading = false;
-        state.isSuccess = true;
-        state.shipper = action.payload;
-      })
-      .addCase(getShipper.rejected, (state, action) => {
-        state.isLoading = false;
-        state.isError = true;
-        state.message = action.payload;
-      })
-      // Create shipper
-      .addCase(createShipper.pending, state => {
+      // Create
+      .addCase(createShipper.pending, (state) => {
         state.isLoading = true;
       })
       .addCase(createShipper.fulfilled, (state, action) => {
@@ -247,34 +155,59 @@ const shipperSlice = createSlice({
         state.isError = true;
         state.message = action.payload;
       })
-      // Update shipper
-      .addCase(updateShipper.pending, state => {
+      // Get all
+      .addCase(getShippers.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(getShippers.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.shippers = action.payload;
+      })
+      .addCase(getShippers.rejected, (state, action) => {
+        state.isLoading = false;
+        state.isError = true;
+        state.message = action.payload;
+      })
+      // Get single
+      .addCase(getShipper.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(getShipper.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.shipper = action.payload;
+      })
+      .addCase(getShipper.rejected, (state, action) => {
+        state.isLoading = false;
+        state.isError = true;
+        state.message = action.payload;
+      })
+      // Update
+      .addCase(updateShipper.pending, (state) => {
         state.isLoading = true;
       })
       .addCase(updateShipper.fulfilled, (state, action) => {
         state.isLoading = false;
         state.isSuccess = true;
         const index = state.shippers.findIndex(
-          s => s._id === action.payload.shipper._id
+          (s) => s._id === action.payload.shipper._id
         );
         if (index !== -1) {
           state.shippers[index] = action.payload.shipper;
         }
-        state.shipper = action.payload.shipper;
       })
       .addCase(updateShipper.rejected, (state, action) => {
         state.isLoading = false;
         state.isError = true;
         state.message = action.payload;
       })
-      // Delete shipper
-      .addCase(deleteShipper.pending, state => {
+      // Delete
+      .addCase(deleteShipper.pending, (state) => {
         state.isLoading = true;
       })
       .addCase(deleteShipper.fulfilled, (state, action) => {
         state.isLoading = false;
         state.isSuccess = true;
-        state.shippers = state.shippers.filter(s => s._id !== action.payload);
+        state.shippers = state.shippers.filter((s) => s._id !== action.payload);
       })
       .addCase(deleteShipper.rejected, (state, action) => {
         state.isLoading = false;
@@ -282,80 +215,57 @@ const shipperSlice = createSlice({
         state.message = action.payload;
       })
       // Add balance
-      .addCase(addShipperBalance.pending, state => {
+      .addCase(addShipperBalance.pending, (state) => {
         state.isLoading = true;
       })
       .addCase(addShipperBalance.fulfilled, (state, action) => {
         state.isLoading = false;
         state.isSuccess = true;
         const index = state.shippers.findIndex(
-          s => s._id === action.payload.shipper._id
+          (s) => s._id === action.payload.shipper._id
         );
         if (index !== -1) {
           state.shippers[index] = action.payload.shipper;
         }
-        state.shipper = action.payload.shipper;
       })
       .addCase(addShipperBalance.rejected, (state, action) => {
         state.isLoading = false;
         state.isError = true;
         state.message = action.payload;
       })
-      // Minus balance
-      .addCase(minusShipperBalance.pending, state => {
-        state.isLoading = true;
-      })
-      .addCase(minusShipperBalance.fulfilled, (state, action) => {
-        state.isLoading = false;
-        state.isSuccess = true;
-        const index = state.shippers.findIndex(
-          s => s._id === action.payload.shipper._id
-        );
-        if (index !== -1) {
-          state.shippers[index] = action.payload.shipper;
-        }
-        state.shipper = action.payload.shipper;
-      })
-      .addCase(minusShipperBalance.rejected, (state, action) => {
-        state.isLoading = false;
-        state.isError = true;
-        state.message = action.payload;
-      })
-      // Get transactions
-      .addCase(getShipperTransactions.pending, state => {
-        state.isLoading = true;
-      })
-      .addCase(getShipperTransactions.fulfilled, (state, action) => {
-        state.isLoading = false;
-        state.isSuccess = true;
-        state.transactionHistory = action.payload.transactionHistory;
-      })
-      .addCase(getShipperTransactions.rejected, (state, action) => {
-        state.isLoading = false;
-        state.isError = true;
-        state.message = action.payload;
-      })
       // Apply discount
-      .addCase(applyShipperDiscount.pending, state => {
+      .addCase(applyShipperDiscount.pending, (state) => {
         state.isLoading = true;
       })
       .addCase(applyShipperDiscount.fulfilled, (state, action) => {
         state.isLoading = false;
         state.isSuccess = true;
         const index = state.shippers.findIndex(
-          s => s._id === action.payload.shipper._id
+          (s) => s._id === action.payload.shipper._id
         );
         if (index !== -1) {
           state.shippers[index] = action.payload.shipper;
         }
-        state.shipper = action.payload.shipper;
       })
       .addCase(applyShipperDiscount.rejected, (state, action) => {
         state.isLoading = false;
         state.isError = true;
         state.message = action.payload;
+      })
+      // Get transactions
+      .addCase(getShipperTransactions.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(getShipperTransactions.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.transactionHistory = action.payload.transactionHistory;
+      })
+      .addCase(getShipperTransactions.rejected, (state, action) => {
+        state.isLoading = false;
+        state.isError = true;
+        state.message = action.payload;
       });
-  }
+  },
 });
 
 export const { reset, clearShipper } = shipperSlice.actions;

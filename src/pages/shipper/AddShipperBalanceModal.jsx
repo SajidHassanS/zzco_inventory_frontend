@@ -1,4 +1,4 @@
-// components/Models/AddShipperBalanceModal.jsx
+// pages/Shipper/AddShipperBalanceModal.jsx
 import React, { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -13,206 +13,169 @@ import {
   Select,
   MenuItem,
   Grid,
-  Alert,
-  CircularProgress,
   Typography,
-  Divider,
+  CircularProgress,
+  Alert,
   Box,
-  Paper,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
 } from "@mui/material";
-import {
-  LocalShipping as ShipperIcon,
-  ExpandMore as ExpandMoreIcon,
-} from "@mui/icons-material";
+import { LocalShipping as ShipperIcon } from "@mui/icons-material";
 import { addShipperBalance, getShippers } from "../../redux/features/shipper/shipperSlice";
-import { getBanks } from "../../redux/features/Bank/bankSlice";
 
 const PAYMENT_METHODS = [
-  { value: "cash", label: "Cash" },
-  { value: "online", label: "Online (Bank Transfer)" },
-  { value: "cheque", label: "Cheque" },
-  { value: "owncheque", label: "Own Cheque (Immediate)" },
-  { value: "credit", label: "Credit (Ledger Only)" },
+  { value: "Cash", label: "Cash" },
+  { value: "Online", label: "Online (Bank Transfer)" },
+  { value: "Cheque", label: "Cheque (Pending)" },
+  { value: "Owncheque", label: "Own Cheque (Immediate)" },
+  { value: "Credit", label: "Credit (Ledger Only - No Cash Deduction)" },
 ];
 
 const AddShipperBalanceModal = ({ open, onClose, shipper }) => {
   const dispatch = useDispatch();
 
+  const { banks } = useSelector((state) => state.bank || { banks: [] });
   const { isLoading } = useSelector((state) => state.shipper);
-  const { banks } = useSelector((state) => state.bank);
 
   // Form state
   const [formData, setFormData] = useState({
     amount: "",
-    paymentMethod: "cash",
+    paymentMethod: "Cash",
+    description: "",
     bankId: "",
     chequeDate: "",
-    description: "",
-    // Shipment details
-    fromLocation: "",
-    toLocation: "",
-    vehicleNumber: "",
-    driverName: "",
-    driverPhone: "",
-    biltyNumber: "",
-    weight: "",
-    shipmentDate: new Date().toISOString().split("T")[0],
   });
-  const [image, setImage] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
-  const [bankBalanceWarning, setBankBalanceWarning] = useState("");
-
-  // Load banks
-  useEffect(() => {
-    if (open) {
-      dispatch(getBanks());
-    }
-  }, [open, dispatch]);
+  const [error, setError] = useState("");
 
   // Reset form when modal opens
   useEffect(() => {
     if (open) {
       setFormData({
         amount: "",
-        paymentMethod: "cash",
+        paymentMethod: "Cash",
+        description: "",
         bankId: "",
         chequeDate: "",
-        description: "",
-        fromLocation: "",
-        toLocation: "",
-        vehicleNumber: "",
-        driverName: "",
-        driverPhone: "",
-        biltyNumber: "",
-        weight: "",
-        shipmentDate: new Date().toISOString().split("T")[0],
       });
-      setImage(null);
-      setImagePreview(null);
-      setBankBalanceWarning("");
+      setError("");
     }
   }, [open]);
-
-  // Check bank balance
-  useEffect(() => {
-    if ((formData.paymentMethod === "online" || formData.paymentMethod === "owncheque") && formData.bankId && formData.amount) {
-      const bank = banks.find((b) => b._id === formData.bankId);
-      const amt = Number(formData.amount);
-      if (bank && amt > Number(bank.balance || 0)) {
-        setBankBalanceWarning(
-          `⚠️ Insufficient balance! "${bank.bankName}" has only Rs ${Number(bank.balance || 0).toLocaleString()}`
-        );
-      } else {
-        setBankBalanceWarning("");
-      }
-    } else {
-      setBankBalanceWarning("");
-    }
-  }, [formData.amount, formData.bankId, formData.paymentMethod, banks]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      setImage(file);
-      setImagePreview(URL.createObjectURL(file));
-    }
+    setError("");
   };
 
   const handleSubmit = async () => {
-    if (!formData.amount || Number(formData.amount) <= 0) return;
-
-    const data = new FormData();
-    data.append("amount", formData.amount);
-    data.append("paymentMethod", formData.paymentMethod);
-    data.append("description", formData.description || `Shipping fare to ${shipper?.username}`);
-
-    if (formData.paymentMethod === "online" || formData.paymentMethod === "owncheque") {
-      data.append("bankId", formData.bankId);
+    const amount = parseFloat(formData.amount);
+    if (!amount || amount <= 0) {
+      setError("Please enter a valid amount");
+      return;
     }
 
-    if (formData.paymentMethod === "cheque" || formData.paymentMethod === "owncheque") {
-      data.append("chequeDate", formData.chequeDate);
+    const method = formData.paymentMethod.toLowerCase();
+    const currentBalance = Number(shipper?.balance || 0);
+
+    // Check if paying more than owed (except for credit)
+    if (method !== "credit" && amount > currentBalance) {
+      setError(`Cannot pay more than what you owe (Rs ${currentBalance.toLocaleString()})`);
+      return;
     }
 
-    // Shipment details
-    if (formData.fromLocation) data.append("fromLocation", formData.fromLocation);
-    if (formData.toLocation) data.append("toLocation", formData.toLocation);
-    if (formData.vehicleNumber) data.append("vehicleNumber", formData.vehicleNumber);
-    if (formData.driverName) data.append("driverName", formData.driverName);
-    if (formData.driverPhone) data.append("driverPhone", formData.driverPhone);
-    if (formData.biltyNumber) data.append("biltyNumber", formData.biltyNumber);
-    if (formData.weight) data.append("weight", formData.weight);
-    if (formData.shipmentDate) data.append("shipmentDate", formData.shipmentDate);
-
-    if (image) {
-      data.append("image", image);
+    // Validate bank for online/owncheque
+    if ((method === "online" || method === "owncheque") && !formData.bankId) {
+      setError("Please select a bank");
+      return;
     }
 
-    const result = await dispatch(addShipperBalance({ id: shipper._id, formData: data }));
-    if (addShipperBalance.fulfilled.match(result)) {
+    // Validate cheque date for cheque/owncheque
+    if ((method === "cheque" || method === "owncheque") && !formData.chequeDate) {
+      setError("Please select a cheque date");
+      return;
+    }
+
+    try {
+      await dispatch(
+        addShipperBalance({
+          id: shipper._id,
+          data: {
+            amount: formData.amount,
+            paymentMethod: formData.paymentMethod,
+            description: formData.description || `Payment to ${shipper.username}`,
+            bankId: formData.bankId || undefined,
+            chequeDate: formData.chequeDate || undefined,
+          },
+        })
+      ).unwrap();
+
       dispatch(getShippers());
       onClose();
+    } catch (err) {
+      setError(err.message || "Failed to process payment");
     }
   };
 
-  const selectedBank = banks.find((b) => b._id === formData.bankId);
+  const method = formData.paymentMethod.toLowerCase();
+  const needsBank = method === "online" || method === "owncheque";
+  const needsChequeDate = method === "cheque" || method === "owncheque";
+  const currentBalance = Number(shipper?.balance || 0);
+
+  if (!shipper) return null;
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-        <ShipperIcon color="error" />
-        Pay Shipper - {shipper?.username}
+        <ShipperIcon color="primary" />
+        Pay Shipper: {shipper.username}
       </DialogTitle>
-      <DialogContent>
-        <Alert severity="info" sx={{ mb: 2, mt: 1 }}>
-          <strong>Pay Shipper:</strong> This will INCREASE shipper's balance (you owe them more) and DEDUCT from your cash/bank.
-        </Alert>
 
-        {/* Current Balance */}
-        <Paper sx={{ p: 2, mb: 2, bgcolor: "grey.50" }}>
+      <DialogContent>
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
+
+        <Box sx={{ mb: 2, p: 2, bgcolor: "grey.100", borderRadius: 1 }}>
           <Typography variant="body2" color="text.secondary">
-            Current Balance
+            You Owe This Shipper
           </Typography>
-          <Typography
-            variant="h5"
-            color={Number(shipper?.balance || 0) > 0 ? "error.main" : "success.main"}
-          >
-            Rs {Math.abs(Number(shipper?.balance || 0)).toLocaleString()}
-            <Typography component="span" variant="body2" sx={{ ml: 1 }}>
-              {Number(shipper?.balance || 0) > 0 ? "(You Owe)" : Number(shipper?.balance || 0) < 0 ? "(Overpaid)" : "(Settled)"}
+          <Typography variant="h5" color={currentBalance > 0 ? "error.main" : "success.main"}>
+            Rs {currentBalance.toLocaleString()}
+          </Typography>
+          {currentBalance <= 0 && (
+            <Typography variant="caption" color="success.main">
+              Balance is settled
             </Typography>
-          </Typography>
-        </Paper>
+          )}
+        </Box>
 
         <Grid container spacing={2}>
-          <Grid item xs={12} sm={6}>
+          {/* Amount */}
+          <Grid item xs={12}>
             <TextField
               fullWidth
-              label="Amount *"
+              label="Payment Amount *"
               name="amount"
               type="number"
               value={formData.amount}
               onChange={handleInputChange}
-              inputProps={{ min: 1 }}
+              placeholder="Enter amount to pay"
+              InputProps={{
+                startAdornment: <Typography sx={{ mr: 1 }}>Rs</Typography>,
+              }}
+              helperText={method !== "credit" ? `Max: Rs ${currentBalance.toLocaleString()}` : "Credit has no limit"}
             />
           </Grid>
 
-          <Grid item xs={12} sm={6}>
+          {/* Payment Method */}
+          <Grid item xs={12}>
             <FormControl fullWidth>
-              <InputLabel>Payment Method</InputLabel>
+              <InputLabel>Payment Method *</InputLabel>
               <Select
                 name="paymentMethod"
                 value={formData.paymentMethod}
                 onChange={handleInputChange}
-                label="Payment Method"
+                label="Payment Method *"
               >
                 {PAYMENT_METHODS.map((pm) => (
                   <MenuItem key={pm.value} value={pm.value}>
@@ -223,33 +186,30 @@ const AddShipperBalanceModal = ({ open, onClose, shipper }) => {
             </FormControl>
           </Grid>
 
-          {(formData.paymentMethod === "online" || formData.paymentMethod === "owncheque") && (
-            <Grid item xs={12} sm={6}>
-              <FormControl fullWidth required>
-                <InputLabel>Select Bank</InputLabel>
+          {/* Bank Selection (for Online/Own Cheque) */}
+          {needsBank && (
+            <Grid item xs={12}>
+              <FormControl fullWidth>
+                <InputLabel>Select Bank *</InputLabel>
                 <Select
                   name="bankId"
                   value={formData.bankId}
                   onChange={handleInputChange}
-                  label="Select Bank"
+                  label="Select Bank *"
                 >
                   {(banks || []).map((bank) => (
                     <MenuItem key={bank._id} value={bank._id}>
-                      {bank.bankName} (Rs {Number(bank.balance || 0).toLocaleString()})
+                      {bank.bankName} - Rs {Number(bank.totalBalance || bank.balance || 0).toLocaleString()}
                     </MenuItem>
                   ))}
                 </Select>
               </FormControl>
-              {bankBalanceWarning && (
-                <Alert severity="warning" sx={{ mt: 1 }}>
-                  {bankBalanceWarning}
-                </Alert>
-              )}
             </Grid>
           )}
 
-          {(formData.paymentMethod === "cheque" || formData.paymentMethod === "owncheque") && (
-            <Grid item xs={12} sm={6}>
+          {/* Cheque Date (for Cheque/Own Cheque) */}
+          {needsChequeDate && (
+            <Grid item xs={12}>
               <TextField
                 fullWidth
                 label="Cheque Date *"
@@ -262,6 +222,7 @@ const AddShipperBalanceModal = ({ open, onClose, shipper }) => {
             </Grid>
           )}
 
+          {/* Description */}
           <Grid item xs={12}>
             <TextField
               fullWidth
@@ -269,160 +230,50 @@ const AddShipperBalanceModal = ({ open, onClose, shipper }) => {
               name="description"
               value={formData.description}
               onChange={handleInputChange}
+              placeholder="Optional description"
               multiline
               rows={2}
-              placeholder="e.g., Shipping from Lahore to Karachi"
             />
           </Grid>
-
-          {/* Shipment Details Accordion */}
-          <Grid item xs={12}>
-            <Accordion>
-              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Typography>Shipment Details (Optional)</Typography>
-              </AccordionSummary>
-              <AccordionDetails>
-                <Grid container spacing={2}>
-                  <Grid item xs={12} sm={6}>
-                    <TextField
-                      fullWidth
-                      label="From Location"
-                      name="fromLocation"
-                      value={formData.fromLocation}
-                      onChange={handleInputChange}
-                      size="small"
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField
-                      fullWidth
-                      label="To Location"
-                      name="toLocation"
-                      value={formData.toLocation}
-                      onChange={handleInputChange}
-                      size="small"
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField
-                      fullWidth
-                      label="Vehicle Number"
-                      name="vehicleNumber"
-                      value={formData.vehicleNumber}
-                      onChange={handleInputChange}
-                      size="small"
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField
-                      fullWidth
-                      label="Bilty Number"
-                      name="biltyNumber"
-                      value={formData.biltyNumber}
-                      onChange={handleInputChange}
-                      size="small"
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={4}>
-                    <TextField
-                      fullWidth
-                      label="Driver Name"
-                      name="driverName"
-                      value={formData.driverName}
-                      onChange={handleInputChange}
-                      size="small"
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={4}>
-                    <TextField
-                      fullWidth
-                      label="Driver Phone"
-                      name="driverPhone"
-                      value={formData.driverPhone}
-                      onChange={handleInputChange}
-                      size="small"
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={4}>
-                    <TextField
-                      fullWidth
-                      label="Weight (kg)"
-                      name="weight"
-                      type="number"
-                      value={formData.weight}
-                      onChange={handleInputChange}
-                      size="small"
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <TextField
-                      fullWidth
-                      label="Shipment Date"
-                      name="shipmentDate"
-                      type="date"
-                      value={formData.shipmentDate}
-                      onChange={handleInputChange}
-                      InputLabelProps={{ shrink: true }}
-                      size="small"
-                    />
-                  </Grid>
-                </Grid>
-              </AccordionDetails>
-            </Accordion>
-          </Grid>
-
-          {/* Image Upload */}
-          <Grid item xs={12}>
-            <input
-              accept="image/*"
-              style={{ display: "none" }}
-              id="shipper-balance-image"
-              type="file"
-              onChange={handleImageChange}
-            />
-            <label htmlFor="shipper-balance-image">
-              <Button variant="outlined" component="span" fullWidth>
-                Upload Receipt/Proof Image
-              </Button>
-            </label>
-            {imagePreview && (
-              <Box sx={{ mt: 1 }}>
-                <img
-                  src={imagePreview}
-                  alt="Preview"
-                  style={{ maxWidth: "100%", maxHeight: 150 }}
-                />
-              </Box>
-            )}
-          </Grid>
-
-          {/* Balance Preview */}
-          {formData.amount && (
-            <Grid item xs={12}>
-              <Paper sx={{ p: 2, bgcolor: "error.light" }}>
-                <Typography variant="body2" color="error.contrastText">
-                  After this payment:
-                </Typography>
-                <Typography variant="h6" color="error.contrastText">
-                  Balance: Rs {(Number(shipper?.balance || 0) + Number(formData.amount)).toLocaleString()}
-                </Typography>
-              </Paper>
-            </Grid>
-          )}
         </Grid>
+
+        {/* Info alerts based on payment method */}
+        {method === "credit" && (
+          <Alert severity="info" sx={{ mt: 2 }}>
+            Credit method only updates the ledger. No cash or bank will be deducted.
+          </Alert>
+        )}
+        {method === "cash" && (
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            This will deduct Rs {formData.amount || 0} from your cash balance.
+          </Alert>
+        )}
+        {method === "online" && (
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            This will deduct Rs {formData.amount || 0} from the selected bank.
+          </Alert>
+        )}
+        {method === "owncheque" && (
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            This will immediately deduct Rs {formData.amount || 0} from the selected bank.
+          </Alert>
+        )}
+        {method === "cheque" && (
+          <Alert severity="info" sx={{ mt: 2 }}>
+            Cheque will be recorded as pending. Bank will be deducted when cheque is cleared.
+          </Alert>
+        )}
       </DialogContent>
+
       <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={onClose} disabled={isLoading}>
+          Cancel
+        </Button>
         <Button
           variant="contained"
-          color="error"
+          color="primary"
           onClick={handleSubmit}
-          disabled={
-            isLoading ||
-            !formData.amount ||
-            ((formData.paymentMethod === "online" || formData.paymentMethod === "owncheque") && !formData.bankId) ||
-            ((formData.paymentMethod === "cheque" || formData.paymentMethod === "owncheque") && !formData.chequeDate)
-          }
+          disabled={isLoading || !formData.amount || (method !== "credit" && currentBalance <= 0)}
           startIcon={isLoading ? <CircularProgress size={20} /> : null}
         >
           {isLoading ? "Processing..." : "Pay Shipper"}
