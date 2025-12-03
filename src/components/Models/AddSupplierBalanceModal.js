@@ -28,7 +28,6 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
       setLoading(false);
       setBankBalanceWarning("");
     } else {
-      // Reset on close
       setAmount("");
       setPaymentMethod("");
       setChequeDate("");
@@ -66,7 +65,6 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
   const SUPPLIER_API_URL = `${BACKEND_URL}api/suppliers`;
   const CASH_API_URL = `${BACKEND_URL}api/cash`;
 
-  // Helper to get selected bank info
   const getSelectedBankInfo = () => {
     if (!selectedBank) return null;
     return banks.find((b) => b._id === selectedBank);
@@ -91,7 +89,6 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
       if (!image) {
         formErrors.image = "Image upload is required for online payment";
       }
-      // Check balance
       if (selectedBank) {
         const bank = banks.find((b) => b._id === selectedBank);
         if (bank && n > Number(bank.balance || 0)) {
@@ -100,13 +97,16 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
       }
     }
 
-    // Regular cheque: only require chequeDate and image (NO bank)
+    // ✅ Regular cheque: require chequeDate, image, and BANK (for supplier)
     if (paymentMethod === "cheque") {
       if (!chequeDate) {
         formErrors.chequeDate = "Cheque date is required for cheque";
       }
       if (!image) {
         formErrors.image = "Image upload is required for cheque";
+      }
+      if (!selectedBank) {
+        formErrors.selectedBank = "Bank selection is required for cheque";
       }
     }
 
@@ -121,7 +121,6 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
       if (!image) {
         formErrors.image = "Image upload is required for cheque";
       }
-      // Validate bank balance
       if (selectedBank) {
         const bank = banks.find((b) => b._id === selectedBank);
         if (bank) {
@@ -157,7 +156,6 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
 
       const method = (paymentMethod || "").toLowerCase();
 
-      // Build form data for supplier transaction
       const formData = new FormData();
       formData.append("amount", validAmount);
       formData.append("paymentMethod", method);
@@ -165,8 +163,8 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
       formData.append("desc", description?.trim() || "");
       formData.append("name", supplier?.username || "");
 
-      // Send bankId for online and owncheque
-      if (method === "online" || method === "owncheque") {
+      // ✅ Send bankId for online, cheque, and owncheque
+      if (method === "online" || method === "cheque" || method === "owncheque") {
         formData.append("bankId", selectedBank);
       }
 
@@ -182,7 +180,6 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
         formData.append("image", image);
       }
 
-      // 1) Create supplier-side transaction
       const supplierRes = await axios.post(
         `${SUPPLIER_API_URL}/${supplier._id}/transaction`,
         formData,
@@ -195,11 +192,9 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
 
       toast.success(supplierRes.data.message || "Transaction added successfully");
 
-      // 2) Mirror to cash/bank ledgers where applicable
       let ledgerRes;
 
       if (method === "cash") {
-        // Paying supplier with cash -> cash deduct
         ledgerRes = await axios.post(
           `${CASH_API_URL}/add`,
           {
@@ -210,7 +205,6 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
           { withCredentials: true }
         );
       } else if (method === "online") {
-        // Paying supplier online -> bank subtract
         ledgerRes = await axios.post(
           `${BACKEND_URL}api/banks/${selectedBank}/transaction`,
           {
@@ -221,17 +215,13 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
           { withCredentials: true }
         );
       } else if (method === "owncheque") {
-        // Own cheque - bank already deducted by backend
         toast.success("Cheque payment recorded; bank balance deducted immediately.");
       } else if (method === "cheque") {
-        // Cheque recorded as pending
         toast.info("Cheque added as pending. It will deduct once cleared.");
       } else if (method === "credit") {
-        // Credit = ledger-only
         toast.info("Credit recorded (no immediate cash/bank movement).");
       }
 
-      // Refresh banks to get updated balances
       dispatch(getBanks());
 
       if (
@@ -252,7 +242,6 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
         onSuccess?.(updatedSupplier);
         onClose?.();
 
-        // reset form
         setAmount("");
         setPaymentMethod("");
         setChequeDate("");
@@ -288,6 +277,7 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
     setImagePreview(URL.createObjectURL(file));
   };
 
+  // ✅ Updated: cheque also requires selectedBank now
   const disableSubmit =
     loading ||
     !amount ||
@@ -295,7 +285,7 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
     !paymentMethod ||
     !!bankBalanceWarning ||
     (paymentMethod === "online" && (!selectedBank || !image)) ||
-    (paymentMethod === "cheque" && (!chequeDate || !image)) ||
+    (paymentMethod === "cheque" && (!selectedBank || !chequeDate || !image)) ||
     (paymentMethod === "owncheque" && (!selectedBank || !chequeDate || !image));
 
   return (
@@ -357,7 +347,7 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
             (paymentMethod === "credit"
               ? "Credit = supplier ledger only (no bank/cash movement now)"
               : paymentMethod === "cheque"
-              ? "Pending cheque - no immediate bank deduction"
+              ? "Pending cheque - bank will be deducted when cleared"
               : paymentMethod === "owncheque"
               ? "Cheque from your bank account - immediate deduction"
               : "")
@@ -370,8 +360,8 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
           <MenuItem value="credit">Credit</MenuItem>
         </TextField>
 
-        {/* Show bank dropdown for ONLINE and OWN CHEQUE */}
-        {(paymentMethod === "online" || paymentMethod === "owncheque") && (
+        {/* ✅ Show bank dropdown for ONLINE, CHEQUE, and OWN CHEQUE */}
+        {(paymentMethod === "online" || paymentMethod === "cheque" || paymentMethod === "owncheque") && (
           <>
             <TextField
               label="Select Bank"
@@ -396,20 +386,27 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
               )}
             </TextField>
 
-            {/* Show bank balance warning */}
-            {bankBalanceWarning && (
+            {/* Show bank balance warning only for online and owncheque */}
+            {(paymentMethod === "online" || paymentMethod === "owncheque") && bankBalanceWarning && (
               <Alert severity="error" sx={{ mt: 1, mb: 1 }}>
                 {bankBalanceWarning}
               </Alert>
             )}
 
-            {/* Show selected bank balance info */}
-            {getSelectedBankInfo() && !bankBalanceWarning && (
+            {/* Show selected bank balance info for online and owncheque */}
+            {(paymentMethod === "online" || paymentMethod === "owncheque") && getSelectedBankInfo() && !bankBalanceWarning && (
               <Alert severity="info" sx={{ mt: 1, mb: 1 }}>
                 Available Balance: Rs {Number(getSelectedBankInfo().balance || 0).toLocaleString()}
                 {amount && (
                   <> → After payment: Rs {(Number(getSelectedBankInfo().balance || 0) - Number(amount || 0)).toLocaleString()}</>
                 )}
+              </Alert>
+            )}
+
+            {/* Info for pending cheque */}
+            {paymentMethod === "cheque" && getSelectedBankInfo() && (
+              <Alert severity="info" sx={{ mt: 1, mb: 1 }}>
+                Cheque will be linked to {getSelectedBankInfo().bankName}. Balance will be deducted when cheque is cleared.
               </Alert>
             )}
           </>

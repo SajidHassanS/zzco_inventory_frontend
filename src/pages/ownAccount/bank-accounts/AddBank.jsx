@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import BankList from "./BankList";
-import { Box, Button, Grid, Modal, TextField, Typography } from "@mui/material";
+import { Box, Button, CircularProgress, Grid, Modal, TextField, Typography } from "@mui/material";
 import Select from "react-select";
 import axios from "axios";
 import { toast, ToastContainer } from "react-toastify";
@@ -27,6 +27,10 @@ const Customer = () => {
   const [openModal, setOpenModal] = useState(false);
   const [openCashModal, setOpenCashModal] = useState(false);
 
+  // ✅ NEW: Loading states
+  const [bankLoading, setBankLoading] = useState(false);
+  const [cashLoading, setCashLoading] = useState(false);
+
   // Form fields
   const [bankName, setBankName] = useState("");
   const [amount, setAmount] = useState("");
@@ -40,10 +44,31 @@ const Customer = () => {
   });
 
   // Handlers to open/close modals
-  const handleOpenModal = () => setOpenModal(true);
-  const handleCloseModal = () => setOpenModal(false);
-  const handleOpenCashModal = () => setOpenCashModal(true);
-  const handleCloseCashModal = () => setOpenCashModal(false);
+  const handleOpenModal = () => {
+    setBankName("");
+    setAmount("");
+    setOpenModal(true);
+  };
+  
+  const handleCloseModal = () => {
+    if (!bankLoading) {  // ✅ Prevent closing while loading
+      setOpenModal(false);
+      setBankName("");
+      setAmount("");
+    }
+  };
+  
+  const handleOpenCashModal = () => {
+    setAmount("");
+    setOpenCashModal(true);
+  };
+  
+  const handleCloseCashModal = () => {
+    if (!cashLoading) {  // ✅ Prevent closing while loading
+      setOpenCashModal(false);
+      setAmount("");
+    }
+  };
 
   // Form change handlers
   const handleInputChange = (option) => setBankName(option?.value || "");
@@ -83,8 +108,18 @@ const Customer = () => {
     fetchCash();
   };
 
-  // Submit new bank
+  // ✅ UPDATED: Submit new bank with loading state
   const handleSubmit = async () => {
+    if (!bankName) {
+      toast.error("Please select a bank");
+      return;
+    }
+    if (!amount || Number(amount) <= 0) {
+      toast.error("Please enter a valid amount");
+      return;
+    }
+
+    setBankLoading(true);
     try {
       await api.post("/banks/add", { bankName, amount });
       toast.success("Bank added successfully!");
@@ -92,12 +127,20 @@ const Customer = () => {
       refreshAll();
     } catch (err) {
       console.error("Error adding bank:", err);
-      toast.error("Failed to add bank");
+      toast.error(err.response?.data?.message || "Failed to add bank");
+    } finally {
+      setBankLoading(false);
     }
   };
 
-  // Submit new cash entry
+  // ✅ UPDATED: Submit new cash entry with loading state
   const handleCashSubmit = async () => {
+    if (!amount || Number(amount) <= 0) {
+      toast.error("Please enter a valid amount");
+      return;
+    }
+
+    setCashLoading(true);
     try {
       const res = await api.post("/cash/add", {
         balance: amount,
@@ -108,7 +151,9 @@ const Customer = () => {
       fetchCash();
     } catch (err) {
       console.error("Error adding cash:", err);
-      toast.error("Failed to add cash");
+      toast.error(err.response?.data?.message || "Failed to add cash");
+    } finally {
+      setCashLoading(false);
     }
   };
 
@@ -194,6 +239,7 @@ const Customer = () => {
             onChange={handleInputChange}
             placeholder="Select a bank…"
             isSearchable
+            isDisabled={bankLoading}  // ✅ Disable while loading
           />
           <TextField
             fullWidth
@@ -202,10 +248,27 @@ const Customer = () => {
             type="number"
             value={amount}
             onChange={handleAmountChange}
+            disabled={bankLoading}  // ✅ Disable while loading
           />
-          <Button variant="contained" onClick={handleSubmit}>
-            Submit
-          </Button>
+          <Box sx={{ display: "flex", gap: 2, mt: 2 }}>
+            <Button 
+              variant="contained" 
+              onClick={handleSubmit}
+              disabled={bankLoading || !bankName || !amount}  // ✅ Disable while loading
+              startIcon={bankLoading ? <CircularProgress size={20} color="inherit" /> : null}
+              fullWidth
+            >
+              {bankLoading ? "Adding..." : "Submit"}
+            </Button>
+            <Button 
+              variant="outlined" 
+              onClick={handleCloseModal}
+              disabled={bankLoading}  // ✅ Disable while loading
+              fullWidth
+            >
+              Cancel
+            </Button>
+          </Box>
         </Box>
       </Modal>
 
@@ -232,10 +295,27 @@ const Customer = () => {
             type="number"
             value={amount}
             onChange={handleAmountChange}
+            disabled={cashLoading}  // ✅ Disable while loading
           />
-          <Button variant="contained" onClick={handleCashSubmit}>
-            Submit
-          </Button>
+          <Box sx={{ display: "flex", gap: 2, mt: 2 }}>
+            <Button 
+              variant="contained" 
+              onClick={handleCashSubmit}
+              disabled={cashLoading || !amount}  // ✅ Disable while loading
+              startIcon={cashLoading ? <CircularProgress size={20} color="inherit" /> : null}
+              fullWidth
+            >
+              {cashLoading ? "Adding..." : "Submit"}
+            </Button>
+            <Button 
+              variant="outlined" 
+              onClick={handleCloseCashModal}
+              disabled={cashLoading}  // ✅ Disable while loading
+              fullWidth
+            >
+              Cancel
+            </Button>
+          </Box>
         </Box>
       </Modal>
 

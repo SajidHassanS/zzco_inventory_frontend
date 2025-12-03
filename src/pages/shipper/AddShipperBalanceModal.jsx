@@ -81,8 +81,8 @@ const AddShipperBalanceModal = ({ open, onClose, shipper }) => {
       return;
     }
 
-    // Validate bank for online/owncheque
-    if ((method === "online" || method === "owncheque") && !formData.bankId) {
+    // ✅ UPDATED: Validate bank for online, cheque, and owncheque
+    if ((method === "online" || method === "cheque" || method === "owncheque") && !formData.bankId) {
       setError("Please select a bank");
       return;
     }
@@ -115,9 +115,16 @@ const AddShipperBalanceModal = ({ open, onClose, shipper }) => {
   };
 
   const method = formData.paymentMethod.toLowerCase();
-  const needsBank = method === "online" || method === "owncheque";
+  // ✅ UPDATED: Bank is needed for online, cheque, AND owncheque
+  const needsBank = method === "online" || method === "cheque" || method === "owncheque";
   const needsChequeDate = method === "cheque" || method === "owncheque";
   const currentBalance = Number(shipper?.balance || 0);
+
+  // Get selected bank info for display
+  const getSelectedBankInfo = () => {
+    if (!formData.bankId) return null;
+    return banks.find((b) => b._id === formData.bankId);
+  };
 
   if (!shipper) return null;
 
@@ -174,7 +181,16 @@ const AddShipperBalanceModal = ({ open, onClose, shipper }) => {
               <Select
                 name="paymentMethod"
                 value={formData.paymentMethod}
-                onChange={handleInputChange}
+                onChange={(e) => {
+                  handleInputChange(e);
+                  // Reset bank and cheque date when changing method
+                  setFormData((prev) => ({
+                    ...prev,
+                    paymentMethod: e.target.value,
+                    bankId: "",
+                    chequeDate: "",
+                  }));
+                }}
                 label="Payment Method *"
               >
                 {PAYMENT_METHODS.map((pm) => (
@@ -186,7 +202,7 @@ const AddShipperBalanceModal = ({ open, onClose, shipper }) => {
             </FormControl>
           </Grid>
 
-          {/* Bank Selection (for Online/Own Cheque) */}
+          {/* ✅ UPDATED: Bank Selection (for Online, Cheque, and Own Cheque) */}
           {needsBank && (
             <Grid item xs={12}>
               <FormControl fullWidth>
@@ -204,6 +220,31 @@ const AddShipperBalanceModal = ({ open, onClose, shipper }) => {
                   ))}
                 </Select>
               </FormControl>
+
+              {/* ✅ NEW: Show bank info for pending cheque */}
+              {method === "cheque" && getSelectedBankInfo() && (
+                <Alert severity="info" sx={{ mt: 1 }}>
+                  Cheque will be linked to {getSelectedBankInfo().bankName}. Balance will be deducted when cleared.
+                </Alert>
+              )}
+
+              {/* Show balance warning for online and owncheque */}
+              {(method === "online" || method === "owncheque") && getSelectedBankInfo() && formData.amount && (
+                <Alert 
+                  severity={Number(formData.amount) > Number(getSelectedBankInfo().balance || 0) ? "error" : "info"} 
+                  sx={{ mt: 1 }}
+                >
+                  {Number(formData.amount) > Number(getSelectedBankInfo().balance || 0) ? (
+                    `⚠️ Insufficient balance! Bank has Rs ${Number(getSelectedBankInfo().balance || 0).toLocaleString()}`
+                  ) : (
+                    <>
+                      Available: Rs {Number(getSelectedBankInfo().balance || 0).toLocaleString()}
+                      {" → After payment: Rs "}
+                      {(Number(getSelectedBankInfo().balance || 0) - Number(formData.amount || 0)).toLocaleString()}
+                    </>
+                  )}
+                </Alert>
+              )}
             </Grid>
           )}
 
@@ -273,7 +314,13 @@ const AddShipperBalanceModal = ({ open, onClose, shipper }) => {
           variant="contained"
           color="primary"
           onClick={handleSubmit}
-          disabled={isLoading || !formData.amount || (method !== "credit" && currentBalance <= 0)}
+          disabled={
+            isLoading || 
+            !formData.amount || 
+            (method !== "credit" && currentBalance <= 0) ||
+            (needsBank && !formData.bankId) ||
+            (needsChequeDate && !formData.chequeDate)
+          }
           startIcon={isLoading ? <CircularProgress size={20} /> : null}
         >
           {isLoading ? "Processing..." : "Pay Shipper"}

@@ -47,13 +47,13 @@ const ChequeDetails = () => {
   const [selectedImage, setSelectedImage] = useState(null);
   const [allCheques, setAllCheques] = useState([]);
 
-  // ✅ CASH OUT MODAL STATE
+  // CASH OUT MODAL STATE
   const [cashOutModalOpen, setCashOutModalOpen] = useState(false);
   const [cashOutMethod, setCashOutMethod] = useState(""); // "bank" | "cash"
   const [selectedBankId, setSelectedBankId] = useState("");
   const [processingCashOut, setProcessingCashOut] = useState(false);
 
-  // ✅ TRANSFER STATE
+  // TRANSFER STATE
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [selectedChequeForTransfer, setSelectedChequeForTransfer] = useState(null);
   const [transferTo, setTransferTo] = useState("");
@@ -116,7 +116,7 @@ const ChequeDetails = () => {
 
       all.push(c);
       
-      // ✅ Only count PENDING, NOT CANCELLED, NOT TRANSFERRED-CASHED-OUT
+      // Only count PENDING, NOT CANCELLED, NOT TRANSFERRED-CASHED-OUT
       if (c.status === false && !c.cancelled) {
         // Skip if transferred AND cashed out
         if (c.transferred && c.transferredCashedOut) {
@@ -133,7 +133,7 @@ const ChequeDetails = () => {
     setUpcomingCheques(u);
   }, [cheques]);
 
-  // ✅ UPDATED: Removed bank requirement - only check status, cancelled, transferred
+  // Check if selected cheques can be submitted
   const canSubmit = useMemo(() => {
     if (selectedCheques.length === 0) return false;
     return selectedCheques.every((id) => {
@@ -142,7 +142,7 @@ const ChequeDetails = () => {
     });
   }, [selectedCheques, allCheques]);
 
-  // ✅ UPDATED: Removed bank requirement from status change
+  // Handle checkbox status change
   const handleStatusChange = (chequeId, isChecked) => {
     const row = allCheques.find((x) => x._id === chequeId);
     if (row?.status === true || row?.cancelled || row?.transferred) return;
@@ -151,84 +151,101 @@ const ChequeDetails = () => {
     );
   };
 
-  // ✅ NEW: Open cash out modal instead of directly submitting
+  // Open cash out modal
   const handleCashOutClick = () => {
     setCashOutMethod("");
     setSelectedBankId("");
     setCashOutModalOpen(true);
   };
 
-// ✅ NEW: Process cash out with bank/cash selection
-const handleCashOutSubmit = async () => {
-  if (!cashOutMethod) {
-    toast.error("Please select Bank or Cash");
-    return;
-  }
-
-  if (cashOutMethod === "bank" && !selectedBankId) {
-    toast.error("Please select a bank");
-    return;
-  }
-
-  setProcessingCashOut(true);
-
-  try {
-    for (const chequeId of selectedCheques) {
-      const row = allCheques.find((c) => c._id === chequeId);
-      if (!row) continue;
-
-      // ✅ UPDATED: Add skipBankProcessing flag
-      await dispatch(
-        updateChequeStatus({
-          id: row._id,
-          status: true,
-          skipBankProcessing: true, // ✅ NEW LINE: Tell backend to skip automatic bank processing
-        })
-      ).unwrap();
-
-      // Add to bank or cash based on selection
-      const amount = Number(row.amount) || 0;
-      const description = `Cheque cleared: ${row.name || row.description || ""}`;
-
-      if (cashOutMethod === "bank") {
-        // Add to bank
-        await axios.post(
-          `${BACKEND_URL}api/banks/${selectedBankId}/transaction`,
-          {
-            amount,
-            type: "add",
-            description,
-          },
-          { withCredentials: true }
-        );
-      } else if (cashOutMethod === "cash") {
-        // Add to cash
-        await axios.post(
-          `${BACKEND_URL}api/cash/add`,
-          {
-            balance: amount,
-            type: "add",
-            description,
-          },
-          { withCredentials: true }
-        );
-      }
+  // ✅ FIXED: Process cash out with correct logic for Shipper/Supplier/Product cheques
+  const handleCashOutSubmit = async () => {
+    if (!cashOutMethod) {
+      toast.error("Please select Bank or Cash");
+      return;
     }
 
-    await dispatch(getPendingCheques({ status: "all" }));
-    setSelectedCheques([]);
-    setCashOutModalOpen(false);
-    setCashOutMethod("");
-    setSelectedBankId("");
-    toast.success(`Cheques cashed out to ${cashOutMethod === "bank" ? "bank" : "cash"} successfully`);
-  } catch (e) {
-    const msg = e?.message || e?.error || "Failed to cash out cheques";
-    console.error(msg);
-    toast.error(msg);
-  } finally {
-    setProcessingCashOut(false);
-  }
-};
+    if (cashOutMethod === "bank" && !selectedBankId) {
+      toast.error("Please select a bank");
+      return;
+    }
+
+    setProcessingCashOut(true);
+
+    try {
+      for (const chequeId of selectedCheques) {
+        const row = allCheques.find((c) => c._id === chequeId);
+        if (!row) continue;
+
+        // Call backend to mark as cleared (skip bank processing)
+        await dispatch(
+          updateChequeStatus({
+            id: row._id,
+            status: true,
+            skipBankProcessing: true,
+          })
+        ).unwrap();
+
+        const amount = Number(row.amount) || 0;
+        const description = `Cheque cleared: ${row.name || row.description || ""}`;
+
+        // ✅ FIXED: Include Shipper and Product as "pay out" types
+        // Supplier/Shipper/Product = You're PAYING them = money goes OUT = subtract
+        // Customer/Sale = They're PAYING you = money comes IN = add
+        const isPayOutCheque = row.type === "Supplier" || row.type === "Shipper" || row.type === "Product";
+        const transactionType = isPayOutCheque ? "subtract" : "add";
+        const cashType = isPayOutCheque ? "deduct" : "add";
+
+        if (cashOutMethod === "bank") {
+          await axios.post(
+            `${BACKEND_URL}api/banks/${selectedBankId}/transaction`,
+            {
+              amount,
+              type: transactionType,
+              description,
+            },
+            { withCredentials: true }
+          );
+        } else if (cashOutMethod === "cash") {
+          await axios.post(
+            `${BACKEND_URL}api/cash/add`,
+            {
+              balance: amount,
+              type: cashType,
+              description,
+            },
+            { withCredentials: true }
+          );
+        }
+      }
+
+      await dispatch(getPendingCheques({ status: "all" }));
+      await dispatch(getBanks());
+      setSelectedCheques([]);
+      setCashOutModalOpen(false);
+      setCashOutMethod("");
+      setSelectedBankId("");
+      
+      // ✅ FIXED: Show appropriate message for all pay-out types
+      const payOutCount = selectedCheques.filter(id => {
+        const c = allCheques.find(x => x._id === id);
+        return c?.type === "Supplier" || c?.type === "Shipper" || c?.type === "Product";
+      }).length;
+      const payInCount = selectedCheques.length - payOutCount;
+      
+      let message = "Cheques processed: ";
+      if (payOutCount > 0) message += `${payOutCount} payment(s) deducted. `;
+      if (payInCount > 0) message += `${payInCount} receipt(s) added.`;
+      
+      toast.success(message);
+    } catch (e) {
+      const msg = e?.message || e?.error || "Failed to cash out cheques";
+      console.error(msg);
+      toast.error(msg);
+    } finally {
+      setProcessingCashOut(false);
+    }
+  };
 
   const handleCloseCashOutModal = () => {
     if (!processingCashOut) {
@@ -259,7 +276,7 @@ const handleCashOutSubmit = async () => {
     }
   };
 
-  // ✅ NEW: Cash Out Transferred Cheque Handler
+  // Cash Out Transferred Cheque Handler
   const handleCashOutTransferred = async (chequeId) => {
     if (!window.confirm("Mark this transferred cheque as cashed out? This will NOT affect your bank balance.")) {
       return;
@@ -348,6 +365,11 @@ const handleCashOutSubmit = async () => {
     { field: "name", headerName: "Description" },
     { field: "type", headerName: "Type" },
     {
+      field: "amount",
+      headerName: "Amount",
+      renderCell: (row) => `Rs ${Number(row.amount || 0).toLocaleString()}`,
+    },
+    {
       field: "status",
       headerName: "Status",
       renderCell: (row) => (
@@ -366,12 +388,10 @@ const handleCashOutSubmit = async () => {
         </>
       ),
     },
-    
     {
       field: "statusChange",
       headerName: "Select",
       renderCell: (row) => {
-        // ✅ UPDATED: Removed bank check
         const disabled = row.status === true || row.cancelled === true || row.transferred === true;
         const box = (
           <Checkbox
@@ -381,7 +401,6 @@ const handleCashOutSubmit = async () => {
           />
         );
         let tip = "";
-        // ✅ UPDATED: Removed bank tooltip
         if (row.status === true) tip = "Already cleared";
         if (row.cancelled === true) tip = "Cheque is cancelled";
         if (row.transferred === true) {
@@ -491,7 +510,7 @@ const handleCashOutSubmit = async () => {
             <List dense>
               {todayCheques.map((c) => (
                 <ListItem key={c._id}>
-                  <ListItemText primary={`${c.name} - ${c.type}`} />
+                  <ListItemText primary={`${c.name} - ${c.type} - Rs ${Number(c.amount || 0).toLocaleString()}`} />
                 </ListItem>
               ))}
             </List>
@@ -515,7 +534,6 @@ const handleCashOutSubmit = async () => {
           onRowsPerPageChange={handleRowsPerPageChange}
         />
 
-        {/* ✅ UPDATED: Tooltip message */}
         <Tooltip
           title={
             selectedCheques.length === 0
@@ -539,7 +557,7 @@ const handleCashOutSubmit = async () => {
         </Tooltip>
       </Paper>
 
-      {/* ✅ CASH OUT MODAL */}
+      {/* CASH OUT MODAL */}
       <Modal open={cashOutModalOpen} onClose={handleCloseCashOutModal}>
         <Box
           sx={{
@@ -558,11 +576,48 @@ const handleCashOutSubmit = async () => {
             Cash Out Cheques
           </Typography>
 
-          <Typography variant="body2" sx={{ mb: 2 }}>
-            You are cashing out {selectedCheques.length} cheque(s).
-            <br />
-            Where would you like to receive the money?
-          </Typography>
+          {/* ✅ NEW: Show summary of what will happen */}
+          <Alert severity="info" sx={{ mb: 2 }}>
+            {(() => {
+              const payOutCount = selectedCheques.filter(id => {
+                const c = allCheques.find(x => x._id === id);
+                return c?.type === "Supplier" || c?.type === "Shipper" || c?.type === "Product";
+              }).length;
+              const payInCount = selectedCheques.length - payOutCount;
+              
+              const payOutTotal = selectedCheques
+                .filter(id => {
+                  const c = allCheques.find(x => x._id === id);
+                  return c?.type === "Supplier" || c?.type === "Shipper" || c?.type === "Product";
+                })
+                .reduce((sum, id) => sum + Number(allCheques.find(x => x._id === id)?.amount || 0), 0);
+              
+              const payInTotal = selectedCheques
+                .filter(id => {
+                  const c = allCheques.find(x => x._id === id);
+                  return c?.type !== "Supplier" && c?.type !== "Shipper" && c?.type !== "Product";
+                })
+                .reduce((sum, id) => sum + Number(allCheques.find(x => x._id === id)?.amount || 0), 0);
+
+              return (
+                <>
+                  {payOutCount > 0 && (
+                    <Typography variant="body2" color="error.main">
+                      💸 {payOutCount} payment(s) will DEDUCT Rs {payOutTotal.toLocaleString()}
+                    </Typography>
+                  )}
+                  {payInCount > 0 && (
+                    <Typography variant="body2" color="success.main">
+                      💰 {payInCount} receipt(s) will ADD Rs {payInTotal.toLocaleString()}
+                    </Typography>
+                  )}
+                  <Typography variant="body2" sx={{ mt: 1, fontWeight: 'bold' }}>
+                    Net: Rs {(payInTotal - payOutTotal).toLocaleString()}
+                  </Typography>
+                </>
+              );
+            })()}
+          </Alert>
 
           <FormControl component="fieldset" sx={{ mb: 2 }}>
             <FormLabel component="legend">Select Destination</FormLabel>
@@ -593,7 +648,7 @@ const handleCashOutSubmit = async () => {
               <MenuItem value="">-- Select Bank --</MenuItem>
               {banks.map((bank) => (
                 <MenuItem key={bank._id} value={bank._id}>
-                  {bank.bankName}
+                  {bank.bankName} - Rs {Number(bank.balance || bank.totalBalance || 0).toLocaleString()}
                 </MenuItem>
               ))}
             </TextField>
@@ -653,7 +708,7 @@ const handleCashOutSubmit = async () => {
         </div>
       </Modal>
 
-      {/* ✅ TRANSFER MODAL */}
+      {/* TRANSFER MODAL */}
       <Modal open={transferModalOpen} onClose={handleCloseTransferModal}>
         <Box
           sx={{
@@ -674,7 +729,7 @@ const handleCashOutSubmit = async () => {
 
           <Typography variant="body2" sx={{ mb: 2 }}>
             <strong>Cheque Details:</strong><br />
-            Amount: {selectedChequeForTransfer?.amount}<br />
+            Amount: Rs {Number(selectedChequeForTransfer?.amount || 0).toLocaleString()}<br />
             From: {selectedChequeForTransfer?.name}
           </Typography>
 

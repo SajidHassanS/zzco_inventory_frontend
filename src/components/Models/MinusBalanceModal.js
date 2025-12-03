@@ -332,7 +332,7 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           <MenuItem value="owncheque">Cheque to Own Account</MenuItem>
           <MenuItem value="credit">Credit</MenuItem>
           <MenuItem value="transfercheque">Transfer Cheque</MenuItem>
-          <MenuItem value="transferonline">Transfer Online</MenuItem>
+          <MenuItem value="transferonline">Transfer To Others</MenuItem>
         </TextField>
 
         {/* Show bank dropdown for ONLINE and OWN CHEQUE */}

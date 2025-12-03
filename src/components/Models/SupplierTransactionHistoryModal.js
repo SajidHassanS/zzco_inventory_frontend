@@ -1,9 +1,8 @@
 // src/components/Models/SupplierTransactionHistoryModal.jsx
-import React, { useEffect, useState, useMemo } from "react";
-import { Modal, Box, Typography, Button, IconButton } from "@mui/material";
+import React, { useEffect, useState, useMemo, useRef } from "react";
+import { Modal, Box, Typography, Button, IconButton, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper } from "@mui/material";
 import { Visibility } from "@mui/icons-material";
 import axios from "axios";
-import CustomTable from "../CustomTable/CustomTable";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -12,10 +11,9 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
   const [totalBalance, setTotalBalance] = useState(0);
   const [imageModalOpen, setImageModalOpen] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
-
-  // Local pagination state
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(5);
+  
+  // Ref for auto-scrolling to bottom
+  const tableContainerRef = useRef(null);
 
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
   const API_URL = `${BACKEND_URL}api/suppliers`;
@@ -172,11 +170,15 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
     fetchTransactions();
   }, [open, supplier?._id, API_URL]);
 
-  const handlePageChange = (nextPage) => setPage(Math.max(0, Number(nextPage) || 0));
-  const handleRowsPerPageChange = (nextRpp) => {
-    setRowsPerPage(Number(nextRpp) || 5);
-    setPage(0);
-  };
+  // ✅ Auto-scroll to bottom when transactions load (to show last 5)
+  useEffect(() => {
+    if (transactions.length > 0 && tableContainerRef.current) {
+      // Small delay to ensure DOM is updated
+      setTimeout(() => {
+        tableContainerRef.current.scrollTop = tableContainerRef.current.scrollHeight;
+      }, 100);
+    }
+  }, [transactions]);
 
  // ✅ Professional PDF download with Z&Z TRADERS logo
 const downloadPDF = () => {
@@ -323,97 +325,14 @@ const downloadPDF = () => {
   doc.save(`Supplier_Ledger_${supplier?.username || "supplier"}_${new Date().toISOString().split('T')[0]}.pdf`);
 };
 
-  const columns = useMemo(
-    () => [
-      {
-        field: "date",
-        headerName: "Date",
-        renderCell: (row) =>
-          row?.date ? new Date(row.date).toLocaleDateString() : "-",
-      },
-      {
-        field: "productName",
-        headerName: "Product Name",
-        renderCell: (row) => {
-          const name = row?.productName;
-          if (name === supplier?.username || name === supplier?.name) return "-";
-          return name || "-";
-        }
-      },
-      { field: "description", headerName: "Description" },
-      {
-        field: "quantity",
-        headerName: "Qty",
-        renderCell: (row) => (toNum(row?.quantity) > 0 ? row.quantity : "-"),
-      },
-      {
-        field: "paymentMethod",
-        headerName: "Payment Type",
-        renderCell: (row) => {
-          const pm = String(row?.paymentMethod || "");
-          return pm ? pm.charAt(0).toUpperCase() + pm.slice(1).toLowerCase() : "-";
-        },
-      },
-      {
-        field: "debit",
-        headerName: "Debit",
-        renderCell: (row) => (
-          <span style={{ color: "red" }}>{Number(row?.debit ?? 0).toFixed(2)}</span>
-        ),
-      },
-      {
-        field: "credit",
-        headerName: "Credit",
-        renderCell: (row) => (
-          <span style={{ color: "green" }}>{Number(row?.credit ?? 0).toFixed(2)}</span>
-        ),
-      },
-      {
-        field: "chequeDate",
-        headerName: "Cheque Date",
-        renderCell: (row) =>
-          row?.chequeDate ? new Date(row.chequeDate).toLocaleDateString() : "-",
-      },
-      {
-        field: "image",
-        headerName: "Cheque Image",
-        renderCell: (row) => {
-          let imageUrl = null;
-          imageUrl = extractImageUrl(row.image) || extractImageUrl(row.chequeImage);
-          
-          if (!imageUrl) {
-            imageUrl = extractImageUrl(row._originalImage) || extractImageUrl(row._originalChequeImage);
-          }
-          
-          return imageUrl ? (
-            <IconButton
-              size="small"
-              color="primary"
-              onClick={() => handleViewImage(imageUrl)}
-              title="View Image"
-            >
-              <Visibility />
-            </IconButton>
-          ) : (
-            "-"
-          );
-        },
-      },
-      {
-        field: "runningBalance",
-        headerName: "Running Balance",
-        renderCell: (row) => (
-          <span style={{ 
-            color: Number(row?.runningBalance ?? 0) >= 0 ? "green" : "red",
-            fontWeight: "bold" 
-          }}>
-            {Number(row?.runningBalance ?? 0).toFixed(2)}
-          </span>
-        ),
-      },
-    ],
-    [supplier]
-  );
+  // ✅ Get image URL for a row
+  const getImageUrl = (row) => {
+    let imageUrl = extractImageUrl(row.image) || extractImageUrl(row.chequeImage);
+    if (!imageUrl) {
+      imageUrl = extractImageUrl(row._originalImage) || extractImageUrl(row._originalChequeImage);
+    }
+    return imageUrl;
+  };
 
   return (
     <>
@@ -435,14 +354,88 @@ const downloadPDF = () => {
             Ledger for {supplier?.username}
           </Typography>
 
-          <CustomTable
-            columns={columns}
-            data={transactions}
-            page={page}
-            rowsPerPage={rowsPerPage}
-            onPageChange={handlePageChange}
-            onRowsPerPageChange={handleRowsPerPageChange}
-          />
+          {/* ✅ Scrollable Table Container - Shows ~5 rows, scrolls to bottom */}
+          <TableContainer 
+            component={Paper} 
+            ref={tableContainerRef}
+            sx={{ 
+              maxHeight: 320, // ~5 rows height (adjust as needed)
+              overflow: 'auto',
+              '&::-webkit-scrollbar': {
+                width: '8px',
+              },
+              '&::-webkit-scrollbar-track': {
+                background: '#f1f1f1',
+                borderRadius: '4px',
+              },
+              '&::-webkit-scrollbar-thumb': {
+                background: '#888',
+                borderRadius: '4px',
+              },
+              '&::-webkit-scrollbar-thumb:hover': {
+                background: '#555',
+              },
+            }}
+          >
+            <Table stickyHeader size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Date</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Product Name</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Description</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Qty</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Payment Type</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Debit</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Credit</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Cheque Date</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Image</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Running Balance</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {transactions.map((row, index) => {
+                  const imageUrl = getImageUrl(row);
+                  const productName = row?.productName;
+                  const displayProductName = (productName === supplier?.username || productName === supplier?.name) ? "-" : (productName || "-");
+                  const pm = String(row?.paymentMethod || "");
+                  const displayPaymentMethod = pm ? pm.charAt(0).toUpperCase() + pm.slice(1).toLowerCase() : "-";
+                  
+                  return (
+                    <TableRow key={row.id || index} hover>
+                      <TableCell>{row?.date ? new Date(row.date).toLocaleDateString() : "-"}</TableCell>
+                      <TableCell>{displayProductName}</TableCell>
+                      <TableCell sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {row?.description || "-"}
+                      </TableCell>
+                      <TableCell>{toNum(row?.quantity) > 0 ? row.quantity : "-"}</TableCell>
+                      <TableCell>{displayPaymentMethod}</TableCell>
+                      <TableCell sx={{ color: 'red' }}>{Number(row?.debit ?? 0).toFixed(2)}</TableCell>
+                      <TableCell sx={{ color: 'green' }}>{Number(row?.credit ?? 0).toFixed(2)}</TableCell>
+                      <TableCell>{row?.chequeDate ? new Date(row.chequeDate).toLocaleDateString() : "-"}</TableCell>
+                      <TableCell>
+                        {imageUrl ? (
+                          <IconButton
+                            size="small"
+                            color="primary"
+                            onClick={() => handleViewImage(imageUrl)}
+                            title="View Image"
+                          >
+                            <Visibility />
+                          </IconButton>
+                        ) : "-"}
+                      </TableCell>
+                      <TableCell sx={{ 
+                        color: Number(row?.runningBalance ?? 0) >= 0 ? "green" : "red",
+                        fontWeight: "bold" 
+                      }}>
+                        {Number(row?.runningBalance ?? 0).toFixed(2)}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
 
           <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mt: 2 }}>
             <Typography
