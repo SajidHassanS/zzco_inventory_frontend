@@ -1,3 +1,4 @@
+// src/pages/customer/MinusBalanceModal.jsx  (or your current path)
 import React, { useState, useEffect } from "react";
 import {
   Modal,
@@ -14,10 +15,7 @@ import { useSelector, useDispatch } from "react-redux";
 import { getBanks } from "../../redux/features/Bank/bankSlice";
 import { toast } from "react-toastify";
 
-const normBase = (raw) => {
-  if (!raw) return "";
-  return raw.endsWith("/") ? raw : `${raw}/`;
-};
+const normBase = (raw) => (!raw ? "" : raw.endsWith("/") ? raw : `${raw}/`);
 
 const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
   const [amount, setAmount] = useState("");
@@ -30,11 +28,12 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
-  // Transfer State (for both cheque and online transfer)
+  // Transfer state (now includes shippers)
   const [transferTo, setTransferTo] = useState("");
   const [transferToId, setTransferToId] = useState("");
   const [customers, setCustomers] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
+  const [shippers, setShippers] = useState([]); // NEW
 
   const RAW_BACKEND = process.env.REACT_APP_BACKEND_URL || "";
   const BASE = normBase(RAW_BACKEND);
@@ -50,7 +49,7 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
       setErrors({});
       setLoading(false);
     } else {
-      // Reset on close
+      // reset on close
       setAmount("");
       setPaymentMethod("");
       setChequeDate("");
@@ -67,9 +66,10 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
   const fetchEntities = async () => {
     try {
       const baseUrl = BASE;
-      const [custResp, suppResp] = await Promise.all([
+      const [custResp, suppResp, shipResp] = await Promise.all([
         axios.get(`${baseUrl}api/customers/allcustomer`, { withCredentials: true }),
         axios.get(`${baseUrl}api/suppliers`, { withCredentials: true }),
+        axios.get(`${baseUrl}api/shippers`, { withCredentials: true }), // NEW
       ]);
 
       const customersData = Array.isArray(custResp.data)
@@ -80,14 +80,18 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
         ? suppResp.data
         : suppResp.data?.suppliers || [];
 
+      const shippersData = Array.isArray(shipResp.data)
+        ? shipResp.data
+        : shipResp.data?.shippers || shipResp.data || []; // API often returns array
+
       setCustomers(customersData);
       setSuppliers(suppliersData);
+      setShippers(shippersData);
     } catch (err) {
       console.error("Error fetching entities:", err);
     }
   };
 
-  // Helper to get selected bank info
   const getSelectedBankInfo = () => {
     if (!selectedBank) return null;
     return banks.find((b) => b._id === selectedBank);
@@ -95,8 +99,8 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
 
   const validateForm = () => {
     const formErrors = {};
-
     const amt = Number(amount);
+
     if (!amount || !Number.isFinite(amt) || amt <= 0) {
       formErrors.amount = "Please provide a valid amount greater than 0";
     }
@@ -104,66 +108,35 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
       formErrors.paymentMethod = "Payment method is required";
     }
 
-    // Transfer Cheque validations
+    // Transfer cheques
     if (paymentMethod === "transfercheque") {
-      if (!chequeDate) {
-        formErrors.chequeDate = "Cheque date is required";
-      }
-      if (!image) {
-        formErrors.image = "Cheque image is required";
-      }
-      if (!transferTo) {
-        formErrors.transferTo = "Please select transfer destination type";
-      }
-      if (!transferToId) {
-        formErrors.transferToId = "Please select who to transfer to";
-      }
+      if (!chequeDate) formErrors.chequeDate = "Cheque date is required";
+      if (!image) formErrors.image = "Cheque image is required";
+      if (!transferTo) formErrors.transferTo = "Please select transfer destination type";
+      if (!transferToId) formErrors.transferToId = "Please select who to transfer to";
     }
 
-    // ✅ NEW: Transfer Online validations
+    // Transfer online
     if (paymentMethod === "transferonline") {
-      if (!image) {
-        formErrors.image = "Screenshot/proof is required for online transfer";
-      }
-      if (!transferTo) {
-        formErrors.transferTo = "Please select transfer destination type";
-      }
-      if (!transferToId) {
-        formErrors.transferToId = "Please select who to transfer to";
-      }
+      if (!image) formErrors.image = "Screenshot/proof is required for online transfer";
+      if (!transferTo) formErrors.transferTo = "Please select transfer destination type";
+      if (!transferToId) formErrors.transferToId = "Please select who to transfer to";
     }
 
-    // Online: require bank and image
     if (paymentMethod === "online") {
-      if (!selectedBank) {
-        formErrors.selectedBank = "Bank selection is required for online payment";
-      }
-      if (!image) {
-        formErrors.image = "Image is required for online payment";
-      }
+      if (!selectedBank) formErrors.selectedBank = "Bank selection is required for online payment";
+      if (!image) formErrors.image = "Image is required for online payment";
     }
 
-    // Regular cheque: only require chequeDate and image (NO bank)
     if (paymentMethod === "cheque") {
-      if (!chequeDate) {
-        formErrors.chequeDate = "Cheque date is required for cheque payment";
-      }
-      if (!image) {
-        formErrors.image = "Image is required for cheque payment";
-      }
+      if (!chequeDate) formErrors.chequeDate = "Cheque date is required for cheque payment";
+      if (!image) formErrors.image = "Image is required for cheque payment";
     }
 
-    // Own Cheque: require bank, chequeDate, and image
     if (paymentMethod === "owncheque") {
-      if (!selectedBank) {
-        formErrors.selectedBank = "Bank selection is required for own cheque";
-      }
-      if (!chequeDate) {
-        formErrors.chequeDate = "Cheque date is required";
-      }
-      if (!image) {
-        formErrors.image = "Image is required for cheque";
-      }
+      if (!selectedBank) formErrors.selectedBank = "Bank selection is required for own cheque";
+      if (!chequeDate) formErrors.chequeDate = "Cheque date is required";
+      if (!image) formErrors.image = "Image is required for cheque";
     }
 
     setErrors(formErrors);
@@ -192,51 +165,35 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
         amount: amt,
         paymentMethod: method,
         description: cleanDesc,
-        // Send bankId for online and owncheque
         ...((method === "online" || method === "owncheque") ? { bankId: selectedBank } : {}),
-        // Send chequeDate for cheque, transfercheque, and owncheque
         ...((method === "cheque" || method === "transfercheque" || method === "owncheque") ? { chequeDate } : {}),
-        // Add transfer details for transfercheque AND transferonline
         ...((method === "transfercheque" || method === "transferonline")
-          ? {
-              transferTo,
-              transferToId,
-            }
+          ? { transferTo, transferToId }
           : {}),
       };
 
       let resp;
-      if (image && (method === "online" || method === "cheque" || method === "transfercheque" || method === "owncheque" || method === "transferonline")) {
+      if (image && ["online", "cheque", "transfercheque", "owncheque", "transferonline"].includes(method)) {
         const fd = new FormData();
         Object.entries(base).forEach(([k, v]) => fd.append(k, v));
         fd.append("image", image);
 
-        resp = await axios.post(
-          `${API_URL}/minus-customer-balance/${customer._id}`,
-          fd,
-          { withCredentials: true }
-        );
+        resp = await axios.post(`${API_URL}/minus-customer-balance/${customer._id}`, fd, {
+          withCredentials: true,
+        });
       } else {
-        resp = await axios.post(
-          `${API_URL}/minus-customer-balance/${customer._id}`,
-          base,
-          { withCredentials: true }
-        );
+        resp = await axios.post(`${API_URL}/minus-customer-balance/${customer._id}`, base, {
+          withCredentials: true,
+        });
       }
 
       toast.success(resp?.data?.message || "Balance subtracted successfully");
-      
-      // Refresh banks to get updated balances
       dispatch(getBanks());
-      
       onSuccess?.(resp?.data?.customer);
       onClose?.();
     } catch (err) {
       console.error(err);
-      toast.error(
-        err?.response?.data?.message ||
-          "Failed to subtract balance. Please try again."
-      );
+      toast.error(err?.response?.data?.message || "Failed to subtract balance. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -245,17 +202,13 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
   const handleImageChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) {
-      return toast.error("File size must be less than 5MB");
-    }
-    if (!["image/jpeg", "image/png"].includes(file.type)) {
+    if (file.size > 5 * 1024 * 1024) return toast.error("File size must be less than 5MB");
+    if (!["image/jpeg", "image/png"].includes(file.type))
       return toast.error("Only JPEG and PNG files are allowed");
-    }
     setImage(file);
     setImagePreview(URL.createObjectURL(file));
   };
 
-  // Check if current method is a transfer method
   const isTransferMethod = paymentMethod === "transfercheque" || paymentMethod === "transferonline";
 
   return (
@@ -299,10 +252,10 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           select
           value={paymentMethod}
           onChange={(e) => {
-            setPaymentMethod(e.target.value.toLowerCase());
+            const val = e.target.value.toLowerCase();
+            setPaymentMethod(val);
             setSelectedBank("");
-            // Reset transfer fields when changing to non-transfer method
-            if (!["transfercheque", "transferonline"].includes(e.target.value.toLowerCase())) {
+            if (!["transfercheque", "transferonline"].includes(val)) {
               setTransferTo("");
               setTransferToId("");
             }
@@ -315,9 +268,9 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
             (paymentMethod === "credit"
               ? "Credit = ledger-only (no bank/cash movement)"
               : paymentMethod === "transfercheque"
-              ? "Transfer this cheque to another customer or supplier (pending)"
+              ? "Transfer this cheque to another entity (pending)"
               : paymentMethod === "transferonline"
-              ? "Transfer online payment to another customer or supplier (immediate)"
+              ? "Transfer online payment to another entity (immediate)"
               : paymentMethod === "cheque"
               ? "Pending cheque - no immediate bank addition"
               : paymentMethod === "owncheque"
@@ -335,7 +288,6 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           <MenuItem value="transferonline">Transfer To Others</MenuItem>
         </TextField>
 
-        {/* Show bank dropdown for ONLINE and OWN CHEQUE */}
         {(paymentMethod === "online" || paymentMethod === "owncheque") && (
           <>
             <TextField
@@ -362,20 +314,24 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
               )}
             </TextField>
 
-            {/* Show selected bank balance info */}
             {getSelectedBankInfo() && (
               <Alert severity="info" sx={{ mt: 1, mb: 1 }}>
                 Current Balance: Rs {Number(getSelectedBankInfo().balance || 0).toLocaleString()}
                 {amount && (
-                  <> → After deposit: Rs {(Number(getSelectedBankInfo().balance || 0) + Number(amount || 0)).toLocaleString()}</>
+                  <>
+                    {" "}
+                    → After deposit: Rs{" "}
+                    {(Number(getSelectedBankInfo().balance || 0) + Number(amount || 0)).toLocaleString()}
+                  </>
                 )}
               </Alert>
             )}
           </>
         )}
 
-        {/* Show cheque date for CHEQUE, TRANSFERCHEQUE, and OWN CHEQUE */}
-        {(paymentMethod === "cheque" || paymentMethod === "transfercheque" || paymentMethod === "owncheque") && (
+        {(paymentMethod === "cheque" ||
+          paymentMethod === "transfercheque" ||
+          paymentMethod === "owncheque") && (
           <TextField
             label="Cheque Date"
             type="date"
@@ -390,8 +346,11 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           />
         )}
 
-        {/* Show image upload for ONLINE, CHEQUE, TRANSFERCHEQUE, OWN CHEQUE, and TRANSFERONLINE */}
-        {(paymentMethod === "online" || paymentMethod === "cheque" || paymentMethod === "transfercheque" || paymentMethod === "owncheque" || paymentMethod === "transferonline") && (
+        {(paymentMethod === "online" ||
+          paymentMethod === "cheque" ||
+          paymentMethod === "transfercheque" ||
+          paymentMethod === "owncheque" ||
+          paymentMethod === "transferonline") && (
           <Grid item xs={12}>
             <TextField
               type="file"
@@ -415,15 +374,15 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           </Grid>
         )}
 
-        {/* Transfer Options (for both Transfer Cheque and Transfer Online) */}
-        {isTransferMethod && (
+        {/* TRANSFER OPTIONS (now includes shipper) */}
+        {(paymentMethod === "transfercheque" || paymentMethod === "transferonline") && (
           <>
             <Alert severity="warning" sx={{ mt: 2, mb: 1 }}>
-              {paymentMethod === "transfercheque" 
-                ? "⚠️ This will transfer the cheque to another entity (pending status)"
+              {paymentMethod === "transfercheque"
+                ? "⚠️ This will transfer the cheque to another entity (pending)"
                 : "⚠️ This will transfer the online payment to another entity (completed immediately)"}
             </Alert>
-            
+
             <TextField
               label="Transfer To"
               select
@@ -441,11 +400,14 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
               <MenuItem value="">-- Select Type --</MenuItem>
               <MenuItem value="customer">Customer</MenuItem>
               <MenuItem value="supplier">Supplier</MenuItem>
+              <MenuItem value="shipper">Shipper</MenuItem> {/* NEW */}
             </TextField>
 
             {transferTo && (
               <TextField
-                label={`Select ${transferTo === "customer" ? "Customer" : "Supplier"}`}
+                label={`Select ${
+                  transferTo === "customer" ? "Customer" : transferTo === "supplier" ? "Supplier" : "Shipper"
+                }`}
                 select
                 value={transferToId}
                 onChange={(e) => setTransferToId(e.target.value)}
@@ -456,13 +418,20 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
                 disabled={loading}
               >
                 <MenuItem value="">
-                  -- Select {transferTo === "customer" ? "Customer" : "Supplier"} --
+                  -- Select {transferTo === "customer" ? "Customer" : transferTo === "supplier" ? "Supplier" : "Shipper"} --
                 </MenuItem>
-                {(transferTo === "customer" ? customers : suppliers)
+
+                {(transferTo === "customer"
+                  ? customers
+                  : transferTo === "supplier"
+                  ? suppliers
+                  : shippers
+                )
                   .filter((entity) => {
                     if (!entity || !entity._id) return false;
-                    if (!customer || !customer._id) return true;
-                    return entity._id !== customer._id;
+                    // avoid offering the same customer as destination
+                    if (transferTo === "customer" && customer && customer._id) return entity._id !== customer._id;
+                    return true;
                   })
                   .map((entity) => (
                     <MenuItem key={entity._id} value={entity._id}>
@@ -496,14 +465,7 @@ const MinusBalanceModal = ({ open, onClose, customer, onSuccess }) => {
           disabled={loading}
         />
 
-        <Button
-          variant="contained"
-          color="primary"
-          type="submit"
-          fullWidth
-          disabled={loading}
-          sx={{ mt: 2 }}
-        >
+        <Button variant="contained" color="primary" type="submit" fullWidth disabled={loading} sx={{ mt: 2 }}>
           {loading ? "Processing..." : "Subtract Balance"}
         </Button>
       </Box>

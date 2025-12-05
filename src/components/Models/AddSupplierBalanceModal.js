@@ -310,7 +310,7 @@ const AddSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
         <Typography variant="h6" gutterBottom>
           Add Balance to {supplier?.username}
         </Typography>
-
+ 
         <TextField
           label="Amount"
           type="number"

@@ -1,4 +1,4 @@
-// pages/Shipper/AddShipperBalanceModal.jsx
+// src/pages/Shipper/AddShipperBalanceModal.jsx
 import React, { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -19,7 +19,11 @@ import {
   Box,
 } from "@mui/material";
 import { LocalShipping as ShipperIcon } from "@mui/icons-material";
-import { addShipperBalance, getShippers } from "../../redux/features/shipper/shipperSlice";
+import {
+  addShipperBalance,
+  getShippers,
+} from "../../redux/features/shipper/shipperSlice";
+import { getBanks } from "../../redux/features/Bank/bankSlice";
 
 const PAYMENT_METHODS = [
   { value: "Cash", label: "Cash" },
@@ -45,9 +49,10 @@ const AddShipperBalanceModal = ({ open, onClose, shipper }) => {
   });
   const [error, setError] = useState("");
 
-  // Reset form when modal opens
+  // Load banks + reset form when modal opens
   useEffect(() => {
     if (open) {
+      dispatch(getBanks());
       setFormData({
         amount: "",
         paymentMethod: "Cash",
@@ -57,7 +62,7 @@ const AddShipperBalanceModal = ({ open, onClose, shipper }) => {
       });
       setError("");
     }
-  }, [open]);
+  }, [open, dispatch]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -75,20 +80,30 @@ const AddShipperBalanceModal = ({ open, onClose, shipper }) => {
     const method = formData.paymentMethod.toLowerCase();
     const currentBalance = Number(shipper?.balance || 0);
 
-    // Check if paying more than owed (except for credit)
+    // Prevent paying more than owed (except "credit")
     if (method !== "credit" && amount > currentBalance) {
-      setError(`Cannot pay more than what you owe (Rs ${currentBalance.toLocaleString()})`);
+      setError(
+        `Cannot pay more than what you owe (Rs ${currentBalance.toLocaleString()})`
+      );
       return;
     }
 
-    // ✅ UPDATED: Validate bank for online, cheque, and owncheque
-    if ((method === "online" || method === "cheque" || method === "owncheque") && !formData.bankId) {
+    // Require bank for online, cheque, owncheque
+    if (
+      (method === "online" ||
+        method === "cheque" ||
+        method === "owncheque") &&
+      !formData.bankId
+    ) {
       setError("Please select a bank");
       return;
     }
 
-    // Validate cheque date for cheque/owncheque
-    if ((method === "cheque" || method === "owncheque") && !formData.chequeDate) {
+    // Require cheque date for cheque/owncheque
+    if (
+      (method === "cheque" || method === "owncheque") &&
+      !formData.chequeDate
+    ) {
       setError("Please select a cheque date");
       return;
     }
@@ -99,8 +114,9 @@ const AddShipperBalanceModal = ({ open, onClose, shipper }) => {
           id: shipper._id,
           data: {
             amount: formData.amount,
-            paymentMethod: formData.paymentMethod,
-            description: formData.description || `Payment to ${shipper.username}`,
+            paymentMethod: formData.paymentMethod, // backend lowercases this
+            description:
+              formData.description || `Payment to ${shipper.username}`,
             bankId: formData.bankId || undefined,
             chequeDate: formData.chequeDate || undefined,
           },
@@ -110,20 +126,19 @@ const AddShipperBalanceModal = ({ open, onClose, shipper }) => {
       dispatch(getShippers());
       onClose();
     } catch (err) {
-      setError(err.message || "Failed to process payment");
+      setError(err?.message || "Failed to process payment");
     }
   };
 
   const method = formData.paymentMethod.toLowerCase();
-  // ✅ UPDATED: Bank is needed for online, cheque, AND owncheque
-  const needsBank = method === "online" || method === "cheque" || method === "owncheque";
+  const needsBank =
+    method === "online" || method === "cheque" || method === "owncheque";
   const needsChequeDate = method === "cheque" || method === "owncheque";
   const currentBalance = Number(shipper?.balance || 0);
 
-  // Get selected bank info for display
   const getSelectedBankInfo = () => {
     if (!formData.bankId) return null;
-    return banks.find((b) => b._id === formData.bankId);
+    return (banks || []).find((b) => b._id === formData.bankId) || null;
   };
 
   if (!shipper) return null;
@@ -146,7 +161,10 @@ const AddShipperBalanceModal = ({ open, onClose, shipper }) => {
           <Typography variant="body2" color="text.secondary">
             You Owe This Shipper
           </Typography>
-          <Typography variant="h5" color={currentBalance > 0 ? "error.main" : "success.main"}>
+          <Typography
+            variant="h5"
+            color={currentBalance > 0 ? "error.main" : "success.main"}
+          >
             Rs {currentBalance.toLocaleString()}
           </Typography>
           {currentBalance <= 0 && (
@@ -170,7 +188,11 @@ const AddShipperBalanceModal = ({ open, onClose, shipper }) => {
               InputProps={{
                 startAdornment: <Typography sx={{ mr: 1 }}>Rs</Typography>,
               }}
-              helperText={method !== "credit" ? `Max: Rs ${currentBalance.toLocaleString()}` : "Credit has no limit"}
+              helperText={
+                method !== "credit"
+                  ? `Max: Rs ${currentBalance.toLocaleString()}`
+                  : "Credit has no limit"
+              }
             />
           </Grid>
 
@@ -202,7 +224,7 @@ const AddShipperBalanceModal = ({ open, onClose, shipper }) => {
             </FormControl>
           </Grid>
 
-          {/* ✅ UPDATED: Bank Selection (for Online, Cheque, and Own Cheque) */}
+          {/* Bank Selection (Online, Cheque, Own Cheque) */}
           {needsBank && (
             <Grid item xs={12}>
               <FormControl fullWidth>
@@ -215,40 +237,75 @@ const AddShipperBalanceModal = ({ open, onClose, shipper }) => {
                 >
                   {(banks || []).map((bank) => (
                     <MenuItem key={bank._id} value={bank._id}>
-                      {bank.bankName} - Rs {Number(bank.totalBalance || bank.balance || 0).toLocaleString()}
+                      {bank.bankName} - Rs{" "}
+                      {Number(
+                        bank.totalBalance || bank.balance || 0
+                      ).toLocaleString()}
                     </MenuItem>
                   ))}
                 </Select>
               </FormControl>
 
-              {/* ✅ NEW: Show bank info for pending cheque */}
+              {/* Info for pending cheque */}
               {method === "cheque" && getSelectedBankInfo() && (
                 <Alert severity="info" sx={{ mt: 1 }}>
-                  Cheque will be linked to {getSelectedBankInfo().bankName}. Balance will be deducted when cleared.
+                  Cheque will be linked to {getSelectedBankInfo().bankName}.
+                  Bank balance will be deducted when the cheque is cleared.
                 </Alert>
               )}
 
-              {/* Show balance warning for online and owncheque */}
-              {(method === "online" || method === "owncheque") && getSelectedBankInfo() && formData.amount && (
-                <Alert 
-                  severity={Number(formData.amount) > Number(getSelectedBankInfo().balance || 0) ? "error" : "info"} 
-                  sx={{ mt: 1 }}
-                >
-                  {Number(formData.amount) > Number(getSelectedBankInfo().balance || 0) ? (
-                    `⚠️ Insufficient balance! Bank has Rs ${Number(getSelectedBankInfo().balance || 0).toLocaleString()}`
-                  ) : (
-                    <>
-                      Available: Rs {Number(getSelectedBankInfo().balance || 0).toLocaleString()}
-                      {" → After payment: Rs "}
-                      {(Number(getSelectedBankInfo().balance || 0) - Number(formData.amount || 0)).toLocaleString()}
-                    </>
-                  )}
-                </Alert>
-              )}
+              {/* Warning for online/owncheque balance */}
+              {(method === "online" || method === "owncheque") &&
+                getSelectedBankInfo() &&
+                formData.amount && (
+                  <Alert
+                    severity={
+                      Number(formData.amount) >
+                      Number(
+                        getSelectedBankInfo().balance ||
+                          getSelectedBankInfo().totalBalance ||
+                          0
+                      )
+                        ? "error"
+                        : "info"
+                    }
+                    sx={{ mt: 1 }}
+                  >
+                    {Number(formData.amount) >
+                    Number(
+                      getSelectedBankInfo().balance ||
+                        getSelectedBankInfo().totalBalance ||
+                        0
+                    ) ? (
+                      `⚠️ Insufficient balance! Bank has Rs ${Number(
+                        getSelectedBankInfo().balance ||
+                          getSelectedBankInfo().totalBalance ||
+                          0
+                      ).toLocaleString()}`
+                    ) : (
+                      <>
+                        Available: Rs{" "}
+                        {Number(
+                          getSelectedBankInfo().balance ||
+                            getSelectedBankInfo().totalBalance ||
+                            0
+                        ).toLocaleString()}
+                        {" → After payment: Rs "}
+                        {(
+                          Number(
+                            getSelectedBankInfo().balance ||
+                              getSelectedBankInfo().totalBalance ||
+                              0
+                          ) - Number(formData.amount || 0)
+                        ).toLocaleString()}
+                      </>
+                    )}
+                  </Alert>
+                )}
             </Grid>
           )}
 
-          {/* Cheque Date (for Cheque/Own Cheque) */}
+          {/* Cheque Date (Cheque / Own Cheque) */}
           {needsChequeDate && (
             <Grid item xs={12}>
               <TextField
@@ -278,10 +335,11 @@ const AddShipperBalanceModal = ({ open, onClose, shipper }) => {
           </Grid>
         </Grid>
 
-        {/* Info alerts based on payment method */}
+        {/* Method notes */}
         {method === "credit" && (
           <Alert severity="info" sx={{ mt: 2 }}>
-            Credit method only updates the ledger. No cash or bank will be deducted.
+            Credit method only updates the ledger. No cash or bank will be
+            deducted.
           </Alert>
         )}
         {method === "cash" && (
@@ -296,12 +354,14 @@ const AddShipperBalanceModal = ({ open, onClose, shipper }) => {
         )}
         {method === "owncheque" && (
           <Alert severity="warning" sx={{ mt: 2 }}>
-            This will immediately deduct Rs {formData.amount || 0} from the selected bank.
+            This will immediately deduct Rs {formData.amount || 0} from the
+            selected bank.
           </Alert>
         )}
         {method === "cheque" && (
           <Alert severity="info" sx={{ mt: 2 }}>
-            Cheque will be recorded as pending. Bank will be deducted when cheque is cleared.
+            Cheque will be recorded as pending. Bank will be deducted when the
+            cheque is cleared.
           </Alert>
         )}
       </DialogContent>
@@ -315,8 +375,8 @@ const AddShipperBalanceModal = ({ open, onClose, shipper }) => {
           color="primary"
           onClick={handleSubmit}
           disabled={
-            isLoading || 
-            !formData.amount || 
+            isLoading ||
+            !formData.amount ||
             (method !== "credit" && currentBalance <= 0) ||
             (needsBank && !formData.bankId) ||
             (needsChequeDate && !formData.chequeDate)

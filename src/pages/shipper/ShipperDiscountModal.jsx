@@ -1,4 +1,3 @@
-// pages/Shipper/ShipperDiscountModal.jsx
 import React, { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -12,58 +11,43 @@ import {
   Typography,
   CircularProgress,
   Alert,
-  Box
+  Box,
 } from "@mui/material";
 import { Discount as DiscountIcon } from "@mui/icons-material";
-import {
-  applyShipperDiscount,
-  getShippers
-} from "../../redux/features/shipper/shipperSlice";
+import { applyShipperDiscount, getShippers } from "../../redux/features/shipper/shipperSlice";
 
 const ShipperDiscountModal = ({ open, onClose, shipper }) => {
   const dispatch = useDispatch();
+  const { isLoading } = useSelector((state) => state.shipper);
 
-  const { isLoading } = useSelector(state => state.shipper);
-
-  // Form state
-  const [formData, setFormData] = useState({
-    amount: "",
-    description: ""
-  });
+  const [formData, setFormData] = useState({ amount: "", description: "" });
   const [error, setError] = useState("");
 
-  // Reset form when modal opens
-  useEffect(
-    () => {
-      if (open) {
-        setFormData({
-          amount: "",
-          description: ""
-        });
-        setError("");
-      }
-    },
-    [open]
-  );
+  useEffect(() => {
+    if (open) {
+      setFormData({ amount: "", description: "" });
+      setError("");
+    }
+  }, [open]);
 
-  const handleInputChange = e => {
+  if (!shipper) return null;
+
+  const currentBalance = Number(shipper.balance || 0);
+
+  const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((p) => ({ ...p, [name]: value }));
     setError("");
   };
 
   const handleSubmit = async () => {
-    const amount = parseFloat(formData.amount);
+    const amount = Number(formData.amount);
     if (!amount || amount <= 0) {
       setError("Please enter a valid discount amount");
       return;
     }
-
-    const currentBalance = Number(shipper.balance || 0);
     if (amount > currentBalance) {
-      setError(
-        `Discount cannot be more than what you owe (Rs ${currentBalance})`
-      );
+      setError(`Discount cannot be more than what you owe (Rs ${currentBalance.toLocaleString()})`);
       return;
     }
 
@@ -73,22 +57,17 @@ const ShipperDiscountModal = ({ open, onClose, shipper }) => {
           id: shipper._id,
           data: {
             amount: formData.amount,
-            description:
-              formData.description || `Discount from ${shipper.username}`
-          }
+            description: formData.description || `Discount from ${shipper.username}`,
+          },
         })
       ).unwrap();
 
       dispatch(getShippers());
       onClose();
     } catch (err) {
-      setError(err.message || "Failed to apply discount");
+      setError(err?.message || "Failed to apply discount");
     }
   };
-
-  if (!shipper) return null;
-
-  const currentBalance = Number(shipper.balance || 0);
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
@@ -98,10 +77,11 @@ const ShipperDiscountModal = ({ open, onClose, shipper }) => {
       </DialogTitle>
 
       <DialogContent>
-        {error &&
+        {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
             {error}
-          </Alert>}
+          </Alert>
+        )}
 
         <Box sx={{ mb: 2, p: 2, bgcolor: "grey.100", borderRadius: 1 }}>
           <Typography variant="body2" color="text.secondary">
@@ -113,24 +93,23 @@ const ShipperDiscountModal = ({ open, onClose, shipper }) => {
         </Box>
 
         <Grid container spacing={2}>
-          {/* Amount */}
           <Grid item xs={12}>
             <TextField
               fullWidth
               label="Discount Amount *"
               name="amount"
               type="number"
+              inputProps={{ min: 1, step: "any" }}
               value={formData.amount}
               onChange={handleInputChange}
               placeholder="Enter discount amount"
               InputProps={{
-                startAdornment: <Typography sx={{ mr: 1 }}>Rs</Typography>
+                startAdornment: <Typography sx={{ mr: 1 }}>Rs</Typography>,
               }}
               helperText={`Max discount: Rs ${currentBalance.toLocaleString()}`}
             />
           </Grid>
 
-          {/* Description */}
           <Grid item xs={12}>
             <TextField
               fullWidth
@@ -159,9 +138,7 @@ const ShipperDiscountModal = ({ open, onClose, shipper }) => {
           color="warning"
           onClick={handleSubmit}
           disabled={isLoading || !formData.amount}
-          startIcon={
-            isLoading ? <CircularProgress size={20} /> : <DiscountIcon />
-          }
+          startIcon={isLoading ? <CircularProgress size={20} /> : <DiscountIcon />}
         >
           {isLoading ? "Applying..." : "Apply Discount"}
         </Button>

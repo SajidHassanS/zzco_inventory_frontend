@@ -1,4 +1,4 @@
-// redux/features/shipper/shipperSlice.js
+// src/redux/features/shipper/shipperSlice.js
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import shipperService from "./shipperService";
 
@@ -20,7 +20,7 @@ export const createShipper = createAsyncThunk(
       return await shipperService.createShipper(shipperData);
     } catch (error) {
       const message =
-        error.response?.data?.message || error.message || "Failed to create shipper";
+        error?.response?.data?.message || error.message || "Failed to create shipper";
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -34,7 +34,7 @@ export const getShippers = createAsyncThunk(
       return await shipperService.getAllShippers();
     } catch (error) {
       const message =
-        error.response?.data?.message || error.message || "Failed to fetch shippers";
+        error?.response?.data?.message || error.message || "Failed to fetch shippers";
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -48,7 +48,7 @@ export const getShipper = createAsyncThunk(
       return await shipperService.getShipper(id);
     } catch (error) {
       const message =
-        error.response?.data?.message || error.message || "Failed to fetch shipper";
+        error?.response?.data?.message || error.message || "Failed to fetch shipper";
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -62,7 +62,7 @@ export const updateShipper = createAsyncThunk(
       return await shipperService.updateShipper(id, data);
     } catch (error) {
       const message =
-        error.response?.data?.message || error.message || "Failed to update shipper";
+        error?.response?.data?.message || error.message || "Failed to update shipper";
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -77,13 +77,13 @@ export const deleteShipper = createAsyncThunk(
       return id;
     } catch (error) {
       const message =
-        error.response?.data?.message || error.message || "Failed to delete shipper";
+        error?.response?.data?.message || error.message || "Failed to delete shipper";
       return thunkAPI.rejectWithValue(message);
     }
   }
 );
 
-// Add balance (pay shipper)
+// Add balance (PAY shipper; reduces payable)
 export const addShipperBalance = createAsyncThunk(
   "shipper/addBalance",
   async ({ id, data }, thunkAPI) => {
@@ -91,13 +91,45 @@ export const addShipperBalance = createAsyncThunk(
       return await shipperService.addBalance(id, data);
     } catch (error) {
       const message =
-        error.response?.data?.message || error.message || "Failed to add balance";
+        error?.response?.data?.message || error.message || "Failed to add balance";
       return thunkAPI.rejectWithValue(message);
     }
   }
 );
 
-// Apply discount
+/**
+ * Minus balance (CREDIT ONLY; increases payable).
+ * This is an alias around the same /add-balance endpoint but forces paymentMethod=credit.
+ * Supports payload shape { id, formData } (FormData) OR { id, data } (plain object).
+ */
+export const minusShipperBalance = createAsyncThunk(
+  "shipper/minusBalance",
+  async ({ id, formData, data }, thunkAPI) => {
+    try {
+      // Prefer provided formData; else fallback to data
+      let payload = formData || data;
+
+      // Ensure paymentMethod=credit is enforced
+      if (payload instanceof FormData) {
+        if (payload.has("paymentMethod")) payload.set("paymentMethod", "credit");
+        else payload.append("paymentMethod", "credit");
+      } else {
+        payload = {
+          ...(payload || {}),
+          paymentMethod: "credit",
+        };
+      }
+
+      return await shipperService.addBalance(id, payload);
+    } catch (error) {
+      const message =
+        error?.response?.data?.message || error.message || "Failed to add credit (minus)";
+      return thunkAPI.rejectWithValue(message);
+    }
+  }
+);
+
+// Apply discount (reduces payable)
 export const applyShipperDiscount = createAsyncThunk(
   "shipper/discount",
   async ({ id, data }, thunkAPI) => {
@@ -105,7 +137,7 @@ export const applyShipperDiscount = createAsyncThunk(
       return await shipperService.applyDiscount(id, data);
     } catch (error) {
       const message =
-        error.response?.data?.message || error.message || "Failed to apply discount";
+        error?.response?.data?.message || error.message || "Failed to apply discount";
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -119,7 +151,7 @@ export const getShipperTransactions = createAsyncThunk(
       return await shipperService.getTransactionHistory(id);
     } catch (error) {
       const message =
-        error.response?.data?.message || error.message || "Failed to fetch transactions";
+        error?.response?.data?.message || error.message || "Failed to fetch transactions";
       return thunkAPI.rejectWithValue(message);
     }
   }
@@ -148,39 +180,45 @@ const shipperSlice = createSlice({
       .addCase(createShipper.fulfilled, (state, action) => {
         state.isLoading = false;
         state.isSuccess = true;
-        state.shippers.unshift(action.payload.shipper);
+        // API returns { message, shipper }
+        if (action.payload?.shipper) {
+          state.shippers.unshift(action.payload.shipper);
+        }
       })
       .addCase(createShipper.rejected, (state, action) => {
         state.isLoading = false;
         state.isError = true;
         state.message = action.payload;
       })
+
       // Get all
       .addCase(getShippers.pending, (state) => {
         state.isLoading = true;
       })
       .addCase(getShippers.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.shippers = action.payload;
+        state.shippers = action.payload || [];
       })
       .addCase(getShippers.rejected, (state, action) => {
         state.isLoading = false;
         state.isError = true;
         state.message = action.payload;
       })
+
       // Get single
       .addCase(getShipper.pending, (state) => {
         state.isLoading = true;
       })
       .addCase(getShipper.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.shipper = action.payload;
+        state.shipper = action.payload || null;
       })
       .addCase(getShipper.rejected, (state, action) => {
         state.isLoading = false;
         state.isError = true;
         state.message = action.payload;
       })
+
       // Update
       .addCase(updateShipper.pending, (state) => {
         state.isLoading = true;
@@ -188,11 +226,10 @@ const shipperSlice = createSlice({
       .addCase(updateShipper.fulfilled, (state, action) => {
         state.isLoading = false;
         state.isSuccess = true;
-        const index = state.shippers.findIndex(
-          (s) => s._id === action.payload.shipper._id
-        );
-        if (index !== -1) {
-          state.shippers[index] = action.payload.shipper;
+        const updated = action.payload?.shipper;
+        if (updated?._id) {
+          const idx = state.shippers.findIndex((s) => s._id === updated._id);
+          if (idx !== -1) state.shippers[idx] = updated;
         }
       })
       .addCase(updateShipper.rejected, (state, action) => {
@@ -200,6 +237,7 @@ const shipperSlice = createSlice({
         state.isError = true;
         state.message = action.payload;
       })
+
       // Delete
       .addCase(deleteShipper.pending, (state) => {
         state.isLoading = true;
@@ -214,18 +252,18 @@ const shipperSlice = createSlice({
         state.isError = true;
         state.message = action.payload;
       })
-      // Add balance
+
+      // Add balance (pay shipper)
       .addCase(addShipperBalance.pending, (state) => {
         state.isLoading = true;
       })
       .addCase(addShipperBalance.fulfilled, (state, action) => {
         state.isLoading = false;
         state.isSuccess = true;
-        const index = state.shippers.findIndex(
-          (s) => s._id === action.payload.shipper._id
-        );
-        if (index !== -1) {
-          state.shippers[index] = action.payload.shipper;
+        const updated = action.payload?.shipper;
+        if (updated?._id) {
+          const idx = state.shippers.findIndex((s) => s._id === updated._id);
+          if (idx !== -1) state.shippers[idx] = updated;
         }
       })
       .addCase(addShipperBalance.rejected, (state, action) => {
@@ -233,6 +271,26 @@ const shipperSlice = createSlice({
         state.isError = true;
         state.message = action.payload;
       })
+
+      // Minus balance (credit-only, increase payable)
+      .addCase(minusShipperBalance.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(minusShipperBalance.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.isSuccess = true;
+        const updated = action.payload?.shipper;
+        if (updated?._id) {
+          const idx = state.shippers.findIndex((s) => s._id === updated._id);
+          if (idx !== -1) state.shippers[idx] = updated;
+        }
+      })
+      .addCase(minusShipperBalance.rejected, (state, action) => {
+        state.isLoading = false;
+        state.isError = true;
+        state.message = action.payload;
+      })
+
       // Apply discount
       .addCase(applyShipperDiscount.pending, (state) => {
         state.isLoading = true;
@@ -240,11 +298,10 @@ const shipperSlice = createSlice({
       .addCase(applyShipperDiscount.fulfilled, (state, action) => {
         state.isLoading = false;
         state.isSuccess = true;
-        const index = state.shippers.findIndex(
-          (s) => s._id === action.payload.shipper._id
-        );
-        if (index !== -1) {
-          state.shippers[index] = action.payload.shipper;
+        const updated = action.payload?.shipper;
+        if (updated?._id) {
+          const idx = state.shippers.findIndex((s) => s._id === updated._id);
+          if (idx !== -1) state.shippers[idx] = updated;
         }
       })
       .addCase(applyShipperDiscount.rejected, (state, action) => {
@@ -252,13 +309,14 @@ const shipperSlice = createSlice({
         state.isError = true;
         state.message = action.payload;
       })
+
       // Get transactions
       .addCase(getShipperTransactions.pending, (state) => {
         state.isLoading = true;
       })
       .addCase(getShipperTransactions.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.transactionHistory = action.payload.transactionHistory;
+        state.transactionHistory = action.payload?.transactionHistory || [];
       })
       .addCase(getShipperTransactions.rejected, (state, action) => {
         state.isLoading = false;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
   Paper,
@@ -23,13 +23,18 @@ import {
   FormControlLabel,
   FormControl,
   FormLabel,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
 } from "@mui/material";
 import {
   getPendingCheques,
   updateChequeStatus,
 } from "../../redux/features/cheque/chequeSlice";
 import { getBanks } from "../../redux/features/Bank/bankSlice";
-import CustomTable from "../../components/CustomTable/CustomTable";
 import axios from "axios";
 import { toast } from "react-toastify";
 
@@ -39,13 +44,14 @@ const ChequeDetails = () => {
   const isLoading = useSelector((state) => state.cheque.isLoading);
   const banks = useSelector((state) => state.bank.banks || []);
 
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(5);
   const [todayCheques, setTodayCheques] = useState([]);
   const [upcomingCheques, setUpcomingCheques] = useState([]);
   const [selectedCheques, setSelectedCheques] = useState([]);
   const [selectedImage, setSelectedImage] = useState(null);
   const [allCheques, setAllCheques] = useState([]);
+
+  // Ref for auto-scrolling to bottom
+  const tableContainerRef = useRef(null);
 
   // CASH OUT MODAL STATE
   const [cashOutModalOpen, setCashOutModalOpen] = useState(false);
@@ -55,7 +61,8 @@ const ChequeDetails = () => {
 
   // TRANSFER STATE
   const [transferModalOpen, setTransferModalOpen] = useState(false);
-  const [selectedChequeForTransfer, setSelectedChequeForTransfer] = useState(null);
+  const [selectedChequeForTransfer, setSelectedChequeForTransfer] =
+    useState(null);
   const [transferTo, setTransferTo] = useState("");
   const [transferToId, setTransferToId] = useState("");
   const [transferDescription, setTransferDescription] = useState("");
@@ -64,6 +71,28 @@ const ChequeDetails = () => {
 
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
   const API_URL = `${BACKEND_URL}api/cheques`;
+
+  // ---------- Helpers ----------
+
+  // treat Supplier / Shipper / Product as pay-out cheques
+  const isPayOutCheque = (row) => {
+    const t = (row?.type || "").toString().toLowerCase();
+    return t === "supplier" || t === "shipper" || t === "product";
+  };
+
+  // get bank id from multiple possible shapes
+  const getChequeBankId = (row) => {
+    if (!row) return null;
+    return (
+      row.bankId || // explicit
+      row.bank_id || // snake_case
+      (row.bank && row.bank._id) || // populated object
+      row.bank || // plain id in "bank"
+      null
+    );
+  };
+
+  // ---------- Effects ----------
 
   // Fetch ALL so cleared remain visible
   useEffect(() => {
@@ -74,17 +103,23 @@ const ChequeDetails = () => {
   useEffect(() => {
     const fetchEntities = async () => {
       try {
-        const baseUrl = BACKEND_URL.endsWith('/') ? BACKEND_URL : `${BACKEND_URL}/`;
-        
+        const baseUrl = BACKEND_URL.endsWith("/")
+          ? BACKEND_URL
+          : `${BACKEND_URL}/`;
+
         const [custResp, suppResp] = await Promise.all([
-          axios.get(`${baseUrl}api/customers/allcustomer`, { withCredentials: true }),
-          axios.get(`${baseUrl}api/suppliers`, { withCredentials: true }),
+          axios.get(`${baseUrl}api/customers/allcustomer`, {
+            withCredentials: true,
+          }),
+          axios.get(`${baseUrl}api/suppliers`, {
+            withCredentials: true,
+          }),
         ]);
 
-        const customersData = Array.isArray(custResp.data) 
-          ? custResp.data 
+        const customersData = Array.isArray(custResp.data)
+          ? custResp.data
           : custResp.data?.customers || [];
-        
+
         const suppliersData = Array.isArray(suppResp.data)
           ? suppResp.data
           : suppResp.data?.suppliers || [];
@@ -93,7 +128,9 @@ const ChequeDetails = () => {
         setSuppliers(suppliersData);
       } catch (err) {
         console.error("❌ Error fetching entities:", err);
-        toast.error(err.response?.data?.message || "Failed to load customers/suppliers");
+        toast.error(
+          err.response?.data?.message || "Failed to load customers/suppliers"
+        );
       }
     };
     fetchEntities();
@@ -115,14 +152,13 @@ const ChequeDetails = () => {
       const dayDiff = (d.getTime() - today.getTime()) / (1000 * 3600 * 24);
 
       all.push(c);
-      
+
       // Only count PENDING, NOT CANCELLED, NOT TRANSFERRED-CASHED-OUT
       if (c.status === false && !c.cancelled) {
-        // Skip if transferred AND cashed out
         if (c.transferred && c.transferredCashedOut) {
           return; // Skip this cheque for pending count
         }
-        
+
         if (dayDiff === 0) t.push(c);
         else if (dayDiff > 0 && dayDiff <= 7) u.push(c);
       }
@@ -133,7 +169,41 @@ const ChequeDetails = () => {
     setUpcomingCheques(u);
   }, [cheques]);
 
-  // Check if selected cheques can be submitted
+  // ✅ Auto-scroll to bottom when cheques load
+  useEffect(() => {
+    if (allCheques.length > 0 && tableContainerRef.current) {
+      setTimeout(() => {
+        tableContainerRef.current.scrollTop = tableContainerRef.current.scrollHeight;
+      }, 100);
+    }
+  }, [allCheques]);
+
+  // ---------- Derived selections ----------
+
+  const selectedChequeRows = useMemo(
+    () =>
+      selectedCheques
+        .map((id) => allCheques.find((c) => c._id === id))
+        .filter(Boolean),
+    [selectedCheques, allCheques]
+  );
+
+  // need user to pick a bank if ANY selected cheque has no saved bank
+  const needBankSelection = useMemo(
+    () => selectedChequeRows.some((row) => !getChequeBankId(row)),
+    [selectedChequeRows]
+  );
+
+  // all selected cheques are payout AND all have bank -> we can auto-bank
+  const isAllPayoutWithBank = useMemo(
+    () =>
+      selectedChequeRows.length > 0 &&
+      selectedChequeRows.every(
+        (row) => isPayOutCheque(row) && !!getChequeBankId(row)
+      ),
+    [selectedChequeRows]
+  );
+
   const canSubmit = useMemo(() => {
     if (selectedCheques.length === 0) return false;
     return selectedCheques.every((id) => {
@@ -142,7 +212,8 @@ const ChequeDetails = () => {
     });
   }, [selectedCheques, allCheques]);
 
-  // Handle checkbox status change
+  // ---------- Handlers ----------
+
   const handleStatusChange = (chequeId, isChecked) => {
     const row = allCheques.find((x) => x._id === chequeId);
     if (row?.status === true || row?.cancelled || row?.transferred) return;
@@ -151,24 +222,31 @@ const ChequeDetails = () => {
     );
   };
 
-  // Open cash out modal
+  // open modal
   const handleCashOutClick = () => {
-    setCashOutMethod("");
+    // if they're all Shipper/Supplier/Product & have bank → auto-bank
+    if (isAllPayoutWithBank) {
+      setCashOutMethod("bank");
+    } else {
+      setCashOutMethod("");
+    }
     setSelectedBankId("");
     setCashOutModalOpen(true);
   };
 
-  // ✅ FIXED: Process cash out with correct logic for Shipper/Supplier/Product cheques
   const handleCashOutSubmit = async () => {
-    if (!cashOutMethod) {
+    if (!cashOutMethod && !isAllPayoutWithBank) {
       toast.error("Please select Bank or Cash");
       return;
     }
 
-    if (cashOutMethod === "bank" && !selectedBankId) {
-      toast.error("Please select a bank");
+    // only require manual bank select if we actually need one
+    if (cashOutMethod === "bank" && needBankSelection && !selectedBankId) {
+      toast.error("Please select a bank for cheques without a saved bank");
       return;
     }
+
+    const methodToUse = isAllPayoutWithBank ? "bank" : cashOutMethod;
 
     setProcessingCashOut(true);
 
@@ -177,7 +255,6 @@ const ChequeDetails = () => {
         const row = allCheques.find((c) => c._id === chequeId);
         if (!row) continue;
 
-        // Call backend to mark as cleared (skip bank processing)
         await dispatch(
           updateChequeStatus({
             id: row._id,
@@ -187,18 +264,24 @@ const ChequeDetails = () => {
         ).unwrap();
 
         const amount = Number(row.amount) || 0;
-        const description = `Cheque cleared: ${row.name || row.description || ""}`;
+        const description = `Cheque cleared: ${
+          row.name || row.description || ""
+        }`;
 
-        // ✅ FIXED: Include Shipper and Product as "pay out" types
-        // Supplier/Shipper/Product = You're PAYING them = money goes OUT = subtract
-        // Customer/Sale = They're PAYING you = money comes IN = add
-        const isPayOutCheque = row.type === "Supplier" || row.type === "Shipper" || row.type === "Product";
-        const transactionType = isPayOutCheque ? "subtract" : "add";
-        const cashType = isPayOutCheque ? "deduct" : "add";
+        const payOut = isPayOutCheque(row);
+        const transactionType = payOut ? "subtract" : "add";
+        const cashType = payOut ? "deduct" : "add";
 
-        if (cashOutMethod === "bank") {
+        if (methodToUse === "bank") {
+          const savedBankId = getChequeBankId(row);
+          const bankIdToUse = savedBankId || selectedBankId;
+
+          if (!bankIdToUse) {
+            throw new Error("No bank selected for one of the cheques");
+          }
+
           await axios.post(
-            `${BACKEND_URL}api/banks/${selectedBankId}/transaction`,
+            `${BACKEND_URL}api/banks/${bankIdToUse}/transaction`,
             {
               amount,
               type: transactionType,
@@ -206,7 +289,7 @@ const ChequeDetails = () => {
             },
             { withCredentials: true }
           );
-        } else if (cashOutMethod === "cash") {
+        } else if (methodToUse === "cash") {
           await axios.post(
             `${BACKEND_URL}api/cash/add`,
             {
@@ -225,18 +308,17 @@ const ChequeDetails = () => {
       setCashOutModalOpen(false);
       setCashOutMethod("");
       setSelectedBankId("");
-      
-      // ✅ FIXED: Show appropriate message for all pay-out types
-      const payOutCount = selectedCheques.filter(id => {
-        const c = allCheques.find(x => x._id === id);
-        return c?.type === "Supplier" || c?.type === "Shipper" || c?.type === "Product";
+
+      const payOutCount = selectedCheques.filter((id) => {
+        const c = allCheques.find((x) => x._id === id);
+        return isPayOutCheque(c);
       }).length;
       const payInCount = selectedCheques.length - payOutCount;
-      
+
       let message = "Cheques processed: ";
       if (payOutCount > 0) message += `${payOutCount} payment(s) deducted. `;
       if (payInCount > 0) message += `${payInCount} receipt(s) added.`;
-      
+
       toast.success(message);
     } catch (e) {
       const msg = e?.message || e?.error || "Failed to cash out cheques";
@@ -256,7 +338,11 @@ const ChequeDetails = () => {
   };
 
   const handleCancel = async (chequeId) => {
-    if (!window.confirm("Are you sure you want to cancel this cheque? This will reverse the balance.")) {
+    if (
+      !window.confirm(
+        "Are you sure you want to cancel this cheque? This will reverse the balance."
+      )
+    ) {
       return;
     }
 
@@ -270,15 +356,19 @@ const ChequeDetails = () => {
       await dispatch(getPendingCheques({ status: "all" }));
       toast.success("Cheque cancelled successfully");
     } catch (err) {
-      const msg = err?.response?.data?.message || err?.message || "Failed to cancel cheque";
+      const msg =
+        err?.response?.data?.message || err?.message || "Failed to cancel cheque";
       console.error(msg);
       toast.error(msg);
     }
   };
 
-  // Cash Out Transferred Cheque Handler
   const handleCashOutTransferred = async (chequeId) => {
-    if (!window.confirm("Mark this transferred cheque as cashed out? This will NOT affect your bank balance.")) {
+    if (
+      !window.confirm(
+        "Mark this transferred cheque as cashed out? This will NOT affect your bank balance."
+      )
+    ) {
       return;
     }
 
@@ -292,7 +382,10 @@ const ChequeDetails = () => {
       await dispatch(getPendingCheques({ status: "all" }));
       toast.success("Transferred cheque marked as cashed out successfully");
     } catch (err) {
-      const msg = err?.response?.data?.message || err?.message || "Failed to cash out transferred cheque";
+      const msg =
+        err?.response?.data?.message ||
+        err?.message ||
+        "Failed to cash out transferred cheque";
       console.error(msg);
       toast.error(msg);
     }
@@ -331,7 +424,10 @@ const ChequeDetails = () => {
       setSelectedChequeForTransfer(null);
       toast.success("Cheque transferred successfully");
     } catch (err) {
-      const msg = err?.response?.data?.message || err?.message || "Failed to transfer cheque";
+      const msg =
+        err?.response?.data?.message ||
+        err?.message ||
+        "Failed to transfer cheque";
       console.error(msg);
       toast.error(msg);
     }
@@ -347,154 +443,109 @@ const ChequeDetails = () => {
 
   const handleCloseModal = () => setSelectedImage(null);
 
-  const handlePageChange = (newPage) => {
-    setPage(Math.max(0, Number(newPage) || 0));
+  // ---------- Render helpers ----------
+
+  const renderStatus = (row) => (
+    <>
+      {row.cancelled ? (
+        <Chip label="Cancelled" color="error" size="small" />
+      ) : row.transferredCashedOut ? (
+        <Chip label="Cashed Out (Transferred)" color="success" size="small" />
+      ) : row.transferred ? (
+        <Chip label="Transferred" color="info" size="small" />
+      ) : row.status ? (
+        <Chip label="Cleared" size="small" />
+      ) : (
+        <Chip label="Pending" color="warning" size="small" />
+      )}
+    </>
+  );
+
+  const renderSelectCheckbox = (row) => {
+    const disabled =
+      row.status === true ||
+      row.cancelled === true ||
+      row.transferred === true;
+    const box = (
+      <Checkbox
+        checked={selectedCheques.includes(row._id)}
+        onChange={(e) => handleStatusChange(row._id, e.target.checked)}
+        disabled={disabled}
+      />
+    );
+    let tip = "";
+    if (row.status === true) tip = "Already cleared";
+    if (row.cancelled === true) tip = "Cheque is cancelled";
+    if (row.transferred === true) {
+      if (row.transferredCashedOut) {
+        tip = "Transferred cheque already cashed out by recipient";
+      } else {
+        tip = "Cheque is transferred - use Cash Out button to mark as cashed";
+      }
+    }
+    return tip ? (
+      <Tooltip title={tip}>
+        <span>{box}</span>
+      </Tooltip>
+    ) : (
+      box
+    );
   };
 
-  const handleRowsPerPageChange = (newRowsPerPage) => {
-    setRowsPerPage(Number(newRowsPerPage) || 5);
-    setPage(0);
-  };
-
-  const columns = [
-    {
-      field: "chequeDate",
-      headerName: "Date",
-      renderCell: (row) => new Date(row.chequeDate || row.date).toLocaleDateString(),
-    },
-    { field: "name", headerName: "Description" },
-    { field: "type", headerName: "Type" },
-    {
-      field: "amount",
-      headerName: "Amount",
-      renderCell: (row) => `Rs ${Number(row.amount || 0).toLocaleString()}`,
-    },
-    {
-      field: "status",
-      headerName: "Status",
-      renderCell: (row) => (
+  const renderActions = (row) => (
+    <Box sx={{ display: "flex", gap: 1 }}>
+      {!row.cancelled && !row.status && (
         <>
-          {row.cancelled ? (
-            <Chip label="Cancelled" color="error" size="small" />
-          ) : row.transferredCashedOut ? (
-            <Chip label="Cashed Out (Transferred)" color="success" size="small" />
-          ) : row.transferred ? (
-            <Chip label="Transferred" color="info" size="small" />
-          ) : row.status ? (
-            <Chip label="Cleared" size="small" />
-          ) : (
-            <Chip label="Pending" color="warning" size="small" />
+          {!row.transferred && (
+            <Button
+              variant="outlined"
+              color="error"
+              size="small"
+              onClick={() => handleCancel(row._id)}
+            >
+              Cancel
+            </Button>
           )}
-        </>
-      ),
-    },
-    {
-      field: "statusChange",
-      headerName: "Select",
-      renderCell: (row) => {
-        const disabled = row.status === true || row.cancelled === true || row.transferred === true;
-        const box = (
-          <Checkbox
-            checked={selectedCheques.includes(row._id)}
-            onChange={(e) => handleStatusChange(row._id, e.target.checked)}
-            disabled={disabled}
-          />
-        );
-        let tip = "";
-        if (row.status === true) tip = "Already cleared";
-        if (row.cancelled === true) tip = "Cheque is cancelled";
-        if (row.transferred === true) {
-          if (row.transferredCashedOut) {
-            tip = "Transferred cheque already cashed out by recipient";
-          } else {
-            tip = "Cheque is transferred - use Cash Out button to mark as cashed";
-          }
-        }
-        return tip ? (
-          <Tooltip title={tip}>
-            <span>{box}</span>
-          </Tooltip>
-        ) : (
-          box
-        );
-      },
-    },
-    {
-      field: "view",
-      headerName: "View",
-      renderCell: (row) =>
-        row.chequeImage?.filePath ? (
-          <Button variant="outlined" onClick={() => setSelectedImage(row.chequeImage.filePath)}>
-            View
-          </Button>
-        ) : (
-          <Typography variant="body2" color="textSecondary">
-            No Image
-          </Typography>
-        ),
-    },
-    {
-      field: "actions",
-      headerName: "Actions",
-      renderCell: (row) => (
-        <Box sx={{ display: "flex", gap: 1 }}>
-          {!row.cancelled && !row.status && (
+
+          {!row.transferred && (
+            <Button
+              variant="outlined"
+              color="primary"
+              size="small"
+              onClick={() => handleTransferClick(row)}
+            >
+              Transfer
+            </Button>
+          )}
+
+          {row.transferred && !row.transferredCashedOut && (
             <>
-              {/* Show Cancel button only for non-transferred cheques */}
-              {!row.transferred && (
-                <Button
-                  variant="outlined"
-                  color="error"
-                  size="small"
-                  onClick={() => handleCancel(row._id)}
-                >
-                  Cancel
-                </Button>
-              )}
-              
-              {/* Show Transfer button only for non-transferred cheques */}
-              {!row.transferred && (
-                <Button
-                  variant="outlined"
-                  color="primary"
-                  size="small"
-                  onClick={() => handleTransferClick(row)}
-                >
-                  Transfer
-                </Button>
-              )}
-
-              {/* Show Cash Out button for transferred cheques that haven't been cashed out */}
-              {row.transferred && !row.transferredCashedOut && (
-                <>
-                  <Button
-                    variant="outlined"
-                    color="success"
-                    size="small"
-                    onClick={() => handleCashOutTransferred(row._id)}
-                  >
-                    Cash Out
-                  </Button>
-
-                  {/* Show Cancel button for transferred cheques that haven't been cashed out */}
-                  <Button
-                    variant="outlined"
-                    color="error"
-                    size="small"
-                    onClick={() => handleCancel(row._id)}
-                  >
-                    Cancel
-                  </Button>
-                </>
-              )}
+              <Button
+                variant="outlined"
+                color="success"
+                size="small"
+                onClick={() => handleCashOutTransferred(row._id)}
+              >
+                Cash Out
+              </Button>
+              <Button
+                variant="outlined"
+                color="error"
+                size="small"
+                onClick={() => handleCancel(row._id)}
+              >
+                Cancel
+              </Button>
             </>
           )}
-        </Box>
-      ),
-    },
-  ];
+        </>
+      )}
+    </Box>
+  );
 
   if (isLoading) return <CircularProgress />;
+
+  // ---------- JSX ----------
 
   return (
     <div>
@@ -510,7 +561,11 @@ const ChequeDetails = () => {
             <List dense>
               {todayCheques.map((c) => (
                 <ListItem key={c._id}>
-                  <ListItemText primary={`${c.name} - ${c.type} - Rs ${Number(c.amount || 0).toLocaleString()}`} />
+                  <ListItemText
+                    primary={`${c.name} - ${c.type} - Rs ${Number(
+                      c.amount || 0
+                    ).toLocaleString()}`}
+                  />
                 </ListItem>
               ))}
             </List>
@@ -519,20 +574,82 @@ const ChequeDetails = () => {
         {upcomingCheques.length > 0 && (
           <Alert severity="info">
             <AlertTitle>Upcoming Cheques</AlertTitle>
-            You have {upcomingCheques.length} cheque(s) coming up in the next 7 days.
+            You have {upcomingCheques.length} cheque(s) coming up in the next 7
+            days.
           </Alert>
         )}
       </Stack>
 
       <Paper>
-        <CustomTable
-          columns={columns}
-          data={allCheques || []}
-          page={page}
-          rowsPerPage={rowsPerPage}
-          onPageChange={handlePageChange}
-          onRowsPerPageChange={handleRowsPerPageChange}
-        />
+        {/* ✅ Scrollable Table Container - Shows ~5 rows, scrolls to bottom */}
+        <TableContainer
+          ref={tableContainerRef}
+          sx={{
+            maxHeight: 350,
+            overflow: 'auto',
+            '&::-webkit-scrollbar': {
+              width: '8px',
+            },
+            '&::-webkit-scrollbar-track': {
+              background: '#f1f1f1',
+              borderRadius: '4px',
+            },
+            '&::-webkit-scrollbar-thumb': {
+              background: '#888',
+              borderRadius: '4px',
+            },
+            '&::-webkit-scrollbar-thumb:hover': {
+              background: '#555',
+            },
+          }}
+        >
+          <Table stickyHeader size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Date</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Description</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Type</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Amount</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Status</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Select</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>View</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {allCheques.map((row, index) => (
+                <TableRow key={row._id || index} hover>
+                  <TableCell>
+                    {new Date(row.chequeDate || row.date).toLocaleDateString()}
+                  </TableCell>
+                  <TableCell sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {row.name}
+                  </TableCell>
+                  <TableCell>{row.type}</TableCell>
+                  <TableCell>Rs {Number(row.amount || 0).toLocaleString()}</TableCell>
+                  <TableCell>{renderStatus(row)}</TableCell>
+                  <TableCell>{renderSelectCheckbox(row)}</TableCell>
+                  <TableCell>
+                    {row.chequeImage?.filePath ? (
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => setSelectedImage(row.chequeImage.filePath)}
+                      >
+                        View
+                      </Button>
+                    ) : (
+                      <Typography variant="body2" color="textSecondary">
+                        No Image
+                      </Typography>
+                    )}
+                  </TableCell>
+                  <TableCell>{renderActions(row)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
 
         <Tooltip
           title={
@@ -576,42 +693,56 @@ const ChequeDetails = () => {
             Cash Out Cheques
           </Typography>
 
-          {/* ✅ NEW: Show summary of what will happen */}
           <Alert severity="info" sx={{ mb: 2 }}>
             {(() => {
-              const payOutCount = selectedCheques.filter(id => {
-                const c = allCheques.find(x => x._id === id);
-                return c?.type === "Supplier" || c?.type === "Shipper" || c?.type === "Product";
+              const payOutCount = selectedCheques.filter((id) => {
+                const c = allCheques.find((x) => x._id === id);
+                return isPayOutCheque(c);
               }).length;
               const payInCount = selectedCheques.length - payOutCount;
-              
+
               const payOutTotal = selectedCheques
-                .filter(id => {
-                  const c = allCheques.find(x => x._id === id);
-                  return c?.type === "Supplier" || c?.type === "Shipper" || c?.type === "Product";
+                .filter((id) => {
+                  const c = allCheques.find((x) => x._id === id);
+                  return isPayOutCheque(c);
                 })
-                .reduce((sum, id) => sum + Number(allCheques.find(x => x._id === id)?.amount || 0), 0);
-              
+                .reduce(
+                  (sum, id) =>
+                    sum +
+                    Number(allCheques.find((x) => x._id === id)?.amount || 0),
+                  0
+                );
+
               const payInTotal = selectedCheques
-                .filter(id => {
-                  const c = allCheques.find(x => x._id === id);
-                  return c?.type !== "Supplier" && c?.type !== "Shipper" && c?.type !== "Product";
+                .filter((id) => {
+                  const c = allCheques.find((x) => x._id === id);
+                  return !isPayOutCheque(c);
                 })
-                .reduce((sum, id) => sum + Number(allCheques.find(x => x._id === id)?.amount || 0), 0);
+                .reduce(
+                  (sum, id) =>
+                    sum +
+                    Number(allCheques.find((x) => x._id === id)?.amount || 0),
+                  0
+                );
 
               return (
                 <>
                   {payOutCount > 0 && (
                     <Typography variant="body2" color="error.main">
-                      💸 {payOutCount} payment(s) will DEDUCT Rs {payOutTotal.toLocaleString()}
+                      💸 {payOutCount} payment(s) will DEDUCT Rs{" "}
+                      {payOutTotal.toLocaleString()}
                     </Typography>
                   )}
                   {payInCount > 0 && (
                     <Typography variant="body2" color="success.main">
-                      💰 {payInCount} receipt(s) will ADD Rs {payInTotal.toLocaleString()}
+                      💰 {payInCount} receipt(s) will ADD Rs{" "}
+                      {payInTotal.toLocaleString()}
                     </Typography>
                   )}
-                  <Typography variant="body2" sx={{ mt: 1, fontWeight: 'bold' }}>
+                  <Typography
+                    variant="body2"
+                    sx={{ mt: 1, fontWeight: "bold" }}
+                  >
                     Net: Rs {(payInTotal - payOutTotal).toLocaleString()}
                   </Typography>
                 </>
@@ -619,26 +750,40 @@ const ChequeDetails = () => {
             })()}
           </Alert>
 
-          <FormControl component="fieldset" sx={{ mb: 2 }}>
-            <FormLabel component="legend">Select Destination</FormLabel>
-            <RadioGroup
-              value={cashOutMethod}
-              onChange={(e) => {
-                setCashOutMethod(e.target.value);
-                if (e.target.value === "cash") {
-                  setSelectedBankId("");
-                }
-              }}
-            >
-              <FormControlLabel value="bank" control={<Radio />} label="Bank Account" disabled={processingCashOut} />
-              <FormControlLabel value="cash" control={<Radio />} label="Cash" disabled={processingCashOut} />
-            </RadioGroup>
-          </FormControl>
+          {/* Only show Bank/Cash choice if NOT auto-bank scenario */}
+          {!isAllPayoutWithBank && (
+            <FormControl component="fieldset" sx={{ mb: 2 }}>
+              <FormLabel component="legend">Select Destination</FormLabel>
+              <RadioGroup
+                value={cashOutMethod}
+                onChange={(e) => {
+                  setCashOutMethod(e.target.value);
+                  if (e.target.value === "cash") {
+                    setSelectedBankId("");
+                  }
+                }}
+              >
+                <FormControlLabel
+                  value="bank"
+                  control={<Radio />}
+                  label="Bank Account"
+                  disabled={processingCashOut}
+                />
+                <FormControlLabel
+                  value="cash"
+                  control={<Radio />}
+                  label="Cash"
+                  disabled={processingCashOut}
+                />
+              </RadioGroup>
+            </FormControl>
+          )}
 
-          {cashOutMethod === "bank" && (
+          {/* Only show bank dropdown if we really need a manual bank */}
+          {cashOutMethod === "bank" && needBankSelection && (
             <TextField
               select
-              label="Select Bank"
+              label="Select Bank (for cheques without a saved bank)"
               value={selectedBankId}
               onChange={(e) => setSelectedBankId(e.target.value)}
               fullWidth
@@ -648,7 +793,10 @@ const ChequeDetails = () => {
               <MenuItem value="">-- Select Bank --</MenuItem>
               {banks.map((bank) => (
                 <MenuItem key={bank._id} value={bank._id}>
-                  {bank.bankName} - Rs {Number(bank.balance || bank.totalBalance || 0).toLocaleString()}
+                  {bank.bankName} - Rs{" "}
+                  {Number(
+                    bank.balance || bank.totalBalance || 0
+                  ).toLocaleString()}
                 </MenuItem>
               ))}
             </TextField>
@@ -662,8 +810,10 @@ const ChequeDetails = () => {
               fullWidth
               disabled={
                 processingCashOut ||
-                !cashOutMethod ||
-                (cashOutMethod === "bank" && !selectedBankId)
+                (!cashOutMethod && !isAllPayoutWithBank) ||
+                (cashOutMethod === "bank" &&
+                  needBankSelection &&
+                  !selectedBankId)
               }
             >
               {processingCashOut ? "Processing..." : "Confirm Cash Out"}
@@ -691,7 +841,11 @@ const ChequeDetails = () => {
             position: "relative",
           }}
         >
-          <img src={selectedImage} alt="Cheque" style={{ maxWidth: "90%", maxHeight: "90%" }} />
+          <img
+            src={selectedImage}
+            alt="Cheque"
+            style={{ maxWidth: "90%", maxHeight: "90%" }}
+          />
           <Button
             onClick={handleCloseModal}
             style={{
@@ -728,8 +882,11 @@ const ChequeDetails = () => {
           </Typography>
 
           <Typography variant="body2" sx={{ mb: 2 }}>
-            <strong>Cheque Details:</strong><br />
-            Amount: Rs {Number(selectedChequeForTransfer?.amount || 0).toLocaleString()}<br />
+            <strong>Cheque Details:</strong>
+            <br />
+            Amount: Rs{" "}
+            {Number(selectedChequeForTransfer?.amount || 0).toLocaleString()}
+            <br />
             From: {selectedChequeForTransfer?.name}
           </Typography>
 
@@ -752,18 +909,24 @@ const ChequeDetails = () => {
           {transferTo && (
             <TextField
               select
-              label={`Select ${transferTo === "customer" ? "Customer" : "Supplier"}`}
+              label={`Select ${
+                transferTo === "customer" ? "Customer" : "Supplier"
+              }`}
               value={transferToId}
               onChange={(e) => setTransferToId(e.target.value)}
               fullWidth
               margin="normal"
             >
-              <MenuItem value="">-- Select {transferTo === "customer" ? "Customer" : "Supplier"} --</MenuItem>
-              {(transferTo === "customer" ? customers : suppliers).map((entity) => (
-                <MenuItem key={entity._id} value={entity._id}>
-                  {entity.username || entity.name}
-                </MenuItem>
-              ))}
+              <MenuItem value="">
+                -- Select {transferTo === "customer" ? "Customer" : "Supplier"} --
+              </MenuItem>
+              {(transferTo === "customer" ? customers : suppliers).map(
+                (entity) => (
+                  <MenuItem key={entity._id} value={entity._id}>
+                    {entity.username || entity.name}
+                  </MenuItem>
+                )
+              )}
             </TextField>
           )}
 

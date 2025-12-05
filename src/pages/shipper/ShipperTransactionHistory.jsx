@@ -1,5 +1,5 @@
 // pages/Shipper/ShipperTransactionHistory.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
   Dialog,
@@ -64,6 +64,21 @@ const ShipperTransactionHistory = ({ open, onClose, shipper }) => {
     );
   };
 
+  // --- Show newest at the bottom: sort ASC by (date || createdAt) ---
+  const rows = useMemo(() => {
+    const source =
+      (Array.isArray(transactionHistory) && transactionHistory.length > 0
+        ? transactionHistory
+        : shipper?.transactionHistory) || [];
+
+    // Do not mutate original array
+    return [...source].sort((a, b) => {
+      const da = new Date(a?.date || a?.createdAt || 0).getTime();
+      const db = new Date(b?.date || b?.createdAt || 0).getTime();
+      return da - db; // ASC => last added ends up at the bottom
+    });
+  }, [transactionHistory, shipper]);
+
   if (!shipper) return null;
 
   return (
@@ -74,13 +89,25 @@ const ShipperTransactionHistory = ({ open, onClose, shipper }) => {
       </DialogTitle>
 
       <DialogContent>
-        {/* Current Balance Summary */}
-        <Box sx={{ mb: 2, p: 2, bgcolor: "grey.100", borderRadius: 1, display: "flex", justifyContent: "space-between" }}>
+        {/* Summary */}
+        <Box
+          sx={{
+            mb: 2,
+            p: 2,
+            bgcolor: "grey.100",
+            borderRadius: 1,
+            display: "flex",
+            justifyContent: "space-between",
+          }}
+        >
           <Box>
             <Typography variant="body2" color="text.secondary">
               Current Balance
             </Typography>
-            <Typography variant="h5" color={Number(shipper.balance || 0) > 0 ? "error.main" : "success.main"}>
+            <Typography
+              variant="h5"
+              color={Number(shipper.balance || 0) > 0 ? "error.main" : "success.main"}
+            >
               Rs {Number(shipper.balance || 0).toLocaleString()}
             </Typography>
           </Box>
@@ -88,15 +115,20 @@ const ShipperTransactionHistory = ({ open, onClose, shipper }) => {
             <Typography variant="body2" color="text.secondary">
               Total Transactions
             </Typography>
-            <Typography variant="h5">
-              {transactionHistory?.length || shipper.transactionHistory?.length || 0}
-            </Typography>
+            <Typography variant="h5">{rows.length}</Typography>
           </Box>
         </Box>
 
-        {/* Transaction Table */}
-        <TableContainer component={Paper} variant="outlined">
-          <Table size="small">
+        {/* Scrollable table with sticky header; newest ends at bottom */}
+        <TableContainer
+          component={Paper}
+          variant="outlined"
+          sx={{
+            maxHeight: 420,          // <— vertical scrollbar appears when needed
+            overflowY: "auto",
+          }}
+        >
+          <Table size="small" stickyHeader>
             <TableHead>
               <TableRow sx={{ bgcolor: "grey.50" }}>
                 <TableCell>Date</TableCell>
@@ -114,20 +146,26 @@ const ShipperTransactionHistory = ({ open, onClose, shipper }) => {
                     <CircularProgress size={24} />
                   </TableCell>
                 </TableRow>
-              ) : (transactionHistory || shipper.transactionHistory || []).length === 0 ? (
+              ) : rows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
                     <Typography color="text.secondary">No transactions found</Typography>
                   </TableCell>
                 </TableRow>
               ) : (
-                (transactionHistory || shipper.transactionHistory || []).map((txn, index) => (
+                rows.map((txn, index) => (
                   <TableRow key={txn._id || index} hover>
                     <TableCell>
-                      <Typography variant="body2">{formatDate(txn.date || txn.createdAt)}</Typography>
+                      <Typography variant="body2">
+                        {formatDate(txn.date || txn.createdAt)}
+                      </Typography>
                     </TableCell>
                     <TableCell>
-                      <Typography variant="body2" sx={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <Typography
+                        variant="body2"
+                        sx={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                        title={txn.description || "N/A"}
+                      >
                         {txn.description || "N/A"}
                       </Typography>
                     </TableCell>
@@ -165,6 +203,7 @@ const ShipperTransactionHistory = ({ open, onClose, shipper }) => {
                         label={txn.status || "completed"}
                         size="small"
                         color={txn.status === "pending" ? "warning" : "success"}
+                        variant="outlined"
                       />
                     </TableCell>
                   </TableRow>

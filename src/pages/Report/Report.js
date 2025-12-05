@@ -37,32 +37,47 @@ import axios from "axios";
 import jsPDF from "jspdf";
 
 // ——— API base ———
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://13.60.223.186:5000/";
+const BACKEND_URL =
+  process.env.REACT_APP_BACKEND_URL || "http://13.60.223.186:5000/";
 const API_BASE = `${BACKEND_URL}api`;
 
 // ——— Metric Card Component ———
-const MetricCard = ({ title, subtitle, value, count, icon: Icon, color, isCurrency }) => {
+const MetricCard = ({
+  title,
+  subtitle,
+  value,
+  count,
+  icon: Icon,
+  color,
+  isCurrency,
+}) => {
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat("en-PK", {
       style: "currency",
       currency: "PKR",
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(amount);
+    }).format(amount || 0);
   };
 
   const formatNumber = (num) => {
-    return new Intl.NumberFormat("en-PK").format(num);
+    return new Intl.NumberFormat("en-PK").format(num || 0);
   };
 
   const getColor = () => {
     switch (color) {
-      case "success": return "#4caf50";
-      case "danger": return "#f44336";
-      case "warning": return "#ff9800";
-      case "info": return "#2196f3";
-      case "purple": return "#9c27b0";
-      default: return "#1976d2";
+      case "success":
+        return "#4caf50";
+      case "danger":
+        return "#f44336";
+      case "warning":
+        return "#ff9800";
+      case "info":
+        return "#2196f3";
+      case "purple":
+        return "#9c27b0";
+      default:
+        return "#1976d2";
     }
   };
 
@@ -96,11 +111,21 @@ const MetricCard = ({ title, subtitle, value, count, icon: Icon, color, isCurren
           <Icon />
         </Box>
         <Box flex={1}>
-          <Typography variant="body2" color="text.secondary" gutterBottom sx={{ fontWeight: 600 }}>
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            gutterBottom
+            sx={{ fontWeight: 600 }}
+          >
             {title}
           </Typography>
           {subtitle && (
-            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              display="block"
+              sx={{ mb: 1 }}
+            >
               {subtitle}
             </Typography>
           )}
@@ -108,7 +133,11 @@ const MetricCard = ({ title, subtitle, value, count, icon: Icon, color, isCurren
             {isCurrency ? formatCurrency(value) : formatNumber(value)}
           </Typography>
           {count !== undefined && (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, fontWeight: 500 }}>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ mt: 0.5, fontWeight: 500 }}
+            >
               {count} {count === 1 ? "item" : "items"}
             </Typography>
           )}
@@ -124,7 +153,7 @@ function Report() {
   const dispatch = useDispatch();
   const chequesFromStore = useSelector((state) => state.cheque.cheques);
   const [loading, setLoading] = useState(true);
-  
+
   // Date filters
   const [reportType, setReportType] = useState("monthly");
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -141,10 +170,14 @@ function Report() {
   const [plData, setPlData] = useState(null);
   const [plLoading, setPlLoading] = useState(false);
 
+  // Inventory states
+  const [products, setProducts] = useState([]);
+  const [warehousesMap, setWarehousesMap] = useState({}); // {id: name}
+
   // ===== Helper functions =====
   const toNum = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
   const pickWhen = (tx) => tx?.createdAt || tx?.date || tx?._displayDate || null;
-  
+
   const pickAmount = (tx) => {
     if (tx?.amount != null) return toNum(tx.amount);
     if (tx?.balance != null) return toNum(tx.balance);
@@ -161,7 +194,7 @@ function Report() {
     const d = new Date(isoDate);
     const y = d.getFullYear();
     const m = d.getMonth() + 1;
-    
+
     if (reportType === "daily") return y === selectedYear && m === selectedMonth;
     if (reportType === "monthly") return y === selectedYear && m === selectedMonth;
     if (reportType === "yearly") return y === selectedYear;
@@ -170,7 +203,13 @@ function Report() {
 
   const isCashOutType = (type) => {
     const t = (type || "").toLowerCase();
-    return t === "deduct" || t === "subtract" || t === "withdraw" || t === "expense" || t === "debit";
+    return (
+      t === "deduct" ||
+      t === "subtract" ||
+      t === "withdraw" ||
+      t === "expense" ||
+      t === "debit"
+    );
   };
 
   const isReversalRow = (t) => {
@@ -183,6 +222,7 @@ function Report() {
     if (isLoggedIn) {
       fetchAllData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoggedIn, reportType, selectedYear, selectedMonth]);
 
   useEffect(() => {
@@ -201,6 +241,8 @@ function Report() {
         fetchCustomers(),
         fetchSuppliers(),
         fetchShippers(),
+        fetchProducts(),
+        fetchWarehouses(),
         fetchProfitLoss(),
       ]);
     } catch (error) {
@@ -212,13 +254,18 @@ function Report() {
 
   const fetchBanks = async () => {
     try {
-      const { data } = await axios.get(`${API_BASE}/banks/all`, { withCredentials: true });
+      const { data } = await axios.get(`${API_BASE}/banks/all`, {
+        withCredentials: true,
+      });
       const bankList = Array.isArray(data) ? data : data?.banks || [];
       setBanks(bankList);
 
       let allTx = [];
       for (const bank of bankList) {
-        const res = await axios.get(`${API_BASE}/banks/${bank._id}/transactions`, { withCredentials: true });
+        const res = await axios.get(
+          `${API_BASE}/banks/${bank._id}/transactions`,
+          { withCredentials: true }
+        );
         const txns = res.data || {};
         const list = Array.isArray(txns) ? txns : txns.transactions || [];
         allTx = [
@@ -241,15 +288,17 @@ function Report() {
   const fetchCashBalance = async () => {
     const possibleEndpoints = [
       "/cash/balance",
-      "/cash/all", 
+      "/cash/all",
       "/cash",
       "/expenses/cash-balance",
-      "/own-account/cash"
+      "/own-account/cash",
     ];
 
     for (const endpoint of possibleEndpoints) {
       try {
-        const { data } = await axios.get(`${API_BASE}${endpoint}`, { withCredentials: true });
+        const { data } = await axios.get(`${API_BASE}${endpoint}`, {
+          withCredentials: true,
+        });
         setCash(data);
         return;
       } catch (error) {
@@ -261,7 +310,9 @@ function Report() {
 
   const fetchExpenses = async () => {
     try {
-      const { data } = await axios.get(`${API_BASE}/expenses/all`, { withCredentials: true });
+      const { data } = await axios.get(`${API_BASE}/expenses/all`, {
+        withCredentials: true,
+      });
       const expenseList = Array.isArray(data) ? data : [];
       setExpenses(expenseList);
     } catch (error) {
@@ -272,7 +323,9 @@ function Report() {
 
   const fetchCustomers = async () => {
     try {
-      const { data } = await axios.get(`${API_BASE}/customers/allcustomer`, { withCredentials: true });
+      const { data } = await axios.get(`${API_BASE}/customers/allcustomer`, {
+        withCredentials: true,
+      });
       const customerList = Array.isArray(data) ? data : [];
       setCustomers(customerList);
     } catch (error) {
@@ -283,7 +336,9 @@ function Report() {
 
   const fetchSuppliers = async () => {
     try {
-      const { data } = await axios.get(`${API_BASE}/suppliers`, { withCredentials: true });
+      const { data } = await axios.get(`${API_BASE}/suppliers`, {
+        withCredentials: true,
+      });
       const supplierList = Array.isArray(data) ? data : [];
       setSuppliers(supplierList);
     } catch (error) {
@@ -294,13 +349,56 @@ function Report() {
 
   const fetchShippers = async () => {
     try {
-      const { data } = await axios.get(`${API_BASE}/shippers`, { withCredentials: true });
+      const { data } = await axios.get(`${API_BASE}/shippers`, {
+        withCredentials: true,
+      });
       const shipperList = Array.isArray(data) ? data : [];
       setShippers(shipperList);
     } catch (error) {
       console.error("❌ Error fetching shippers:", error);
       setShippers([]);
     }
+  };
+
+  const fetchProducts = async () => {
+    try {
+      const { data } = await axios.get(`${API_BASE}/products`, {
+        withCredentials: true,
+      });
+      const rows = Array.isArray(data) ? data : data?.products || [];
+      setProducts(rows);
+    } catch (error) {
+      console.error("❌ Error fetching products:", error);
+      setProducts([]);
+    }
+  };
+
+  const fetchWarehouses = async () => {
+    const endpoints = [
+      "/warehouses",
+      "/warehouse",
+      "/warehouses/all",
+      "/warehouse/all",
+      "/ware-house",
+      "/warehouse/list",
+    ];
+    for (const ep of endpoints) {
+      try {
+        const { data } = await axios.get(`${API_BASE}${ep}`, {
+          withCredentials: true,
+        });
+        const list = Array.isArray(data)
+          ? data
+          : data?.warehouses || data?.data || [];
+        const map = {};
+        list.forEach((w) => (map[String(w._id)] = w.name || w.title || "Warehouse"));
+        setWarehousesMap(map);
+        return;
+      } catch (e) {
+        // try next
+      }
+    }
+    setWarehousesMap({});
   };
 
   const fetchProfitLoss = async () => {
@@ -310,13 +408,13 @@ function Report() {
         period: reportType,
         year: selectedYear,
       };
-      if (reportType === "daily" || reportType === "monthly") params.month = selectedMonth;
+      if (reportType === "daily" || reportType === "monthly")
+        params.month = selectedMonth;
 
-      const { data } = await axios.get(`${API_BASE}/reports/profit-loss`, { 
+      const { data } = await axios.get(`${API_BASE}/reports/profit-loss`, {
         params,
-        withCredentials: true 
+        withCredentials: true,
       });
-      console.log("📊 P&L data fetched:", data?.totals);
       setPlData(data?.totals || null);
     } catch (error) {
       console.error("❌ Error fetching profit/loss:", error);
@@ -342,7 +440,8 @@ function Report() {
   const totalCashAdds = useMemo(() => {
     const total = filteredCashTransactions.reduce((sum, t) => {
       const ttype = String(t.type || "").toLowerCase();
-      const isCredit = ttype === "add" || ttype === "credit" || ttype === "deposit";
+      const isCredit =
+        ttype === "add" || ttype === "credit" || ttype === "deposit";
       return sum + (isCredit ? Math.abs(pickAmount(t)) : 0);
     }, 0);
     return total;
@@ -365,9 +464,10 @@ function Report() {
 
   const cashExpensesFromExpensesApi = useMemo(() => {
     const total = (expenses || [])
-      .filter((e) => 
-        (e.paymentMethod || "").toLowerCase() === "cash" && 
-        isInSelectedPeriod(e.expenseDate || e.createdAt)
+      .filter(
+        (e) =>
+          (e.paymentMethod || "").toLowerCase() === "cash" &&
+          isInSelectedPeriod(e.expenseDate || e.createdAt)
       )
       .reduce((sum, e) => sum + Math.abs(Number(e.amount) || 0), 0);
     return total;
@@ -375,7 +475,10 @@ function Report() {
 
   // ===== Bank calculations =====
   const totalBankBalance = useMemo(() => {
-    const total = banks.reduce((sum, bank) => sum + (Number(bank.balance) || 0), 0);
+    const total = banks.reduce(
+      (sum, bank) => sum + (Number(bank.balance) || 0),
+      0
+    );
     return total;
   }, [banks]);
 
@@ -383,7 +486,10 @@ function Report() {
     return (expenses || [])
       .filter((e) => {
         const pm = (e.paymentMethod || "").toLowerCase();
-        return (pm === "online" || pm === "cheque") && isInSelectedPeriod(e.expenseDate || e.createdAt);
+        return (
+          (pm === "online" || pm === "cheque") &&
+          isInSelectedPeriod(e.expenseDate || e.createdAt)
+        );
       })
       .map((e) => ({
         bankID: e.bankID,
@@ -392,7 +498,10 @@ function Report() {
   }, [expenses, reportType, selectedYear, selectedMonth]);
 
   const totalBankExpenses = useMemo(() => {
-    const total = bankExpensesFromExpensesApi.reduce((sum, r) => sum + r.amount, 0);
+    const total = bankExpensesFromExpensesApi.reduce(
+      (sum, r) => sum + r.amount,
+      0
+    );
     return total;
   }, [bankExpensesFromExpensesApi]);
 
@@ -453,15 +562,13 @@ function Report() {
     if (!Array.isArray(chequesFromStore)) {
       return { count: 0, amount: 0 };
     }
-
-    const pending = chequesFromStore.filter((c) => {
-      return c.status === false && !c.cancelled && !c.transferred;
-    });
-
-    const totalAmount = pending.reduce((sum, c) => {
-      return sum + (Number(c.amount) || 0);
-    }, 0);
-
+    const pending = chequesFromStore.filter(
+      (c) => c.status === false && !c.cancelled && !c.transferred
+    );
+    const totalAmount = pending.reduce(
+      (sum, c) => sum + (Number(c.amount) || 0),
+      0
+    );
     return {
       count: pending.length,
       amount: totalAmount,
@@ -471,370 +578,745 @@ function Report() {
   // ===== Title for period =====
   const titleForPeriod = useMemo(() => {
     if (reportType === "daily" || reportType === "monthly") {
-      return `${new Date(selectedYear, selectedMonth - 1).toLocaleString("default", { month: "long" })} ${selectedYear}`;
+      return `${new Date(selectedYear, selectedMonth - 1).toLocaleString(
+        "default",
+        { month: "long" }
+      )} ${selectedYear}`;
     }
     return `${selectedYear}`;
   }, [reportType, selectedYear, selectedMonth]);
 
+  // ===== INVENTORY: warehouse × category with product names & qty =====
+  const inventorySummary = useMemo(() => {
+    const byWarehouse = new Map();
+    let grandTotal = 0;
+
+    const pushRow = (whId, whName, category, productName, qty) => {
+      if (!qty) return;
+      const id = whId || "unknown";
+      const name =
+        warehousesMap[id] ||
+        whName ||
+        (id === "unknown" ? "Unknown Warehouse" : id);
+      let w = byWarehouse.get(id);
+      if (!w) {
+        w = { id, name, totalQty: 0, categories: new Map() };
+        byWarehouse.set(id, w);
+      }
+      let c = w.categories.get(category || "Uncategorized");
+      if (!c) {
+        c = { totalQty: 0, items: [] };
+        w.categories.set(category || "Uncategorized", c);
+      }
+      c.totalQty += qty;
+      c.items.push({ name: productName || "Unnamed", qty });
+      w.totalQty += qty;
+    };
+
+    (products || []).forEach((p) => {
+      const inStock = Number(p.quantity || 0);
+      if (!inStock) return;
+      grandTotal += inStock;
+
+      const cat = p.category || "Uncategorized";
+      const pname = p.name || "Unnamed";
+
+      if (Array.isArray(p.warehouseStock) && p.warehouseStock.length > 0) {
+        p.warehouseStock.forEach((ws) => {
+          const q = Number(ws?.quantity || 0);
+          const whId = String(ws?.warehouse || "unknown");
+          pushRow(whId, p?.warehouseName, cat, pname, q);
+        });
+      } else if (p.warehouse) {
+        // legacy single-warehouse field
+        pushRow(String(p.warehouse), p?.warehouseName, cat, pname, inStock);
+      } else {
+        pushRow("unknown", "Unknown Warehouse", cat, pname, inStock);
+      }
+    });
+
+    const warehouses = [...byWarehouse.values()]
+      .map((w) => ({
+        ...w,
+        categories: [...w.categories.entries()]
+          .map(([category, val]) => ({
+            category,
+            totalQty: val.totalQty,
+            items: val.items.sort((a, b) => b.qty - a.qty),
+          }))
+          .sort((a, b) => a.category.localeCompare(b.category)),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    return { warehouses, grandTotal };
+  }, [products, warehousesMap]);
+
   // ===== PDF Export =====
   const downloadComprehensiveReport = () => {
-    const doc = new jsPDF('portrait');
-    
+    const doc = new jsPDF("portrait");
+
     // ===== COMPANY LOGO/HEADER =====
     doc.setFontSize(22);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(255, 87, 34);
     doc.text("Z&Z TRADERS .CO", 105, 12, { align: "center" });
-    
+
     doc.setLineWidth(0.8);
     doc.setDrawColor(255, 87, 34);
     doc.line(60, 15, 150, 15);
-    
+
     doc.setFontSize(16);
     doc.setTextColor(0, 0, 0);
     doc.text("FINANCIAL REPORT", 105, 22, { align: "center" });
-    
+
     doc.setFontSize(11);
     doc.setFont("helvetica", "normal");
     doc.text(`Period: ${titleForPeriod}`, 105, 28, { align: "center" });
-    doc.text(`Generated: ${new Date().toLocaleString()}`, 105, 33, { align: "center" });
-    
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 105, 33, {
+      align: "center",
+    });
+
     doc.setLineWidth(0.5);
     doc.setDrawColor(0, 0, 0);
     doc.line(14, 37, 196, 37);
-    
+
     let yPos = 45;
+    const ensureRoom = (need = 10) => {
+      if (yPos + need > 290) {
+        doc.addPage();
+        yPos = 20;
+      }
+    };
 
     // ===== SECTION 1: CASH & BANK SUMMARY =====
     doc.setFontSize(13);
     doc.setFont(undefined, "bold");
     doc.setFillColor(41, 128, 185);
-    doc.rect(14, yPos - 5, 182, 8, 'F');
+    doc.rect(14, yPos - 5, 182, 8, "F");
     doc.setTextColor(255, 255, 255);
     doc.text("CASH & BANK SUMMARY", 16, yPos);
     yPos += 10;
-    
+
     doc.setTextColor(0, 0, 0);
     doc.setFont(undefined, "normal");
     doc.setFontSize(10);
-    
+
     doc.text("Total Cash Balance:", 20, yPos);
-    doc.text(`Rs ${availableCashBalance.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    doc.text(
+      `Rs ${availableCashBalance.toLocaleString("en-PK", {
+        minimumFractionDigits: 2,
+      })}`,
+      140,
+      yPos,
+      { align: "right" }
+    );
     yPos += 6;
-    
+
     doc.text("Total Bank Balance:", 20, yPos);
-    doc.text(`Rs ${totalBankBalance.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    doc.text(
+      `Rs ${totalBankBalance.toLocaleString("en-PK", {
+        minimumFractionDigits: 2,
+      })}`,
+      140,
+      yPos,
+      { align: "right" }
+    );
     yPos += 6;
-    
+
     doc.text("Pending Cheques:", 20, yPos);
-    doc.text(`Rs ${pendingCheques.amount.toLocaleString('en-PK', {minimumFractionDigits: 2})} (${pendingCheques.count} cheques)`, 140, yPos, { align: "right" });
+    doc.text(
+      `Rs ${pendingCheques.amount.toLocaleString("en-PK", {
+        minimumFractionDigits: 2,
+      })} (${pendingCheques.count} cheques)`,
+      140,
+      yPos,
+      { align: "right" }
+    );
     yPos += 6;
-    
+
     doc.setLineWidth(0.3);
     doc.line(20, yPos, 140, yPos);
     yPos += 5;
-    
+
     doc.setFont(undefined, "bold");
     doc.text("Total Liquid Assets:", 20, yPos);
-    doc.text(`Rs ${(availableCashBalance + totalBankBalance).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    doc.text(
+      `Rs ${(availableCashBalance + totalBankBalance).toLocaleString("en-PK", {
+        minimumFractionDigits: 2,
+      })}`,
+      140,
+      yPos,
+      { align: "right" }
+    );
     yPos += 12;
 
     // ===== SECTION 2: CUSTOMER ACCOUNTS =====
     doc.setFont(undefined, "bold");
     doc.setFillColor(76, 175, 80);
-    doc.rect(14, yPos - 5, 182, 8, 'F');
+    doc.rect(14, yPos - 5, 182, 8, "F");
     doc.setTextColor(255, 255, 255);
     doc.text("CUSTOMER ACCOUNTS", 16, yPos);
     yPos += 10;
-    
+
     doc.setTextColor(0, 0, 0);
     doc.setFont(undefined, "normal");
-    
+
     doc.text(`Dues FROM Customers (Receivable):`, 20, yPos);
-    doc.text(`Rs ${customerDues.receivable.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    doc.text(
+      `Rs ${customerDues.receivable.toLocaleString("en-PK", {
+        minimumFractionDigits: 2,
+      })}`,
+      140,
+      yPos,
+      { align: "right" }
+    );
     yPos += 6;
-    
+
     doc.text(`Dues TO Customers (Payable):`, 20, yPos);
-    doc.text(`Rs ${customerDues.payable.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    doc.text(
+      `Rs ${customerDues.payable.toLocaleString("en-PK", {
+        minimumFractionDigits: 2,
+      })}`,
+      140,
+      yPos,
+      { align: "right" }
+    );
     yPos += 6;
-    
+
     doc.setLineWidth(0.3);
     doc.line(20, yPos, 140, yPos);
     yPos += 5;
-    
+
     doc.setFont(undefined, "bold");
     const customerNet = customerDues.receivable - customerDues.payable;
     doc.setTextColor(customerNet >= 0 ? 0 : 255, customerNet >= 0 ? 128 : 0, 0);
     doc.text("Net Customer Position:", 20, yPos);
-    doc.text(`Rs ${customerNet.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    doc.text(
+      `Rs ${customerNet.toLocaleString("en-PK", { minimumFractionDigits: 2 })}`,
+      140,
+      yPos,
+      { align: "right" }
+    );
     yPos += 12;
 
     // ===== SECTION 3: SUPPLIER ACCOUNTS =====
     doc.setTextColor(0, 0, 0);
     doc.setFont(undefined, "bold");
     doc.setFillColor(255, 152, 0);
-    doc.rect(14, yPos - 5, 182, 8, 'F');
+    doc.rect(14, yPos - 5, 182, 8, "F");
     doc.setTextColor(255, 255, 255);
     doc.text("SUPPLIER ACCOUNTS", 16, yPos);
     yPos += 10;
-    
+
     doc.setTextColor(0, 0, 0);
     doc.setFont(undefined, "normal");
-    
+
     doc.text(`Dues TO Suppliers (Payable):`, 20, yPos);
-    doc.text(`Rs ${supplierDues.payable.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    doc.text(
+      `Rs ${supplierDues.payable.toLocaleString("en-PK", {
+        minimumFractionDigits: 2,
+      })}`,
+      140,
+      yPos,
+      { align: "right" }
+    );
     yPos += 6;
-    
+
     doc.text(`Dues FROM Suppliers (Receivable):`, 20, yPos);
-    doc.text(`Rs ${supplierDues.receivable.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    doc.text(
+      `Rs ${supplierDues.receivable.toLocaleString("en-PK", {
+        minimumFractionDigits: 2,
+      })}`,
+      140,
+      yPos,
+      { align: "right" }
+    );
     yPos += 6;
-    
+
     doc.setLineWidth(0.3);
     doc.line(20, yPos, 140, yPos);
     yPos += 5;
-    
+
     doc.setFont(undefined, "bold");
     const supplierNet = supplierDues.receivable - supplierDues.payable;
     doc.setTextColor(supplierNet >= 0 ? 0 : 255, supplierNet >= 0 ? 128 : 0, 0);
     doc.text("Net Supplier Position:", 20, yPos);
-    doc.text(`Rs ${supplierNet.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    doc.text(
+      `Rs ${supplierNet.toLocaleString("en-PK", { minimumFractionDigits: 2 })}`,
+      140,
+      yPos,
+      { align: "right" }
+    );
     yPos += 12;
 
-    // ===== SECTION 4: SHIPPER ACCOUNTS (NEW) =====
+    // ===== SECTION 4: SHIPPER ACCOUNTS =====
     doc.setTextColor(0, 0, 0);
     doc.setFont(undefined, "bold");
     doc.setFillColor(121, 85, 72);
-    doc.rect(14, yPos - 5, 182, 8, 'F');
+    doc.rect(14, yPos - 5, 182, 8, "F");
     doc.setTextColor(255, 255, 255);
     doc.text("SHIPPER ACCOUNTS", 16, yPos);
     yPos += 10;
-    
+
     doc.setTextColor(0, 0, 0);
     doc.setFont(undefined, "normal");
-    
+
     doc.text(`Dues TO Shippers (Payable):`, 20, yPos);
-    doc.text(`Rs ${shipperDues.payable.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    doc.text(
+      `Rs ${shipperDues.payable.toLocaleString("en-PK", {
+        minimumFractionDigits: 2,
+      })}`,
+      140,
+      yPos,
+      { align: "right" }
+    );
     yPos += 6;
-    
+
     doc.text(`Overpaid to Shippers (Receivable):`, 20, yPos);
-    doc.text(`Rs ${shipperDues.receivable.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    doc.text(
+      `Rs ${shipperDues.receivable.toLocaleString("en-PK", {
+        minimumFractionDigits: 2,
+      })}`,
+      140,
+      yPos,
+      { align: "right" }
+    );
     yPos += 6;
 
     doc.text(`Shipping Expenses (Period):`, 20, yPos);
     doc.setTextColor(255, 0, 0);
-    doc.text(`Rs ${(plData?.shippingExpenses || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    doc.text(
+      `Rs ${(plData?.shippingExpenses || 0).toLocaleString("en-PK", {
+        minimumFractionDigits: 2,
+      })}`,
+      140,
+      yPos,
+      { align: "right" }
+    );
     yPos += 6;
 
     doc.setTextColor(0, 0, 0);
     doc.text(`Shipper Discounts Received:`, 20, yPos);
     doc.setTextColor(0, 128, 0);
-    doc.text(`Rs ${(plData?.shipperDiscounts || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    doc.text(
+      `Rs ${(plData?.shipperDiscounts || 0).toLocaleString("en-PK", {
+        minimumFractionDigits: 2,
+      })}`,
+      140,
+      yPos,
+      { align: "right" }
+    );
     yPos += 6;
-    
+
     doc.setLineWidth(0.3);
     doc.line(20, yPos, 140, yPos);
     yPos += 5;
-    
+
     doc.setFont(undefined, "bold");
     const shipperNet = shipperDues.receivable - shipperDues.payable;
     doc.setTextColor(shipperNet >= 0 ? 0 : 255, shipperNet >= 0 ? 128 : 0, 0);
     doc.text("Net Shipper Position:", 20, yPos);
-    doc.text(`Rs ${shipperNet.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+    doc.text(
+      `Rs ${shipperNet.toLocaleString("en-PK", { minimumFractionDigits: 2 })}`,
+      140,
+      yPos,
+      { align: "right" }
+    );
     yPos += 12;
 
     // ===== SECTION 5: PROFIT & LOSS =====
     if (plData) {
+      ensureRoom(40);
       doc.setTextColor(0, 0, 0);
       doc.setFont(undefined, "bold");
       doc.setFillColor(33, 150, 243);
-      doc.rect(14, yPos - 5, 182, 8, 'F');
+      doc.rect(14, yPos - 5, 182, 8, "F");
       doc.setTextColor(255, 255, 255);
       doc.text("PROFIT & LOSS", 16, yPos);
       yPos += 10;
-      
+
       doc.setTextColor(0, 0, 0);
       doc.setFont(undefined, "normal");
-      
+
       doc.text("Total Revenue:", 20, yPos);
       doc.setTextColor(0, 128, 0);
-      doc.text(`Rs ${(plData.revenue || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+      doc.text(
+        `Rs ${(plData.revenue || 0).toLocaleString("en-PK", {
+          minimumFractionDigits: 2,
+        })}`,
+        140,
+        yPos,
+        { align: "right" }
+      );
       yPos += 6;
-      
+
       doc.setTextColor(0, 0, 0);
       doc.text("Cost of Goods Sold (COGS):", 20, yPos);
       doc.setTextColor(255, 152, 0);
-      doc.text(`Rs ${(plData.cogs || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+      doc.text(
+        `Rs ${(plData.cogs || 0).toLocaleString("en-PK", {
+          minimumFractionDigits: 2,
+        })}`,
+        140,
+        yPos,
+        { align: "right" }
+      );
       yPos += 6;
-      
+
       doc.setTextColor(0, 0, 0);
       doc.text("Total Expenses:", 20, yPos);
       doc.setTextColor(255, 0, 0);
-      doc.text(`Rs ${(plData.totalExpenses || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+      doc.text(
+        `Rs ${(plData.totalExpenses || 0).toLocaleString("en-PK", {
+          minimumFractionDigits: 2,
+        })}`,
+        140,
+        yPos,
+        { align: "right" }
+      );
       yPos += 6;
 
       doc.setTextColor(0, 0, 0);
       doc.text("Other Income (Discounts Received):", 20, yPos);
       doc.setTextColor(0, 128, 0);
-      doc.text(`Rs ${(plData.otherIncome || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+      doc.text(
+        `Rs ${(plData.otherIncome || 0).toLocaleString("en-PK", {
+          minimumFractionDigits: 2,
+        })}`,
+        140,
+        yPos,
+        { align: "right" }
+      );
       yPos += 6;
-      
+
       doc.setLineWidth(0.3);
       doc.line(20, yPos, 140, yPos);
       yPos += 5;
-      
+
       doc.setTextColor(0, 0, 0);
       doc.setFont(undefined, "bold");
       doc.text("Gross Profit:", 20, yPos);
       doc.setTextColor(0, 100, 200);
-      doc.text(`Rs ${(plData.grossProfit || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+      doc.text(
+        `Rs ${(plData.grossProfit || 0).toLocaleString("en-PK", {
+          minimumFractionDigits: 2,
+        })}`,
+        140,
+        yPos,
+        { align: "right" }
+      );
       yPos += 6;
-      
+
       const netProfit = plData.netProfit || 0;
       doc.setTextColor(0, 0, 0);
       doc.text("Net Profit:", 20, yPos);
       doc.setTextColor(netProfit >= 0 ? 0 : 255, netProfit >= 0 ? 128 : 0, 0);
-      doc.text(`Rs ${netProfit.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+      doc.text(
+        `Rs ${netProfit.toLocaleString("en-PK", { minimumFractionDigits: 2 })}`,
+        140,
+        yPos,
+        { align: "right" }
+      );
       yPos += 12;
     }
 
-    // ===== SECTION 6: SHIPPING SUMMARY (NEW) =====
-    if (plData && ((plData.shippingExpenses || 0) > 0 || (plData.shipperDiscounts || 0) > 0)) {
+    // ===== SECTION 6: SHIPPING SUMMARY =====
+    if (
+      plData &&
+      ((plData.shippingExpenses || 0) > 0 ||
+        (plData.shipperDiscounts || 0) > 0)
+    ) {
+      ensureRoom(28);
       doc.setTextColor(0, 0, 0);
       doc.setFont(undefined, "bold");
       doc.setFillColor(121, 85, 72);
-      doc.rect(14, yPos - 5, 182, 8, 'F');
+      doc.rect(14, yPos - 5, 182, 8, "F");
       doc.setTextColor(255, 255, 255);
       doc.text("SHIPPING SUMMARY", 16, yPos);
       yPos += 10;
-      
+
       doc.setTextColor(0, 0, 0);
       doc.setFont(undefined, "normal");
-      
+
       doc.text("Shipping Expenses:", 20, yPos);
       doc.setTextColor(255, 0, 0);
-      doc.text(`Rs ${(plData.shippingExpenses || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})} (${plData.shippingCount || 0} shipments)`, 140, yPos, { align: "right" });
+      doc.text(
+        `Rs ${(plData.shippingExpenses || 0).toLocaleString("en-PK", {
+          minimumFractionDigits: 2,
+        })} (${plData.shippingCount || 0} shipments)`,
+        140,
+        yPos,
+        { align: "right" }
+      );
       yPos += 6;
-      
+
       doc.setTextColor(0, 0, 0);
       doc.text("Shipper Discounts Received:", 20, yPos);
       doc.setTextColor(0, 128, 0);
-      doc.text(`Rs ${(plData.shipperDiscounts || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})} (${plData.shipperDiscountCount || 0} times)`, 140, yPos, { align: "right" });
-      yPos += 6;
-      
-      doc.setLineWidth(0.3);
-      doc.line(20, yPos, 140, yPos);
-      yPos += 5;
-      
-      doc.setFont(undefined, "bold");
-      const netShippingCost = (plData.shippingExpenses || 0) - (plData.shipperDiscounts || 0);
-      doc.setTextColor(netShippingCost > 0 ? 255 : 0, netShippingCost > 0 ? 0 : 128, 0);
-      doc.text("Net Shipping Cost:", 20, yPos);
-      doc.text(`Rs ${netShippingCost.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+      doc.text(
+        `Rs ${(plData.shipperDiscounts || 0).toLocaleString("en-PK", {
+          minimumFractionDigits: 2,
+        })} (${plData.shipperDiscountCount || 0} times)`,
+        140,
+        yPos,
+        { align: "right" }
+      );
       yPos += 12;
     }
 
     // ===== SECTION 7: RETURNS SUMMARY =====
-    if (plData && ((plData.supplierRefunds || 0) > 0 || (plData.customerRefunds || 0) > 0 || (plData.supplierReturnCount || 0) > 0 || (plData.customerReturnCount || 0) > 0)) {
+    if (
+      plData &&
+      ((plData.supplierRefunds || 0) > 0 ||
+        (plData.customerRefunds || 0) > 0 ||
+        (plData.supplierReturnCount || 0) > 0 ||
+        (plData.customerReturnCount || 0) > 0)
+    ) {
+      ensureRoom(24);
       doc.setTextColor(0, 0, 0);
       doc.setFont(undefined, "bold");
       doc.setFillColor(156, 39, 176);
-      doc.rect(14, yPos - 5, 182, 8, 'F');
+      doc.rect(14, yPos - 5, 182, 8, "F");
       doc.setTextColor(255, 255, 255);
       doc.text("RETURNS SUMMARY", 16, yPos);
       yPos += 10;
-      
+
       doc.setTextColor(0, 0, 0);
       doc.setFont(undefined, "normal");
-      
+
       doc.text("Returns TO Supplier:", 20, yPos);
-      doc.text(`${plData.supplierReturnCount || 0} returns, ${plData.supplierReturnQty || 0} items`, 100, yPos);
+      doc.text(
+        `${plData.supplierReturnCount || 0} returns, ${
+          plData.supplierReturnQty || 0
+        } items`,
+        100,
+        yPos
+      );
       doc.setTextColor(0, 128, 0);
-      doc.text(`Rs ${(plData.supplierRefunds || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+      doc.text(
+        `Rs ${(plData.supplierRefunds || 0).toLocaleString("en-PK", {
+          minimumFractionDigits: 2,
+        })}`,
+        140,
+        yPos,
+        { align: "right" }
+      );
       yPos += 6;
-      
+
       doc.setTextColor(0, 0, 0);
       doc.text("Returns FROM Customer:", 20, yPos);
-      doc.text(`${plData.customerReturnCount || 0} returns, ${plData.customerReturnQty || 0} items`, 100, yPos);
+      doc.text(
+        `${plData.customerReturnCount || 0} returns, ${
+          plData.customerReturnQty || 0
+        } items`,
+        100,
+        yPos
+      );
       doc.setTextColor(255, 0, 0);
-      doc.text(`Rs ${(plData.customerRefunds || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+      doc.text(
+        `Rs ${(plData.customerRefunds || 0).toLocaleString("en-PK", {
+          minimumFractionDigits: 2,
+        })}`,
+        140,
+        yPos,
+        { align: "right" }
+      );
       yPos += 12;
     }
 
     // ===== SECTION 8: DISCOUNTS SUMMARY =====
-    if (plData && ((plData.customerDiscounts || 0) > 0 || (plData.supplierDiscounts || 0) > 0 || (plData.shipperDiscounts || 0) > 0)) {
+    if (
+      plData &&
+      ((plData.customerDiscounts || 0) > 0 ||
+        (plData.supplierDiscounts || 0) > 0 ||
+        (plData.shipperDiscounts || 0) > 0)
+    ) {
+      ensureRoom(24);
       doc.setTextColor(0, 0, 0);
       doc.setFont(undefined, "bold");
       doc.setFillColor(103, 58, 183);
-      doc.rect(14, yPos - 5, 182, 8, 'F');
+      doc.rect(14, yPos - 5, 182, 8, "F");
       doc.setTextColor(255, 255, 255);
       doc.text("DISCOUNTS SUMMARY", 16, yPos);
       yPos += 10;
-      
+
       doc.setTextColor(0, 0, 0);
       doc.setFont(undefined, "normal");
-      
+
       doc.text("Discounts Given to Customers:", 20, yPos);
       doc.setTextColor(255, 0, 0);
-      doc.text(`Rs ${(plData.customerDiscounts || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})} (${plData.customerDiscountCount || 0} times)`, 140, yPos, { align: "right" });
+      doc.text(
+        `Rs ${(plData.customerDiscounts || 0).toLocaleString("en-PK", {
+          minimumFractionDigits: 2,
+        })} (${plData.customerDiscountCount || 0} times)`,
+        140,
+        yPos,
+        { align: "right" }
+      );
       yPos += 6;
-      
+
       doc.setTextColor(0, 0, 0);
       doc.text("Discounts Received from Suppliers:", 20, yPos);
       doc.setTextColor(0, 128, 0);
-      doc.text(`Rs ${(plData.supplierDiscounts || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})} (${plData.supplierDiscountCount || 0} times)`, 140, yPos, { align: "right" });
+      doc.text(
+        `Rs ${(plData.supplierDiscounts || 0).toLocaleString("en-PK", {
+          minimumFractionDigits: 2,
+        })} (${plData.supplierDiscountCount || 0} times)`,
+        140,
+        yPos,
+        { align: "right" }
+      );
       yPos += 6;
 
       doc.setTextColor(0, 0, 0);
       doc.text("Discounts Received from Shippers:", 20, yPos);
       doc.setTextColor(0, 128, 0);
-      doc.text(`Rs ${(plData.shipperDiscounts || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})} (${plData.shipperDiscountCount || 0} times)`, 140, yPos, { align: "right" });
+      doc.text(
+        `Rs ${(plData.shipperDiscounts || 0).toLocaleString("en-PK", {
+          minimumFractionDigits: 2,
+        })} (${plData.shipperDiscountCount || 0} times)`,
+        140,
+        yPos,
+        { align: "right" }
+      );
       yPos += 6;
-      
+
       doc.setLineWidth(0.3);
       doc.line(20, yPos, 140, yPos);
       yPos += 5;
-      
+
       doc.setFont(undefined, "bold");
-      const netDiscountImpact = (plData.supplierDiscounts || 0) + (plData.shipperDiscounts || 0) - (plData.customerDiscounts || 0);
+      const netDiscountImpact =
+        (plData.supplierDiscounts || 0) +
+        (plData.shipperDiscounts || 0) -
+        (plData.customerDiscounts || 0);
       doc.setTextColor(netDiscountImpact >= 0 ? 0 : 255, netDiscountImpact >= 0 ? 128 : 0, 0);
       doc.text("Net Discount Impact:", 20, yPos);
-      doc.text(`Rs ${netDiscountImpact.toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+      doc.text(
+        `Rs ${netDiscountImpact.toLocaleString("en-PK", {
+          minimumFractionDigits: 2,
+        })}`,
+        140,
+        yPos,
+        { align: "right" }
+      );
       yPos += 12;
     }
 
     // ===== SECTION 9: DAMAGE & LOSS =====
     if (plData && (plData.damageLoss || 0) > 0) {
+      ensureRoom(16);
       doc.setTextColor(0, 0, 0);
       doc.setFont(undefined, "bold");
       doc.setFillColor(244, 67, 54);
-      doc.rect(14, yPos - 5, 182, 8, 'F');
+      doc.rect(14, yPos - 5, 182, 8, "F");
       doc.setTextColor(255, 255, 255);
       doc.text("DAMAGE & LOSS", 16, yPos);
       yPos += 10;
-      
+
       doc.setTextColor(0, 0, 0);
       doc.setFont(undefined, "normal");
-      
+
       doc.text("Total Damage Loss:", 20, yPos);
       doc.setTextColor(255, 0, 0);
-      doc.text(`Rs ${(plData.damageLoss || 0).toLocaleString('en-PK', {minimumFractionDigits: 2})}`, 140, yPos, { align: "right" });
+      doc.text(
+        `Rs ${(plData.damageLoss || 0).toLocaleString("en-PK", {
+          minimumFractionDigits: 2,
+        })}`,
+        140,
+        yPos,
+        { align: "right" }
+      );
       yPos += 10;
+    }
+
+    // ===== SECTION 10: INVENTORY (Warehouse × Category) with product list =====
+    if ((inventorySummary?.warehouses || []).length) {
+      ensureRoom(20);
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, "bold");
+      doc.setFillColor(63, 81, 181);
+      doc.rect(14, yPos - 5, 182, 8, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.text("INVENTORY (Warehouse × Category)", 16, yPos);
+      yPos += 10;
+
+      doc.setTextColor(0, 0, 0);
+      doc.setFont(undefined, "normal");
+      doc.text(
+        `Total items in stock: ${inventorySummary.grandTotal.toLocaleString(
+          "en-PK"
+        )}`,
+        20,
+        yPos
+      );
+      yPos += 8;
+
+      inventorySummary.warehouses.forEach((w) => {
+        ensureRoom(8);
+        doc.setFont(undefined, "bold");
+        doc.text(
+          `${w.name} — ${w.totalQty.toLocaleString("en-PK")}`,
+          20,
+          yPos
+        );
+        yPos += 6;
+
+        doc.setFont(undefined, "normal");
+        w.categories.forEach((c) => {
+          ensureRoom(6);
+          doc.text(
+            `• ${c.category}: ${c.totalQty.toLocaleString("en-PK")}`,
+            24,
+            yPos
+          );
+          yPos += 5;
+
+          // List top 8 products per category
+          c.items.slice(0, 8).forEach((it) => {
+            ensureRoom(5);
+            doc.text(
+              `- ${it.name}: ${it.qty.toLocaleString("en-PK")}`,
+              28,
+              yPos
+            );
+            yPos += 4.2;
+          });
+        });
+
+        yPos += 3;
+      });
     }
 
     // ===== FOOTER =====
     doc.setTextColor(100, 100, 100);
     doc.setFontSize(8);
     doc.setFont(undefined, "italic");
-    doc.text("This is a computer-generated report. No signature required.", 105, 285, { align: "center" });
-    doc.text(`Page 1 of ${doc.internal.getNumberOfPages()}`, 105, 290, { align: "center" });
+    doc.text(
+      "This is a computer-generated report. No signature required.",
+      105,
+      285,
+      { align: "center" }
+    );
+    doc.text(
+      `Page 1 of ${doc.internal.getNumberOfPages()}`,
+      105,
+      290,
+      { align: "center" }
+    );
 
-    doc.save(`Financial_Report_${titleForPeriod.replace(/ /g, '_')}.pdf`);
+    doc.save(`Financial_Report_${titleForPeriod.replace(/ /g, "_")}.pdf`);
   };
 
   if (loading) {
     return (
       <Container>
-        <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
+        <Box
+          display="flex"
+          justifyContent="center"
+          alignItems="center"
+          minHeight="60vh"
+        >
           <CircularProgress />
         </Box>
       </Container>
@@ -846,7 +1328,14 @@ function Report() {
       <Card sx={{ mt: 3 }}>
         <CardContent>
           {/* Header */}
-          <Box display="flex" justifyContent="space-between" alignItems="center" mb={3} flexWrap="wrap" gap={2}>
+          <Box
+            display="flex"
+            justifyContent="space-between"
+            alignItems="center"
+            mb={3}
+            flexWrap="wrap"
+            gap={2}
+          >
             <Box display="flex" alignItems="center" gap={1}>
               <ReportIcon sx={{ fontSize: 32, color: "primary.main" }} />
               <Typography variant="h5" fontWeight={600}>
@@ -854,13 +1343,24 @@ function Report() {
               </Typography>
             </Box>
 
-            <Button variant="contained" color="success" onClick={downloadComprehensiveReport}>
+            <Button
+              variant="contained"
+              color="success"
+              onClick={downloadComprehensiveReport}
+            >
               Download Full Report PDF
             </Button>
           </Box>
 
           {/* Date Filter Controls */}
-          <Box display="flex" alignItems="center" justifyContent="space-between" mb={3} gap={2} flexWrap="wrap">
+          <Box
+            display="flex"
+            alignItems="center"
+            justifyContent="space-between"
+            mb={3}
+            gap={2}
+            flexWrap="wrap"
+          >
             <ButtonGroup variant="outlined" size="medium">
               <Button
                 onClick={() => setReportType("monthly")}
@@ -893,7 +1393,9 @@ function Report() {
                   >
                     {Array.from({ length: 12 }, (_, i) => (
                       <MenuItem key={i + 1} value={i + 1}>
-                        {new Date(2025, i).toLocaleString("default", { month: "long" })}
+                        {new Date(2025, i).toLocaleString("default", {
+                          month: "long",
+                        })}
                       </MenuItem>
                     ))}
                   </Select>
@@ -1008,7 +1510,11 @@ function Report() {
                   subtitle="Receivable - Payable"
                   value={customerDues.receivable - customerDues.payable}
                   icon={ReportIcon}
-                  color={customerDues.receivable - customerDues.payable >= 0 ? "success" : "danger"}
+                  color={
+                    customerDues.receivable - customerDues.payable >= 0
+                      ? "success"
+                      : "danger"
+                  }
                   isCurrency={true}
                 />
               </Grid>
@@ -1051,7 +1557,11 @@ function Report() {
                   subtitle="Receivable - Payable"
                   value={supplierDues.receivable - supplierDues.payable}
                   icon={ReportIcon}
-                  color={supplierDues.receivable - supplierDues.payable >= 0 ? "success" : "danger"}
+                  color={
+                    supplierDues.receivable - supplierDues.payable >= 0
+                      ? "success"
+                      : "danger"
+                  }
                   isCurrency={true}
                 />
               </Grid>
@@ -1060,7 +1570,7 @@ function Report() {
 
           <Divider sx={{ mb: 4 }} />
 
-          {/* Shipper Accounts (NEW) */}
+          {/* Shipper Accounts */}
           <Box mb={4}>
             <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
               Shipper Accounts
@@ -1104,7 +1614,11 @@ function Report() {
                   subtitle="Overpaid - Payable"
                   value={shipperDues.receivable - shipperDues.payable}
                   icon={ReportIcon}
-                  color={shipperDues.receivable - shipperDues.payable >= 0 ? "success" : "danger"}
+                  color={
+                    shipperDues.receivable - shipperDues.payable >= 0
+                      ? "success"
+                      : "danger"
+                  }
                   isCurrency={true}
                 />
               </Grid>
@@ -1121,7 +1635,7 @@ function Report() {
               </Typography>
               {plLoading && <CircularProgress size={20} />}
             </Box>
-            
+
             {plData ? (
               <Grid container spacing={3}>
                 <Grid item xs={12} sm={6} md={2.4}>
@@ -1180,7 +1694,7 @@ function Report() {
 
           <Divider sx={{ mb: 4 }} />
 
-          {/* SHIPPING SUMMARY (NEW) */}
+          {/* SHIPPING SUMMARY */}
           <Box mb={4}>
             <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
               Shipping Summary (Period)
@@ -1214,7 +1728,11 @@ function Report() {
                   subtitle="Expenses - Discounts"
                   value={(plData?.shippingExpenses || 0) - (plData?.shipperDiscounts || 0)}
                   icon={ShippingIcon}
-                  color={(plData?.shippingExpenses || 0) - (plData?.shipperDiscounts || 0) > 0 ? "warning" : "success"}
+                  color={
+                    (plData?.shippingExpenses || 0) - (plData?.shipperDiscounts || 0) > 0
+                      ? "warning"
+                      : "success"
+                  }
                   isCurrency={true}
                 />
               </Grid>
@@ -1283,143 +1801,222 @@ function Report() {
               </Grid>
             </Grid>
           </Box>
-<Divider sx={{ mb: 4 }} />
 
-      {/* DISCOUNTS SUMMARY */}
-      <Box mb={4}>
-        <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
-          Discounts Summary
-        </Typography>
-        <Grid container spacing={3}>
-          <Grid item xs={12} sm={6} md={3}>
-            <MetricCard
-              title="Discounts Given"
-              subtitle="Discounts to customers (reduces profit)"
-              value={plData?.customerDiscounts || 0}
-              count={plData?.customerDiscountCount || 0}
-              icon={DiscountIcon}
-              color="danger"
-              isCurrency={true}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <MetricCard
-              title="Discounts Received"
-              subtitle="Discounts from suppliers (adds to profit)"
-              value={plData?.supplierDiscounts || 0}
-              count={plData?.supplierDiscountCount || 0}
-              icon={DiscountIcon}
-              color="success"
-              isCurrency={true}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <MetricCard
-              title="Net Discount Impact"
-              subtitle="Received - Given"
-              value={(plData?.supplierDiscounts || 0) + (plData?.shipperDiscounts || 0) - (plData?.customerDiscounts || 0)}
-              icon={ReportIcon}
-              color={(plData?.supplierDiscounts || 0) + (plData?.shipperDiscounts || 0) - (plData?.customerDiscounts || 0) >= 0 ? "success" : "danger"}
-              isCurrency={true}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <MetricCard
-              title="Other Income"
-              subtitle="Supplier + Shipper discounts"
-              value={plData?.otherIncome || 0}
-              icon={ProfitIcon}
-              color="info"
-              isCurrency={true}
-            />
-          </Grid>
-        </Grid>
-      </Box>
+          <Divider sx={{ mb: 4 }} />
 
-      <Divider sx={{ mb: 4 }} />
+          {/* DISCOUNTS SUMMARY */}
+          <Box mb={4}>
+            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
+              Discounts Summary
+            </Typography>
+            <Grid container spacing={3}>
+              <Grid item xs={12} sm={6} md={3}>
+                <MetricCard
+                  title="Discounts Given"
+                  subtitle="Discounts to customers (reduces profit)"
+                  value={plData?.customerDiscounts || 0}
+                  count={plData?.customerDiscountCount || 0}
+                  icon={DiscountIcon}
+                  color="danger"
+                  isCurrency={true}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <MetricCard
+                  title="Discounts Received"
+                  subtitle="Discounts from suppliers (adds to profit)"
+                  value={plData?.supplierDiscounts || 0}
+                  count={plData?.supplierDiscountCount || 0}
+                  icon={DiscountIcon}
+                  color="success"
+                  isCurrency={true}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <MetricCard
+                  title="Net Discount Impact"
+                  subtitle="Received - Given"
+                  value={
+                    (plData?.supplierDiscounts || 0) +
+                    (plData?.shipperDiscounts || 0) -
+                    (plData?.customerDiscounts || 0)
+                  }
+                  icon={ReportIcon}
+                  color={
+                    (plData?.supplierDiscounts || 0) +
+                      (plData?.shipperDiscounts || 0) -
+                      (plData?.customerDiscounts || 0) >=
+                    0
+                      ? "success"
+                      : "danger"
+                  }
+                  isCurrency={true}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <MetricCard
+                  title="Other Income"
+                  subtitle="Supplier + Shipper discounts"
+                  value={plData?.otherIncome || 0}
+                  icon={ProfitIcon}
+                  color="info"
+                  isCurrency={true}
+                />
+              </Grid>
+            </Grid>
+          </Box>
 
-      {/* DAMAGE & LOSS */}
-      <Box mb={4}>
-        <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
-          Damage & Loss Summary
-        </Typography>
-        <Grid container spacing={3}>
-          <Grid item xs={12} sm={6} md={4}>
-            <MetricCard
-              title="Total Damage Loss"
-              subtitle="Products marked as damaged"
-              value={plData?.damageLoss || 0}
-              icon={LossIcon}
-              color="danger"
-              isCurrency={true}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6} md={4}>
-            <MetricCard
-              title="Regular Expenses"
-              subtitle="Operational expenses"
-              value={plData?.expenses || 0}
-              icon={MoneyIcon}
-              color="warning"
-              isCurrency={true}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6} md={4}>
-            <MetricCard
-              title="Combined Expenses + Loss"
-              subtitle="Total expenses including damage"
-              value={(plData?.expenses || 0) + (plData?.damageLoss || 0)}
-              icon={MoneyIcon}
-              color="danger"
-              isCurrency={true}
-            />
-          </Grid>
-        </Grid>
-      </Box>
+          <Divider sx={{ mb: 4 }} />
 
-      <Divider sx={{ mb: 4 }} />
+          {/* DAMAGE & LOSS */}
+          <Box mb={4}>
+            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
+              Damage & Loss Summary
+            </Typography>
+            <Grid container spacing={3}>
+              <Grid item xs={12} sm={6} md={4}>
+                <MetricCard
+                  title="Total Damage Loss"
+                  subtitle="Products marked as damaged"
+                  value={plData?.damageLoss || 0}
+                  icon={LossIcon}
+                  color="danger"
+                  isCurrency={true}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={4}>
+                <MetricCard
+                  title="Regular Expenses"
+                  subtitle="Operational expenses"
+                  value={plData?.expenses || 0}
+                  icon={MoneyIcon}
+                  color="warning"
+                  isCurrency={true}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={4}>
+                <MetricCard
+                  title="Combined Expenses + Loss"
+                  subtitle="Total expenses including damage"
+                  value={(plData?.expenses || 0) + (plData?.damageLoss || 0)}
+                  icon={MoneyIcon}
+                  color="danger"
+                  isCurrency={true}
+                />
+              </Grid>
+            </Grid>
+          </Box>
 
-      {/* Expenses Summary */}
-      <Box mb={2}>
-        <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
-          Expenses Summary
-        </Typography>
-        <Grid container spacing={3}>
-          <Grid item xs={12} sm={6} md={4}>
-            <MetricCard
-              title="Cash Expenses"
-              subtitle="Expenses paid in cash"
-              value={cashExpensesFromExpensesApi}
-              icon={CashIcon}
-              color="danger"
-              isCurrency={true}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6} md={4}>
-            <MetricCard
-              title="Bank Expenses"
-              subtitle="Expenses via online/cheque"
-              value={totalBankExpenses}
-              icon={BankIcon}
-              color="danger"
-              isCurrency={true}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6} md={4}>
-            <MetricCard
-              title="Total Expenses"
-              subtitle="All payment methods"
-              value={cashExpensesFromExpensesApi + totalBankExpenses}
-              icon={MoneyIcon}
-              color="warning"
-              isCurrency={true}
-            />
-          </Grid>
-        </Grid>
-      </Box>
-    </CardContent>
-  </Card>
-</Container>
-);
+          <Divider sx={{ mb: 4 }} />
+
+          {/* INVENTORY (Warehouse × Category) — with product names and quantities */}
+          <Box mb={2}>
+            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 1.5 }}>
+              Inventory (Warehouse × Category)
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ mb: 2, display: "block" }}>
+              Total items in stock: {new Intl.NumberFormat("en-PK").format(inventorySummary.grandTotal)}
+            </Typography>
+            <Grid container spacing={3}>
+              {inventorySummary.warehouses.map((w) => (
+                <Grid item xs={12} md={6} key={w.id}>
+                  <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+                    <Box display="flex" alignItems="center" gap={1} mb={1}>
+                      <ShippingIcon fontSize="small" />
+                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                        {w.name}
+                      </Typography>
+                      <Box sx={{ ml: "auto", fontWeight: 700 }}>
+                        {new Intl.NumberFormat("en-PK").format(w.totalQty)}
+                      </Box>
+                    </Box>
+                    <Divider sx={{ mb: 1 }} />
+                    {w.categories.map((c) => (
+                      <Box key={c.category} sx={{ mb: 1.25 }}>
+                        <Box display="flex" justifyContent="space-between">
+                          <Typography variant="body2">• {c.category}</Typography>
+                          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                            {new Intl.NumberFormat("en-PK").format(c.totalQty)}
+                          </Typography>
+                        </Box>
+
+                        {/* Product names & quantities (top 5) */}
+                        {c.items.slice(0, 5).map((it) => (
+                          <Box
+                            key={`${it.name}-${it.qty}`}
+                            display="flex"
+                            justifyContent="space-between"
+                            sx={{ pl: 2 }}
+                          >
+                            <Typography variant="caption" color="text.secondary">
+                              {it.name}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {new Intl.NumberFormat("en-PK").format(it.qty)}
+                            </Typography>
+                          </Box>
+                        ))}
+                      </Box>
+                    ))}
+                    <Divider sx={{ mt: 1 }} />
+                    <Box display="flex" justifyContent="space-between" sx={{ pt: 1 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        Total
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                        {new Intl.NumberFormat("en-PK").format(w.totalQty)}
+                      </Typography>
+                    </Box>
+                  </Paper>
+                </Grid>
+              ))}
+            </Grid>
+          </Box>
+
+          <Divider sx={{ mb: 2 }} />
+
+          {/* Expenses Summary */}
+          <Box mb={2}>
+            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
+              Expenses Summary
+            </Typography>
+            <Grid container spacing={3}>
+              <Grid item xs={12} sm={6} md={4}>
+                <MetricCard
+                  title="Cash Expenses"
+                  subtitle="Expenses paid in cash"
+                  value={cashExpensesFromExpensesApi}
+                  icon={CashIcon}
+                  color="danger"
+                  isCurrency={true}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={4}>
+                <MetricCard
+                  title="Bank Expenses"
+                  subtitle="Expenses via online/cheque"
+                  value={totalBankExpenses}
+                  icon={BankIcon}
+                  color="danger"
+                  isCurrency={true}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={4}>
+                <MetricCard
+                  title="Total Expenses"
+                  subtitle="All payment methods"
+                  value={cashExpensesFromExpensesApi + totalBankExpenses}
+                  icon={MoneyIcon}
+                  color="warning"
+                  isCurrency={true}
+                />
+              </Grid>
+            </Grid>
+          </Box>
+        </CardContent>
+      </Card>
+    </Container>
+  );
 }
+
 export default Report;

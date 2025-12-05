@@ -6,7 +6,7 @@ import axios from "axios";
 import Loader from "../../components/loader/Loader";
 import { getProducts } from "../../redux/features/product/productSlice";
 import { getCash } from "../../redux/features/cash/cashSlice";
-
+import ProductHistoryModal from "../../components/Models/ProductHistoryModal";
 import ProductForm from "../../components/product/productForm/ProductForm";
 import {
   createProduct,
@@ -79,7 +79,8 @@ const AddProduct = () => {
   const products = useSelector(state => state.product.products);
   const [showStepper, setShowStepper] = useState(false);
   const [openModal, setOpenModal] = useState(false);
-
+  const [showHistory, setShowHistory] = useState(false);
+  const [activeProductId, setActiveProductId] = useState(null);
   useEffect(() => {
     dispatch(getProducts());
   }, [dispatch]);
@@ -667,6 +668,7 @@ const AddProduct = () => {
               <TableCell>Description</TableCell>
               <TableCell>Quantity</TableCell>
               <TableCell>Created Date</TableCell>
+              <TableCell>Action</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -680,6 +682,19 @@ const AddProduct = () => {
                 <TableCell>
                   {new Date(product.createdAt).toLocaleDateString()}
                 </TableCell>
+
+                 <TableCell>
+        <Button
+          size="small"
+          variant="outlined"
+          onClick={() => {
+            setActiveProductId(product._id);
+            setShowHistory(true);
+          }}
+        >
+          History
+        </Button>
+      </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -766,6 +781,13 @@ const AddProduct = () => {
       />
 
       <ToastContainer />
+      <ProductHistoryModal
+  open={showHistory}
+  onClose={() => setShowHistory(false)}
+  productId={activeProductId}
+  title="Product History"
+/>
+
     </Container>
   );
 };

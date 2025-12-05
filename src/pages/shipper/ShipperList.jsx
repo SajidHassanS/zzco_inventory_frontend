@@ -1,4 +1,3 @@
-// pages/Shipper/ShipperList.jsx
 import React, { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
@@ -36,59 +35,46 @@ import {
   FilterList as FilterIcon,
   Phone as PhoneIcon,
   Discount as DiscountIcon,
+  RemoveCircleOutline as MinusIcon,
 } from "@mui/icons-material";
-import {
-  getShippers,
-  deleteShipper,
-  reset,
-} from "../../redux/features/shipper/shipperSlice";
+import { getShippers, deleteShipper, reset } from "../../redux/features/shipper/shipperSlice";
 import AddShipperBalanceModal from "./AddShipperBalanceModal";
 import ShipperDiscountModal from "./ShipperDiscountModal";
 import ShipperTransactionHistory from "./ShipperTransactionHistory";
+import MinusShipperBalanceModal from "./MinusShipperBalanceModal";
 
 const ShipperList = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
-  const { shippers, isLoading, isError, message } = useSelector(
-    (state) => state.shipper
-  );
+  const { shippers, isLoading, isError, message } = useSelector((state) => state.shipper);
 
-  // Local state
   const [searchTerm, setSearchTerm] = useState("");
   const [deleteId, setDeleteId] = useState(null);
   const [addBalanceShipper, setAddBalanceShipper] = useState(null);
   const [discountShipper, setDiscountShipper] = useState(null);
   const [viewHistoryShipper, setViewHistoryShipper] = useState(null);
+  const [minusBalanceShipper, setMinusBalanceShipper] = useState(null);
 
-  // Load data
   useEffect(() => {
     dispatch(getShippers());
-
     return () => {
       dispatch(reset());
     };
   }, [dispatch]);
 
-  // Filter shippers
   const filteredShippers = (shippers || []).filter((s) => {
     if (!s) return false;
     if (!searchTerm) return true;
     const search = searchTerm.toLowerCase();
-    return (
-      s.username?.toLowerCase().includes(search) ||
-      s.phone?.includes(search)
-    );
+    return s.username?.toLowerCase().includes(search) || s.phone?.includes(search);
   });
 
-  // Calculate total owed
   const totalOwed = filteredShippers.reduce((sum, s) => {
-    if (!s) return sum;
-    const bal = Number(s.balance || 0);
+    const bal = Number(s?.balance || 0);
     return bal > 0 ? sum + bal : sum;
   }, 0);
 
-  // Handle delete
   const handleDelete = () => {
     if (deleteId) {
       dispatch(deleteShipper(deleteId));
@@ -96,7 +82,6 @@ const ShipperList = () => {
     }
   };
 
-  // Format balance with color
   const formatBalance = (balance) => {
     const bal = Number(balance || 0);
     if (bal > 0) {
@@ -106,14 +91,18 @@ const ShipperList = () => {
         </Typography>
       );
     }
-    return (
-      <Typography color="text.secondary">Rs 0</Typography>
-    );
+    if (bal < 0) {
+      return (
+        <Typography color="success.main" fontWeight="medium">
+          Rs {Math.abs(bal).toLocaleString()} (Overpaid)
+        </Typography>
+      );
+    }
+    return <Typography color="text.secondary">Rs 0</Typography>;
   };
 
   return (
     <Box sx={{ p: 3 }}>
-      {/* Header */}
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3 }}>
         <Typography variant="h4" sx={{ display: "flex", alignItems: "center", gap: 1 }}>
           <ShipperIcon fontSize="large" />
@@ -129,14 +118,12 @@ const ShipperList = () => {
         </Button>
       </Box>
 
-      {/* Error Alert */}
       {isError && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {message}
         </Alert>
       )}
 
-      {/* Summary Cards */}
       <Grid container spacing={2} sx={{ mb: 3 }}>
         <Grid item xs={12} sm={6}>
           <Card>
@@ -162,7 +149,6 @@ const ShipperList = () => {
         </Grid>
       </Grid>
 
-      {/* Search */}
       <Box sx={{ mb: 2 }}>
         <TextField
           fullWidth
@@ -176,7 +162,6 @@ const ShipperList = () => {
         />
       </Box>
 
-      {/* Shippers Table */}
       <TableContainer component={Paper}>
         <Table>
           <TableHead>
@@ -219,13 +204,27 @@ const ShipperList = () => {
                   <TableCell align="center">
                     {Number(shipper.balance || 0) > 0 ? (
                       <Chip label="You Owe" color="error" size="small" />
+                    ) : Number(shipper.balance || 0) < 0 ? (
+                      <Chip label="Overpaid" color="success" size="small" />
                     ) : (
-                      <Chip label="Settled" color="default" size="small" />
+                      <Chip label="Settled" size="small" />
                     )}
                   </TableCell>
                   <TableCell align="center">
                     <Box sx={{ display: "flex", gap: 0.5, justifyContent: "center" }}>
-                      <Tooltip title="Pay Shipper (Add Balance)">
+                      {/* MINUS (credit-only) — increases payable */}
+                      <Tooltip title="Add Credit (Increase amount you owe)">
+                        <IconButton
+                          size="small"
+                          color="warning"
+                          onClick={() => setMinusBalanceShipper(shipper)}
+                        >
+                          <MinusIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+
+                      {/* PAY shipper */}
+                      <Tooltip title="Pay Shipper (Reduce payable)">
                         <IconButton
                           size="small"
                           color="error"
@@ -234,6 +233,8 @@ const ShipperList = () => {
                           <AddBalanceIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
+
+                      {/* Discount from shipper */}
                       <Tooltip title="Apply Discount">
                         <IconButton
                           size="small"
@@ -244,6 +245,8 @@ const ShipperList = () => {
                           <DiscountIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
+
+                      {/* View history */}
                       <Tooltip title="View History">
                         <IconButton
                           size="small"
@@ -253,6 +256,8 @@ const ShipperList = () => {
                           <ViewIcon fontSize="small" />
                         </IconButton>
                       </Tooltip>
+
+                      {/* Delete */}
                       <Tooltip title="Delete">
                         <IconButton
                           size="small"
@@ -275,9 +280,7 @@ const ShipperList = () => {
       <Dialog open={!!deleteId} onClose={() => setDeleteId(null)}>
         <DialogTitle>Delete Shipper</DialogTitle>
         <DialogContent>
-          <Typography>
-            Are you sure you want to delete this shipper? This action cannot be undone.
-          </Typography>
+          <Typography>Are you sure you want to delete this shipper? This action cannot be undone.</Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDeleteId(null)}>Cancel</Button>
@@ -287,25 +290,32 @@ const ShipperList = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Add Balance Modal */}
+      {/* Pay (add balance) */}
       <AddShipperBalanceModal
         open={!!addBalanceShipper}
         onClose={() => setAddBalanceShipper(null)}
         shipper={addBalanceShipper}
       />
 
-      {/* Discount Modal */}
+      {/* Discount */}
       <ShipperDiscountModal
         open={!!discountShipper}
         onClose={() => setDiscountShipper(null)}
         shipper={discountShipper}
       />
 
-      {/* Transaction History Modal */}
+      {/* History */}
       <ShipperTransactionHistory
         open={!!viewHistoryShipper}
         onClose={() => setViewHistoryShipper(null)}
         shipper={viewHistoryShipper}
+      />
+
+      {/* Credit-only (minus) */}
+      <MinusShipperBalanceModal
+        open={!!minusBalanceShipper}
+        onClose={() => setMinusBalanceShipper(null)}
+        shipper={minusBalanceShipper}
       />
     </Box>
   );
