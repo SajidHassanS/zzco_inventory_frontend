@@ -36,6 +36,17 @@ const toLocalYMD = (d = new Date()) => {
   const dd = String(dt.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 };
+
+// ✅ Helper for comma formatting
+const formatNumber = (num) => {
+  const n = Number(num);
+  if (!Number.isFinite(n)) return "0.00";
+  return n.toLocaleString("en-PK", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
+
 const ITEMS_PER_PAGE = 10;
 
 const KIND_LABEL = {
@@ -561,7 +572,7 @@ const ViewExpenses = () => {
       headerName: "Debit",
       renderCell: (row) =>
         row.amount < 0 ? (
-          <span style={{ color: "red" }}>{Math.abs(row.amount).toFixed(2)}</span>
+          <span style={{ color: "red" }}>{formatNumber(Math.abs(row.amount))}</span>
         ) : (
           ""
         ),
@@ -571,7 +582,7 @@ const ViewExpenses = () => {
       headerName: "Credit",
       renderCell: (row) =>
         row.amount > 0 ? (
-          <span style={{ color: "green" }}>{row.amount.toFixed(2)}</span>
+          <span style={{ color: "green" }}>{formatNumber(row.amount)}</span>
         ) : (
           ""
         ),
@@ -772,6 +783,7 @@ const ViewExpenses = () => {
     return out;
   }, [cashData, selectedDate, cashDescById]);
 
+  // ✅ Cash columns with comma formatting
   const cashColumns = [
     { field: "date", headerName: "Date", renderCell: (r) => r.date.toLocaleString() },
     { field: "type", headerName: "Type" },
@@ -780,18 +792,18 @@ const ViewExpenses = () => {
       field: "debit",
       headerName: "Debit",
       renderCell: (r) =>
-        r.debit ? <span style={{ color: "red" }}>{Number(r.debit).toFixed(2)}</span> : "",
+        r.debit ? <span style={{ color: "red" }}>{formatNumber(r.debit)}</span> : "",
     },
     {
       field: "credit",
       headerName: "Credit",
       renderCell: (r) =>
-        r.credit ? <span style={{ color: "green" }}>{Number(r.credit).toFixed(2)}</span> : "",
+        r.credit ? <span style={{ color: "green" }}>{formatNumber(r.credit)}</span> : "",
     },
     {
       field: "running",
       headerName: "Day Running",
-      renderCell: (r) => (Number.isFinite(r.running) ? Number(r.running).toFixed(2) : ""),
+      renderCell: (r) => (Number.isFinite(r.running) ? formatNumber(r.running) : ""),
     },
   ];
 
@@ -838,6 +850,7 @@ const ViewExpenses = () => {
     return out.sort((a, b) => a.date - b.date);
   }, [bankTxns, banks, selectedDate]);
 
+  // ✅ Bank columns with comma formatting
   const bankColumns = [
     { field: "date", headerName: "Date", renderCell: (r) => r.date.toLocaleString() },
     { field: "bankName", headerName: "Bank" },
@@ -857,18 +870,18 @@ const ViewExpenses = () => {
       field: "debit",
       headerName: "Debit",
       renderCell: (r) =>
-        r.debit ? <span style={{ color: "red" }}>{Number(r.debit).toFixed(2)}</span> : "",
+        r.debit ? <span style={{ color: "red" }}>{formatNumber(r.debit)}</span> : "",
     },
     {
       field: "credit",
       headerName: "Credit",
       renderCell: (r) =>
-        r.credit ? <span style={{ color: "green" }}>{Number(r.credit).toFixed(2)}</span> : "",
+        r.credit ? <span style={{ color: "green" }}>{formatNumber(r.credit)}</span> : "",
     },
     {
       field: "running",
       headerName: "Bank Day Running",
-      renderCell: (r) => (Number.isFinite(r.running) ? Number(r.running).toFixed(2) : ""),
+      renderCell: (r) => (Number.isFinite(r.running) ? formatNumber(r.running) : ""),
     },
   ];
 
@@ -992,8 +1005,9 @@ const ViewExpenses = () => {
           <Typography variant="h5" gutterBottom>
             Cash Movements ({new Date(selectedDate).toDateString()})
           </Typography>
+          {/* ✅ Cash Total with comma formatting */}
           <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-            Current Cash Total: {Number(cashData.totalBalance || 0).toFixed(2)}
+            Current Cash Total: {formatNumber(cashData.totalBalance || 0)}
           </Typography>
 
           {cTotal === 0 ? (

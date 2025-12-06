@@ -27,6 +27,16 @@ const BACKEND_URL =
   process.env.REACT_APP_BACKEND_URL || "http://13.60.223.186:5000/";
 const API_BASE = `${BACKEND_URL}api`;
 
+// ✅ Helper for comma formatting
+const formatNumber = (num) => {
+  const n = Number(num);
+  if (!Number.isFinite(n)) return "0.00";
+  return n.toLocaleString("en-PK", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
+
 const BankList = ({ banks = [], refreshBanks, cash }) => {
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [entryType, setEntryType] = useState("bank");
@@ -253,6 +263,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     fetchPL();
   }, [reportType, selectedYear, selectedMonth]);
 
+  // ✅ P&L columns with comma formatting
   const plColumns = useMemo(
     () => [
       {
@@ -278,40 +289,45 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
         field: "revenue",
         headerName: "Revenue",
         align: "right",
-        renderCell: (r) => (r.revenue ?? 0).toFixed(2),
+        renderCell: (r) => formatNumber(r.revenue ?? 0),
       },
       {
         field: "cogs",
         headerName: "COGS",
         align: "right",
-        renderCell: (r) => (r.cogs ?? 0).toFixed(2),
+        renderCell: (r) => formatNumber(r.cogs ?? 0),
       },
       {
         field: "expenses",
         headerName: "Expenses",
         align: "right",
-        renderCell: (r) => (r.expenses ?? 0).toFixed(2),
+        renderCell: (r) => formatNumber(r.expenses ?? 0),
       },
       {
         field: "grossProfit",
         headerName: "Gross Profit",
         align: "right",
-        renderCell: (r) => (r.grossProfit ?? 0).toFixed(2),
+        renderCell: (r) => formatNumber(r.grossProfit ?? 0),
       },
       {
         field: "netProfit",
         headerName: "Net Profit",
         align: "right",
-        renderCell: (r) => (r.netProfit ?? 0).toFixed(2),
+        renderCell: (r) => formatNumber(r.netProfit ?? 0),
       },
     ],
     [reportType]
   );
 
-  // ===== tables =====
+  // ✅ Bank columns with comma formatting
   const bankColumns = [
     { field: "bankName", headerName: "Bank Name" },
-    { field: "balance", headerName: "Balance", align: "right" },
+    {
+      field: "balance",
+      headerName: "Balance",
+      align: "right",
+      renderCell: (row) => formatNumber(row.balance ?? 0),
+    },
     {
       field: "expenses",
       headerName: "Expenses",
@@ -319,11 +335,12 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
       renderCell: (row) => {
         const id = row._id;
         const exp = bankExpenseMap.get(id) || 0;
-        return exp.toFixed(2);
+        return formatNumber(exp);
       },
     },
   ];
 
+  // ✅ Cash columns with comma formatting
   const cashColumns = [
     {
       field: "createdAt",
@@ -337,7 +354,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
       field: "amountDisplay",
       headerName: "Amount",
       align: "right",
-      renderCell: (row) => Math.abs(pickAmount(row)).toFixed(2),
+      renderCell: (row) => formatNumber(Math.abs(pickAmount(row))),
     },
     {
       field: "type",
@@ -424,13 +441,14 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     "expense",
   ]);
 
+  // ✅ bestDescription with comma formatting
   const bestDescription = (tx, isBankTx) => {
     const text =
       tx?.description ?? tx?.note ?? tx?.remarks ?? tx?.reason ?? tx?.title;
     if (text && String(text).trim().length > 0) return String(text);
 
     const t = String(tx?.type || "").toLowerCase().trim();
-    const amt = Math.abs(pickAmount(tx)).toFixed(2);
+    const amt = formatNumber(Math.abs(pickAmount(tx)));
 
     if (isBankTx) {
       if (PDF_CREDIT_TYPES.has(t)) return `Deposit Rs ${amt}`;
@@ -443,7 +461,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     }
   };
 
-  // ✅ PROFESSIONAL BANK PDF with Z&Z TRADERS logo
+  // ✅ PROFESSIONAL BANK PDF with comma formatting
   const downloadBankPdf = () => {
     if (!selectedBankIdForPdf) {
       alert("Please select a bank first.");
@@ -484,7 +502,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     // ✅ COMPANY LOGO/HEADER - ORANGE COLOR
     doc.setFontSize(20);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(255, 87, 34); // Orange/Red color
+    doc.setTextColor(255, 87, 34);
     doc.text("Z&Z TRADERS .CO", 148, 12, { align: "center" });
     
     // Decorative line under logo
@@ -530,9 +548,9 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
         pickWhen(t) ? new Date(pickWhen(t)).toLocaleDateString() : "-",
         String(t.type || "-").toUpperCase().substring(0, 3),
         bestDescription(t, true),
-        isDebit ? amount.toFixed(2) : "0.00",
-        isCredit ? amount.toFixed(2) : "0.00",
-        t.runningBalance.toFixed(2),
+        isDebit ? formatNumber(amount) : "0.00",
+        isCredit ? formatNumber(amount) : "0.00",
+        formatNumber(t.runningBalance),
       ];
     });
 
@@ -541,8 +559,8 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
       "",
       "",
       "Total:",
-      totalDebits.toFixed(2),
-      totalCredits.toFixed(2),
+      formatNumber(totalDebits),
+      formatNumber(totalCredits),
       ""
     ]);
 
@@ -553,7 +571,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
       startY: 28,
       theme: 'grid',
       headStyles: {
-        fillColor: [33, 150, 243], // Blue for bank
+        fillColor: [33, 150, 243],
         textColor: 255,
         fontStyle: 'bold',
         halign: 'center',
@@ -564,12 +582,12 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
         cellPadding: 2
       },
       columnStyles: {
-        0: { cellWidth: 25, halign: 'center' },   // Date
-        1: { cellWidth: 20, halign: 'center' },   // Type
-        2: { cellWidth: 80, halign: 'left' },     // Description
-        3: { cellWidth: 30, halign: 'right', textColor: [255, 0, 0] },  // Debit (red)
-        4: { cellWidth: 30, halign: 'right', textColor: [0, 128, 0] },  // Credit (green)
-        5: { cellWidth: 35, halign: 'right', fontStyle: 'bold' }        // Running Balance
+        0: { cellWidth: 25, halign: 'center' },
+        1: { cellWidth: 20, halign: 'center' },
+        2: { cellWidth: 80, halign: 'left' },
+        3: { cellWidth: 30, halign: 'right', textColor: [255, 0, 0] },
+        4: { cellWidth: 30, halign: 'right', textColor: [0, 128, 0] },
+        5: { cellWidth: 35, halign: 'right', fontStyle: 'bold' }
       },
       didParseCell: function(data) {
         if (data.row.index === tableRows.length - 1) {
@@ -585,17 +603,17 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
 
     const finalY = doc.lastAutoTable.finalY || 28;
     
-    // ✅ Summary at bottom
+    // ✅ Summary at bottom with commas
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
-    doc.text(`Total Debits: ${totalDebits.toFixed(2)}`, 14, finalY + 10);
-    doc.text(`Total Credits: ${totalCredits.toFixed(2)}`, 100, finalY + 10);
-    doc.text(`Current Balance: ${Number(bank.balance || 0).toFixed(2)}`, 200, finalY + 10);
+    doc.text(`Total Debits: ${formatNumber(totalDebits)}`, 14, finalY + 10);
+    doc.text(`Total Credits: ${formatNumber(totalCredits)}`, 100, finalY + 10);
+    doc.text(`Current Balance: ${formatNumber(bank.balance || 0)}`, 200, finalY + 10);
 
     doc.save(`Bank_${bank.bankName}_Ledger_${titleForPeriod.replace(/ /g, '_')}.pdf`);
   };
 
-  // ✅ PROFESSIONAL CASH PDF with Z&Z TRADERS logo
+  // ✅ PROFESSIONAL CASH PDF with comma formatting
   const downloadCashPdf = () => {
     const tx = [...filteredCashTransactions].sort(
       (a, b) => new Date(pickWhen(a) || 0) - new Date(pickWhen(b) || 0)
@@ -630,7 +648,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     // ✅ COMPANY LOGO/HEADER - ORANGE COLOR
     doc.setFontSize(20);
     doc.setFont("helvetica", "bold");
-    doc.setTextColor(255, 87, 34); // Orange/Red color
+    doc.setTextColor(255, 87, 34);
     doc.text("Z&Z TRADERS .CO", 148, 12, { align: "center" });
     
     // Decorative line under logo
@@ -677,9 +695,9 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
         pickWhen(t) ? new Date(pickWhen(t)).toLocaleDateString() : "-",
         String(t.type || "-").toUpperCase().substring(0, 3),
         bestDescription(t, false),
-        isDebit ? amount.toFixed(2) : "0.00",
-        isCredit ? amount.toFixed(2) : "0.00",
-        t.runningBalance.toFixed(2),
+        isDebit ? formatNumber(amount) : "0.00",
+        isCredit ? formatNumber(amount) : "0.00",
+        formatNumber(t.runningBalance),
       ];
     });
 
@@ -688,8 +706,8 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
       "",
       "",
       "Total:",
-      totalDebits.toFixed(2),
-      totalCredits.toFixed(2),
+      formatNumber(totalDebits),
+      formatNumber(totalCredits),
       ""
     ]);
 
@@ -700,7 +718,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
       startY: 28,
       theme: 'grid',
       headStyles: {
-        fillColor: [76, 175, 80], // Green for cash
+        fillColor: [76, 175, 80],
         textColor: 255,
         fontStyle: 'bold',
         halign: 'center',
@@ -711,12 +729,12 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
         cellPadding: 2
       },
       columnStyles: {
-        0: { cellWidth: 25, halign: 'center' },   // Date
-        1: { cellWidth: 20, halign: 'center' },   // Type
-        2: { cellWidth: 80, halign: 'left' },     // Description
-        3: { cellWidth: 30, halign: 'right', textColor: [255, 0, 0] },  // Debit (red)
-        4: { cellWidth: 30, halign: 'right', textColor: [0, 128, 0] },  // Credit (green)
-        5: { cellWidth: 35, halign: 'right', fontStyle: 'bold' }        // Running Balance
+        0: { cellWidth: 25, halign: 'center' },
+        1: { cellWidth: 20, halign: 'center' },
+        2: { cellWidth: 80, halign: 'left' },
+        3: { cellWidth: 30, halign: 'right', textColor: [255, 0, 0] },
+        4: { cellWidth: 30, halign: 'right', textColor: [0, 128, 0] },
+        5: { cellWidth: 35, halign: 'right', fontStyle: 'bold' }
       },
       didParseCell: function(data) {
         if (data.row.index === tableRows.length - 1) {
@@ -732,12 +750,12 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
 
     const finalY = doc.lastAutoTable.finalY || 28;
     
-    // ✅ Summary at bottom
+    // ✅ Summary at bottom with commas
     doc.setFontSize(11);
     doc.setFont("helvetica", "bold");
-    doc.text(`Total Debits: ${totalDebits.toFixed(2)}`, 14, finalY + 10);
-    doc.text(`Total Credits: ${totalCredits.toFixed(2)}`, 100, finalY + 10);
-    doc.text(`Current Cash Balance: ${availableCashBalance.toFixed(2)}`, 200, finalY + 10);
+    doc.text(`Total Debits: ${formatNumber(totalDebits)}`, 14, finalY + 10);
+    doc.text(`Total Credits: ${formatNumber(totalCredits)}`, 100, finalY + 10);
+    doc.text(`Current Cash Balance: ${formatNumber(availableCashBalance)}`, 200, finalY + 10);
 
     doc.save(`Cash_Ledger_${titleForPeriod.replace(/ /g, '_')}.pdf`);
   };
@@ -862,6 +880,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
           {plLoading && <Typography variant="body2">Loading…</Typography>}
         </Box>
 
+        {/* ✅ P&L totals with comma formatting */}
         {plTotals && (
           <Box
             sx={{
@@ -873,19 +892,19 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
           >
             <Box>
               <Typography variant="subtitle2">Revenue</Typography>
-              <Typography variant="h6">{plTotals.revenue.toFixed(2)}</Typography>
+              <Typography variant="h6">{formatNumber(plTotals.revenue)}</Typography>
             </Box>
             <Box>
               <Typography variant="subtitle2">COGS</Typography>
-              <Typography variant="h6">{plTotals.cogs.toFixed(2)}</Typography>
+              <Typography variant="h6">{formatNumber(plTotals.cogs)}</Typography>
             </Box>
             <Box>
               <Typography variant="subtitle2">Expenses</Typography>
-              <Typography variant="h6">{plTotals.expenses.toFixed(2)}</Typography>
+              <Typography variant="h6">{formatNumber(plTotals.expenses)}</Typography>
             </Box>
             <Box>
               <Typography variant="subtitle2">Gross Profit</Typography>
-              <Typography variant="h6">{plTotals.grossProfit.toFixed(2)}</Typography>
+              <Typography variant="h6">{formatNumber(plTotals.grossProfit)}</Typography>
             </Box>
             <Box>
               <Typography variant="subtitle2">Net Profit</Typography>
@@ -893,7 +912,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
                 variant="h6"
                 color={plTotals.netProfit >= 0 ? "green" : "error"}
               >
-                {plTotals.netProfit.toFixed(2)}
+                {formatNumber(plTotals.netProfit)}
               </Typography>
             </Box>
           </Box>
@@ -930,7 +949,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
         cashtrue={true}
       />
 
-      {/* ===== Summary row ===== */}
+      {/* ===== Summary row with comma formatting ===== */}
       <Box
         sx={{ mt: 4, display: "flex", justifyContent: "space-between", gap: 4 }}
       >
@@ -940,13 +959,13 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
             variant="h5"
             sx={{ color: "#388E3C", fontWeight: "bold", mb: 1 }}
           >
-            Available balance in Bank: {totalBankBalance.toFixed(2)}
+            Available balance in Bank: {formatNumber(totalBankBalance)}
           </Typography>
           <Typography
             variant="h6"
             sx={{ color: "#D32F2F", fontWeight: "bold" }}
           >
-            Bank Expenses: {totalBankExpenses.toFixed(2)}
+            Bank Expenses: {formatNumber(totalBankExpenses)}
           </Typography>
         </Box>
 
@@ -960,13 +979,13 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
               mb: 1,
             }}
           >
-            Available Cash Balance: {availableCashBalance.toFixed(2)}
+            Available Cash Balance: {formatNumber(availableCashBalance)}
           </Typography>
           <Typography
             variant="h6"
             sx={{ color: "#D32F2F", fontWeight: "bold" }}
           >
-            Cash Expenses: {cashExpensesDisplay.toFixed(2)}
+            Cash Expenses: {formatNumber(cashExpensesDisplay)}
           </Typography>
         </Box>
       </Box>

@@ -46,7 +46,21 @@ const ProductList = ({ products, isLoading }) => {
     if (text.length > n) return text.substring(0, n).concat("...");
     return text;
   };
+  // Helper for comma formatting
+  const formatNumber = num => {
+    const n = Number(num);
+    if (!Number.isFinite(n)) return "0";
+    return n.toLocaleString("en-PK");
+  };
 
+  const formatCurrency = num => {
+    const n = Number(num);
+    if (!Number.isFinite(n)) return "0.00";
+    return n.toLocaleString("en-PK", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  };
   const delProduct = async id => {
     try {
       await dispatch(deleteProduct(id)).unwrap(); // throws if API fails
@@ -230,7 +244,7 @@ const ProductList = ({ products, isLoading }) => {
                       quantity,
                       paymentMethod,
                       shippingType,
-                      status // may be stale if we didn't refetch products after cash-out
+                      status
                     } = product;
 
                     // ✅ Prefer cheque store for truth; fallback to product.status
@@ -258,13 +272,13 @@ const ProductList = ({ products, isLoading }) => {
                           {category}
                         </td>
                         <td>
-                          {price}
+                          {formatCurrency(price)}
                         </td>
                         <td>
-                          {quantity}
+                          {formatNumber(quantity)}
                         </td>
                         <td>
-                          {price * quantity}
+                          {formatCurrency(price * quantity)}
                         </td>
                         <td>
                           {paymentMethod}

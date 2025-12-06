@@ -22,7 +22,13 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
     const n = Number(v);
     return Number.isFinite(n) ? n : 0;
   };
-
+// Add this helper for comma formatting
+const formatNumber = (num) => {
+  return toNum(num).toLocaleString("en-PK", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
   // Parse qty from flexible description patterns
   const parseQtyFromDesc = (desc) => {
     const s = String(desc || "");
@@ -227,39 +233,39 @@ const downloadPDF = () => {
     "Running Balance"
   ];
 
-  const tableRows = transactions.map((tr) => {
-    const type = String(tr?.paymentMethod || "").toUpperCase().substring(0, 3);
-    const qty = tr?.quantity != null && toNum(tr.quantity) > 0 ? toNum(tr.quantity).toFixed(2) : "-";
-    const chequeDate = tr?.chequeDate ? new Date(tr.chequeDate).toLocaleDateString() : "-";
-    
-    return [
-      tr?.date ? new Date(tr.date).toLocaleDateString() : "-",
-      type,
-      tr?.productName || "-",
-      tr?.description || "-",
-      qty,
-      toNum(tr?.debit).toFixed(2),
-      toNum(tr?.credit).toFixed(2),
-      chequeDate,
-      toNum(tr?.runningBalance).toFixed(2),
-    ];
-  });
-
-  // ✅ Add totals row
-  const totalDebit = transactions.reduce((sum, tr) => sum + toNum(tr?.debit), 0);
-  const totalCredit = transactions.reduce((sum, tr) => sum + toNum(tr?.credit), 0);
+const tableRows = transactions.map((tr) => {
+  const type = String(tr?.paymentMethod || "").toUpperCase().substring(0, 3);
+  const qty = tr?.quantity != null && toNum(tr.quantity) > 0 ? formatNumber(tr.quantity) : "-";
+  const chequeDate = tr?.chequeDate ? new Date(tr.chequeDate).toLocaleDateString() : "-";
   
-  tableRows.push([
-    "",
-    "",
-    "",
-    "",
-    "Total:",
-    totalDebit.toFixed(2),
-    totalCredit.toFixed(2),
-    "",
-    ""
-  ]);
+  return [
+    tr?.date ? new Date(tr.date).toLocaleDateString() : "-",
+    type,
+    tr?.productName || "-",
+    tr?.description || "-",
+    qty,
+    formatNumber(tr?.debit),
+    formatNumber(tr?.credit),
+    chequeDate,
+    formatNumber(tr?.runningBalance),
+  ];
+});
+
+// ✅ Add totals row
+const totalDebit = transactions.reduce((sum, tr) => sum + toNum(tr?.debit), 0);
+const totalCredit = transactions.reduce((sum, tr) => sum + toNum(tr?.credit), 0);
+
+tableRows.push([
+  "",
+  "",
+  "",
+  "",
+  "Total:",
+  formatNumber(totalDebit),
+  formatNumber(totalCredit),
+  "",
+  ""
+]);
 
   // ✅ Professional table
   autoTable(doc, {
@@ -307,20 +313,20 @@ const downloadPDF = () => {
   doc.setFontSize(11);
   doc.setFont("helvetica", "bold");
   
-  const purchaseQty = transactions
-    .filter(tr => String(tr?.type).toLowerCase() === 'debit')
-    .reduce((sum, tr) => sum + toNum(tr?.quantity), 0);
-    
-  const saleQty = transactions
-    .filter(tr => String(tr?.type).toLowerCase() === 'credit')
-    .reduce((sum, tr) => sum + toNum(tr?.quantity), 0);
+const purchaseQty = transactions
+  .filter(tr => String(tr?.type).toLowerCase() === 'debit')
+  .reduce((sum, tr) => sum + toNum(tr?.quantity), 0);
+  
+const saleQty = transactions
+  .filter(tr => String(tr?.type).toLowerCase() === 'credit')
+  .reduce((sum, tr) => sum + toNum(tr?.quantity), 0);
 
-  const finalBalance = totalCredit - totalDebit;
+const finalBalance = totalCredit - totalDebit;
 
-  doc.text(`P.Q: ${purchaseQty.toFixed(2)}`, 14, finalY + 10);
-  doc.text(`S.Q: ${saleQty.toFixed(2)}`, 70, finalY + 10);
-  doc.text(`Total Debit: ${totalDebit.toFixed(2)}`, 130, finalY + 10);
-  doc.text(`Final Balance: ${finalBalance.toFixed(2)}`, 200, finalY + 10);
+doc.text(`P.Q: ${formatNumber(purchaseQty)}`, 14, finalY + 10);
+doc.text(`S.Q: ${formatNumber(saleQty)}`, 70, finalY + 10);
+doc.text(`Total Debit: ${formatNumber(totalDebit)}`, 130, finalY + 10);
+doc.text(`Final Balance: ${formatNumber(finalBalance)}`, 200, finalY + 10);
 
   doc.save(`Supplier_Ledger_${supplier?.username || "supplier"}_${new Date().toISOString().split('T')[0]}.pdf`);
 };
@@ -392,58 +398,58 @@ const downloadPDF = () => {
                   <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Running Balance</TableCell>
                 </TableRow>
               </TableHead>
-              <TableBody>
-                {transactions.map((row, index) => {
-                  const imageUrl = getImageUrl(row);
-                  const productName = row?.productName;
-                  const displayProductName = (productName === supplier?.username || productName === supplier?.name) ? "-" : (productName || "-");
-                  const pm = String(row?.paymentMethod || "");
-                  const displayPaymentMethod = pm ? pm.charAt(0).toUpperCase() + pm.slice(1).toLowerCase() : "-";
-                  
-                  return (
-                    <TableRow key={row.id || index} hover>
-                      <TableCell>{row?.date ? new Date(row.date).toLocaleDateString() : "-"}</TableCell>
-                      <TableCell>{displayProductName}</TableCell>
-                      <TableCell sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {row?.description || "-"}
-                      </TableCell>
-                      <TableCell>{toNum(row?.quantity) > 0 ? row.quantity : "-"}</TableCell>
-                      <TableCell>{displayPaymentMethod}</TableCell>
-                      <TableCell sx={{ color: 'red' }}>{Number(row?.debit ?? 0).toFixed(2)}</TableCell>
-                      <TableCell sx={{ color: 'green' }}>{Number(row?.credit ?? 0).toFixed(2)}</TableCell>
-                      <TableCell>{row?.chequeDate ? new Date(row.chequeDate).toLocaleDateString() : "-"}</TableCell>
-                      <TableCell>
-                        {imageUrl ? (
-                          <IconButton
-                            size="small"
-                            color="primary"
-                            onClick={() => handleViewImage(imageUrl)}
-                            title="View Image"
-                          >
-                            <Visibility />
-                          </IconButton>
-                        ) : "-"}
-                      </TableCell>
-                      <TableCell sx={{ 
-                        color: Number(row?.runningBalance ?? 0) >= 0 ? "green" : "red",
-                        fontWeight: "bold" 
-                      }}>
-                        {Number(row?.runningBalance ?? 0).toFixed(2)}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
+             <TableBody>
+  {transactions.map((row, index) => {
+    const imageUrl = getImageUrl(row);
+    const productName = row?.productName;
+    const displayProductName = (productName === supplier?.username || productName === supplier?.name) ? "-" : (productName || "-");
+    const pm = String(row?.paymentMethod || "");
+    const displayPaymentMethod = pm ? pm.charAt(0).toUpperCase() + pm.slice(1).toLowerCase() : "-";
+    
+    return (
+      <TableRow key={row.id || index} hover>
+        <TableCell>{row?.date ? new Date(row.date).toLocaleDateString() : "-"}</TableCell>
+        <TableCell>{displayProductName}</TableCell>
+        <TableCell sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {row?.description || "-"}
+        </TableCell>
+        <TableCell>{toNum(row?.quantity) > 0 ? formatNumber(row.quantity) : "-"}</TableCell>
+        <TableCell>{displayPaymentMethod}</TableCell>
+        <TableCell sx={{ color: 'red' }}>{formatNumber(row?.debit)}</TableCell>
+        <TableCell sx={{ color: 'green' }}>{formatNumber(row?.credit)}</TableCell>
+        <TableCell>{row?.chequeDate ? new Date(row.chequeDate).toLocaleDateString() : "-"}</TableCell>
+        <TableCell>
+          {imageUrl ? (
+            <IconButton
+              size="small"
+              color="primary"
+              onClick={() => handleViewImage(imageUrl)}
+              title="View Image"
+            >
+              <Visibility />
+            </IconButton>
+          ) : "-"}
+        </TableCell>
+        <TableCell sx={{ 
+          color: toNum(row?.runningBalance) >= 0 ? "green" : "red",
+          fontWeight: "bold" 
+        }}>
+          {formatNumber(row?.runningBalance)}
+        </TableCell>
+      </TableRow>
+    );
+  })}
+</TableBody>
             </Table>
           </TableContainer>
 
           <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mt: 2 }}>
             <Typography
-              variant="subtitle1"
-              sx={{ fontWeight: "bold", color: totalBalance >= 0 ? "green" : "red" }}
-            >
-              Total Balance: {Number(totalBalance || 0).toFixed(2)}
-            </Typography>
+  variant="subtitle1"
+  sx={{ fontWeight: "bold", color: totalBalance >= 0 ? "green" : "red" }}
+>
+  Total Balance: {formatNumber(totalBalance)}
+</Typography>
 
             <Box>
               <Button variant="contained" color="secondary" onClick={downloadPDF} sx={{ mr: 2 }}>
