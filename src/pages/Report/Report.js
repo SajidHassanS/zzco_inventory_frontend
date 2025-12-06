@@ -650,7 +650,14 @@ function Report() {
 
     return { warehouses, grandTotal };
   }, [products, warehousesMap]);
-
+// ===== Stock Value Calculation ===== (ADD THIS HERE)
+const totalStockValue = useMemo(() => {
+  return (products || []).reduce((sum, product) => {
+    const qty = Number(product.quantity || 0);
+    const price = Number(product.purchasePrice || product.costPrice || product.price || 0);
+    return sum + (qty * price);
+  }, 0);
+}, [products]);
   // ===== PDF Export =====
   const downloadComprehensiveReport = () => {
     const doc = new jsPDF("portrait");
@@ -688,67 +695,90 @@ function Report() {
       }
     };
 
-    // ===== SECTION 1: CASH & BANK SUMMARY =====
-    doc.setFontSize(13);
-    doc.setFont(undefined, "bold");
-    doc.setFillColor(41, 128, 185);
-    doc.rect(14, yPos - 5, 182, 8, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.text("CASH & BANK SUMMARY", 16, yPos);
-    yPos += 10;
+// ===== SECTION 1: CASH, BANK & STOCK SUMMARY =====
+doc.setFontSize(13);
+doc.setFont(undefined, "bold");
+doc.setFillColor(41, 128, 185);
+doc.rect(14, yPos - 5, 182, 8, "F");
+doc.setTextColor(255, 255, 255);
+doc.text("CASH, BANK & STOCK SUMMARY", 16, yPos);
+yPos += 10;
 
-    doc.setTextColor(0, 0, 0);
-    doc.setFont(undefined, "normal");
-    doc.setFontSize(10);
+doc.setTextColor(0, 0, 0);
+doc.setFont(undefined, "normal");
+doc.setFontSize(10);
 
-    doc.text("Total Cash Balance:", 20, yPos);
-    doc.text(
-      `Rs ${availableCashBalance.toLocaleString("en-PK", {
-        minimumFractionDigits: 2,
-      })}`,
-      140,
-      yPos,
-      { align: "right" }
-    );
-    yPos += 6;
+doc.text("Total Cash Balance:", 20, yPos);
+doc.text(
+  `Rs ${availableCashBalance.toLocaleString("en-PK", {
+    minimumFractionDigits: 2,
+  })}`,
+  140,
+  yPos,
+  { align: "right" }
+);
+yPos += 6;
 
-    doc.text("Total Bank Balance:", 20, yPos);
-    doc.text(
-      `Rs ${totalBankBalance.toLocaleString("en-PK", {
-        minimumFractionDigits: 2,
-      })}`,
-      140,
-      yPos,
-      { align: "right" }
-    );
-    yPos += 6;
+doc.text("Total Bank Balance:", 20, yPos);
+doc.text(
+  `Rs ${totalBankBalance.toLocaleString("en-PK", {
+    minimumFractionDigits: 2,
+  })}`,
+  140,
+  yPos,
+  { align: "right" }
+);
+yPos += 6;
 
-    doc.text("Pending Cheques:", 20, yPos);
-    doc.text(
-      `Rs ${pendingCheques.amount.toLocaleString("en-PK", {
-        minimumFractionDigits: 2,
-      })} (${pendingCheques.count} cheques)`,
-      140,
-      yPos,
-      { align: "right" }
-    );
-    yPos += 6;
+doc.text("Total Stock Value:", 20, yPos);
+doc.text(
+  `Rs ${totalStockValue.toLocaleString("en-PK", {
+    minimumFractionDigits: 2,
+  })} (${inventorySummary.grandTotal.toLocaleString("en-PK")} items)`,
+  140,
+  yPos,
+  { align: "right" }
+);
+yPos += 6;
 
-    doc.setLineWidth(0.3);
-    doc.line(20, yPos, 140, yPos);
-    yPos += 5;
+doc.text("Pending Cheques:", 20, yPos);
+doc.text(
+  `Rs ${pendingCheques.amount.toLocaleString("en-PK", {
+    minimumFractionDigits: 2,
+  })} (${pendingCheques.count} cheques)`,
+  140,
+  yPos,
+  { align: "right" }
+);
+yPos += 6;
 
-    doc.setFont(undefined, "bold");
-    doc.text("Total Liquid Assets:", 20, yPos);
-    doc.text(
-      `Rs ${(availableCashBalance + totalBankBalance).toLocaleString("en-PK", {
-        minimumFractionDigits: 2,
-      })}`,
-      140,
-      yPos,
-      { align: "right" }
-    );
-    yPos += 12;
+doc.setLineWidth(0.3);
+doc.line(20, yPos, 140, yPos);
+yPos += 5;
+
+doc.setFont(undefined, "bold");
+doc.text("Total Liquid Assets (Cash + Bank):", 20, yPos);
+doc.text(
+  `Rs ${(availableCashBalance + totalBankBalance).toLocaleString("en-PK", {
+    minimumFractionDigits: 2,
+  })}`,
+  140,
+  yPos,
+  { align: "right" }
+);
+yPos += 6;
+
+doc.setTextColor(0, 100, 0);
+doc.text("Total Assets (Cash + Bank + Stock):", 20, yPos);
+doc.text(
+  `Rs ${(availableCashBalance + totalBankBalance + totalStockValue).toLocaleString("en-PK", {
+    minimumFractionDigits: 2,
+  })}`,
+  140,
+  yPos,
+  { align: "right" }
+);
+yPos += 12;
 
     // ===== SECTION 2: CUSTOMER ACCOUNTS =====
     doc.setFont(undefined, "bold");
@@ -1428,51 +1458,62 @@ function Report() {
 
           <Divider sx={{ mb: 4 }} />
 
-          {/* Cash & Bank Summary */}
-          <Box mb={4}>
-            <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
-              Cash & Bank Summary
-            </Typography>
-            <Grid container spacing={3}>
-              <Grid item xs={12} sm={6} md={3}>
-                <MetricCard
-                  title="Total Cash Balance"
-                  value={availableCashBalance}
-                  icon={CashIcon}
-                  color={availableCashBalance > 0 ? "success" : "danger"}
-                  isCurrency={true}
-                />
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <MetricCard
-                  title="Total Bank Balance"
-                  value={totalBankBalance}
-                  icon={BankIcon}
-                  color="primary"
-                  isCurrency={true}
-                />
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <MetricCard
-                  title="Pending Cheques"
-                  value={pendingCheques.amount}
-                  count={pendingCheques.count}
-                  icon={MoneyIcon}
-                  color="warning"
-                  isCurrency={true}
-                />
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <MetricCard
-                  title="Total Liquid Assets"
-                  value={availableCashBalance + totalBankBalance}
-                  icon={BankIcon}
-                  color="info"
-                  isCurrency={true}
-                />
-              </Grid>
-            </Grid>
-          </Box>
+      {/* Cash, Bank & Stock Summary */}
+<Box mb={4}>
+  <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
+    Cash, Bank & Stock Summary
+  </Typography>
+  <Grid container spacing={3}>
+    <Grid item xs={12} sm={6} md={2.4}>
+      <MetricCard
+        title="Total Cash Balance"
+        value={availableCashBalance}
+        icon={CashIcon}
+        color={availableCashBalance > 0 ? "success" : "danger"}
+        isCurrency={true}
+      />
+    </Grid>
+    <Grid item xs={12} sm={6} md={2.4}>
+      <MetricCard
+        title="Total Bank Balance"
+        value={totalBankBalance}
+        icon={BankIcon}
+        color="primary"
+        isCurrency={true}
+      />
+    </Grid>
+    <Grid item xs={12} sm={6} md={2.4}>
+      <MetricCard
+        title="Total Stock Value"
+        subtitle={`${inventorySummary.grandTotal.toLocaleString("en-PK")} items`}
+        value={totalStockValue}
+        icon={ShippingIcon}
+        color="purple"
+        isCurrency={true}
+      />
+    </Grid>
+    <Grid item xs={12} sm={6} md={2.4}>
+      <MetricCard
+        title="Pending Cheques"
+        value={pendingCheques.amount}
+        count={pendingCheques.count}
+        icon={MoneyIcon}
+        color="warning"
+        isCurrency={true}
+      />
+    </Grid>
+    <Grid item xs={12} sm={6} md={2.4}>
+      <MetricCard
+        title="Total Assets"
+        subtitle="Cash + Bank + Stock"
+        value={availableCashBalance + totalBankBalance + totalStockValue}
+        icon={ReportIcon}
+        color="info"
+        isCurrency={true}
+      />
+    </Grid>
+  </Grid>
+</Box>
 
           <Divider sx={{ mb: 4 }} />
 

@@ -1,33 +1,63 @@
 // src/pages/SupplierList.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { Avatar, Box, Grid, IconButton, Tooltip } from "@mui/material";
+import {
+  Avatar,
+  Box,
+  Grid,
+  IconButton,
+  Tooltip,
+  TextField,
+  InputAdornment,
+} from "@mui/material";
 import { DataGrid } from "@mui/x-data-grid";
-import { Add, Delete, History, Remove, Discount as DiscountIcon } from "@mui/icons-material"; // ✅ Add DiscountIcon
+import {
+  Add,
+  Delete,
+  History,
+  Remove,
+  Discount as DiscountIcon,
+  Search,
+} from "@mui/icons-material";
 import { useSelector } from "react-redux";
 import { selectCanDelete } from "../../redux/features/auth/authSlice";
 import AddSupplierBalanceModal from "../../components/Models/AddSupplierBalanceModal";
 import MinusSupplierBalanceModal from "../../components/Models/MinusSupplierBalanceModal";
-import ApplySupplierDiscountModal from "../../components/Models/ApplySupplierDiscountModal"; // ✅ NEW
+import ApplySupplierDiscountModal from "../../components/Models/ApplySupplierDiscountModal";
 import ConfirmDeleteModal from "../../components/Models/ConfirmDeleteModal";
 import SupplierTransactionHistoryModal from "../../components/Models/SupplierTransactionHistoryModal";
 
-const currency = (v) =>
-  typeof v === "number" && !Number.isNaN(v) ? v.toFixed(2) : "0.00";
+/* ---------- helpers ---------- */
+const toNum = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const formatNumber = (num) => {
+  return toNum(num).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
+
+const formatWholeNumber = (num) => {
+  return toNum(num).toLocaleString("en-US");
+};
 
 const SupplierList = ({ suppliers = [], refreshSuppliers }) => {
   const [selectedSupplier, setSelectedSupplier] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // modals
   const [isAddModalOpen, setAddModalOpen] = useState(false);
   const [isMinusModalOpen, setMinusModalOpen] = useState(false);
-  const [isDiscountModalOpen, setDiscountModalOpen] = useState(false); // ✅ NEW
+  const [isDiscountModalOpen, setDiscountModalOpen] = useState(false);
   const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isHistoryModalOpen, setHistoryModalOpen] = useState(false);
 
   // local copy so we can optimistically update after actions
   const [supplierList, setSupplierList] = useState(suppliers);
 
-  // keep local list in sync when parent passes fresh data (e.g., after reload)
+  // keep local list in sync when parent passes fresh data
   useEffect(() => {
     setSupplierList(suppliers);
   }, [suppliers]);
@@ -45,23 +75,25 @@ const SupplierList = ({ suppliers = [], refreshSuppliers }) => {
     setSelectedSupplier(supplier);
     setAddModalOpen(true);
   };
+
   const openMinusModal = (supplier) => {
     if (!supplier || !supplier._id) return;
     setSelectedSupplier(supplier);
     setMinusModalOpen(true);
   };
-  
-// ✅ UPDATED: Open discount modal
-const openDiscountModal = (supplier) => {
-  if (!supplier || !supplier._id) return;
-  if (supplier.balance >= 0) { // ✅ CHANGED: >= instead of <=
-    alert("Cannot apply discount. You haven't paid this supplier yet (balance must be negative).");
-    return;
-  }
-  setSelectedSupplier(supplier);
-  setDiscountModalOpen(true);
-};
-  
+
+  const openDiscountModal = (supplier) => {
+    if (!supplier || !supplier._id) return;
+    if (supplier.balance >= 0) {
+      alert(
+        "Cannot apply discount. You haven't paid this supplier yet (balance must be negative)."
+      );
+      return;
+    }
+    setSelectedSupplier(supplier);
+    setDiscountModalOpen(true);
+  };
+
   const openDeleteModal = (supplier) => {
     if (!canDelete) {
       alert("You do not have permission to delete this supplier.");
@@ -70,6 +102,7 @@ const openDiscountModal = (supplier) => {
     setSelectedSupplier(supplier);
     setDeleteModalOpen(true);
   };
+
   const openHistoryModal = (supplier) => {
     if (!supplier || !supplier._id) return;
     setSelectedSupplier(supplier);
@@ -79,14 +112,13 @@ const openDiscountModal = (supplier) => {
   const closeModals = () => {
     setAddModalOpen(false);
     setMinusModalOpen(false);
-    setDiscountModalOpen(false); // ✅ NEW
+    setDiscountModalOpen(false);
     setDeleteModalOpen(false);
     setHistoryModalOpen(false);
     setSelectedSupplier(null);
   };
 
   /* ------------------------------- updaters ---------------------------------- */
-  // called by Add / Minus / Discount modals; pass the UPDATED supplier returned by API
   const handleBalanceUpdate = (updatedSupplier) => {
     if (!updatedSupplier || !updatedSupplier._id) return;
 
@@ -95,9 +127,7 @@ const openDiscountModal = (supplier) => {
         s._id === updatedSupplier._id
           ? {
               ...s,
-              // keep everything the API just sent (balance, last desc, etc.)
               ...updatedSupplier,
-              // fallback safety:
               balance: Number(updatedSupplier.balance ?? s.balance ?? 0),
               latestTxnDescription:
                 updatedSupplier.latestTxnDescription ?? s.latestTxnDescription,
@@ -106,7 +136,6 @@ const openDiscountModal = (supplier) => {
       )
     );
 
-    // if parent wants a hard refresh, allow it
     if (typeof refreshSuppliers === "function") refreshSuppliers();
     closeModals();
   };
@@ -117,42 +146,95 @@ const openDiscountModal = (supplier) => {
     closeModals();
   };
 
+  /* -------------------------------- rows with serial & search --------------------------------- */
+  const rows = useMemo(() => {
+    const allRows = (supplierList || []).map((s, index) => ({
+      ...s,
+      serialNo: index + 1,
+    }));
+
+    if (!searchQuery.trim()) return allRows;
+
+    return allRows.filter(
+      (row) =>
+        row.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        row.phone?.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [supplierList, searchQuery]);
+
   /* -------------------------------- columns --------------------------------- */
   const columns = useMemo(
     () => [
       {
+        field: "serialNo",
+        headerName: "#",
+        width: 50,
+        renderCell: (params) => (
+          <Box sx={{ fontWeight: 600 }}>{params.value}</Box>
+        ),
+      },
+      {
         field: "avatar",
         headerName: "Avatar",
-        width: 80,
+        width: 70,
         sortable: false,
         filterable: false,
         renderCell: (params) => (
           <Avatar
             src={params.value || "/default-avatar.png"}
             alt={params.row.username}
-            sx={{ width: 34, height: 34 }}
+            sx={{ width: 36, height: 36 }}
           />
         ),
       },
-      { field: "_id", headerName: "ID", width: 210 },
-      { field: "username", headerName: "Username", width: 160 },
-      { field: "phone", headerName: "Phone", width: 130 },
+      {
+        field: "username",
+        headerName: "Username",
+        flex: 1,
+        minWidth: 150,
+        renderCell: (params) => (
+          <Box sx={{ fontSize: "1.1rem", fontWeight: 600 }}>
+            {params.value}
+          </Box>
+        ),
+      },
+      {
+        field: "phone",
+        headerName: "Phone",
+        width: 120,
+      },
       {
         field: "balance",
         headerName: "Balance",
-        minWidth: 90,
-        flex: 0.5,
-        valueGetter: (p) => Number(p.row?.balance ?? 0),
-        renderCell: (p) => <strong>{currency(Number(p.value))}</strong>,
+        width: 140,
+        type: "number",
+        valueGetter: (params) => toNum(params.row.balance),
+        renderCell: (params) => (
+          <Box
+            sx={{
+              fontSize: "1.2rem",
+              fontWeight: 700,
+              color: params.value >= 0 ? "success.main" : "error.main",
+            }}
+          >
+            {formatNumber(params.value)}
+          </Box>
+        ),
       },
       {
         field: "latestTxnDescription",
         headerName: "Latest Description",
-        flex: 1.6,
-        minWidth: 260,
+        flex: 1,
+        minWidth: 180,
         renderCell: (params) => (
           <Tooltip title={params.value || "—"} arrow>
-            <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            <span
+              style={{
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
               {params.value || "—"}
             </span>
           </Tooltip>
@@ -161,50 +243,69 @@ const openDiscountModal = (supplier) => {
       {
         field: "totalInStockQty",
         headerName: "In Stock",
-        minWidth: 110,
-        flex: 0.6,
-        valueGetter: (p) => Number(p.row?.totalInStockQty || 0),
+        width: 90,
+        type: "number",
+        valueGetter: (params) => toNum(params.row.totalInStockQty),
+        renderCell: (params) => (
+          <Box sx={{ fontSize: "1rem", fontWeight: 500 }}>
+            {formatWholeNumber(params.value)}
+          </Box>
+        ),
       },
       {
         field: "action",
         headerName: "Action",
-        minWidth: 200, // ✅ Increased width for 5 buttons
-        flex: 0.8,
+        width: 200,
         sortable: false,
         filterable: false,
         renderCell: (params) => (
-          <Grid container spacing={1} wrap="nowrap">
+          <Grid container spacing={0.5} wrap="nowrap">
             <Grid item>
               <Tooltip title="Pay to Supplier">
-                <IconButton color="primary" size="small" onClick={() => openAddModal(params.row)}>
+                <IconButton
+                  color="primary"
+                  size="small"
+                  onClick={() => openAddModal(params.row)}
+                >
                   <Add fontSize="small" />
                 </IconButton>
               </Tooltip>
             </Grid>
             <Grid item>
-              <Tooltip title="Get from Supplier"> 
-                <IconButton color="secondary" size="small" onClick={() => openMinusModal(params.row)}>
+              <Tooltip title="Get from Supplier">
+                <IconButton
+                  color="secondary"
+                  size="small"
+                  onClick={() => openMinusModal(params.row)}
+                >
                   <Remove fontSize="small" />
                 </IconButton>
               </Tooltip>
             </Grid>
-            {/* ✅ NEW: Discount Button */}
-          <Grid item>
-  <Tooltip title={params.row.balance < 0 ? "Apply Discount" : "No payment made to discount"}>
-    <span>
-      <IconButton
-        color="success"
-        size="small"
-        onClick={() => openDiscountModal(params.row)}
-        disabled={params.row.balance >= 0} // ✅ CHANGED: >= instead of <=
-      >
-        <DiscountIcon fontSize="small" />
-      </IconButton>
-    </span>
-  </Tooltip>
-</Grid>
             <Grid item>
-              <Tooltip title={canDelete ? "Delete supplier" : "No permission"}>
+              <Tooltip
+                title={
+                  params.row.balance < 0
+                    ? "Apply Discount"
+                    : "No payment made to discount"
+                }
+              >
+                <span>
+                  <IconButton
+                    color="success"
+                    size="small"
+                    onClick={() => openDiscountModal(params.row)}
+                    disabled={params.row.balance >= 0}
+                  >
+                    <DiscountIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            </Grid>
+            <Grid item>
+              <Tooltip
+                title={canDelete ? "Delete supplier" : "No permission"}
+              >
                 <span>
                   <IconButton
                     color="error"
@@ -219,7 +320,11 @@ const openDiscountModal = (supplier) => {
             </Grid>
             <Grid item>
               <Tooltip title="Transaction history">
-                <IconButton color="info" size="small" onClick={() => openHistoryModal(params.row)}>
+                <IconButton
+                  color="info"
+                  size="small"
+                  onClick={() => openHistoryModal(params.row)}
+                >
                   <History fontSize="small" />
                 </IconButton>
               </Tooltip>
@@ -232,7 +337,7 @@ const openDiscountModal = (supplier) => {
   );
 
   /* --------------------------------- render --------------------------------- */
-  if (!supplierList?.length) {
+  if (!supplierList?.length && !searchQuery) {
     return (
       <Box
         sx={{
@@ -258,9 +363,33 @@ const openDiscountModal = (supplier) => {
         width: "auto",
       }}
     >
+      {/* Search Bar */}
+      <Box sx={{ mb: 2 }}>
+        <TextField
+          fullWidth
+          variant="outlined"
+          placeholder="Search by name or phone..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <Search />
+              </InputAdornment>
+            ),
+          }}
+          sx={{
+            maxWidth: 400,
+            "& .MuiOutlinedInput-root": {
+              borderRadius: 2,
+            },
+          }}
+        />
+      </Box>
+
       <DataGrid
         sx={{ borderLeft: 0, borderRight: 0, borderRadius: 0 }}
-        rows={supplierList}
+        rows={rows}
         columns={columns}
         getRowId={(row) => row._id}
         autoHeight
@@ -294,7 +423,7 @@ const openDiscountModal = (supplier) => {
         />
       )}
 
-      {/* ✅ NEW: Discount Modal */}
+      {/* Discount Modal */}
       {isDiscountModalOpen && selectedSupplier && (
         <ApplySupplierDiscountModal
           open={isDiscountModalOpen}

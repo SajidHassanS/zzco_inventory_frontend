@@ -1,31 +1,43 @@
 import React, { useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import { selectUserRole, SET_LOGIN, SET_ROLE } from "../../redux/features/auth/authSlice";
+import {
+  selectUserName,
+  SET_LOGIN,
+  SET_ROLE,
+  SET_NAME
+} from "../../redux/features/auth/authSlice";
 import { logoutUser } from "../../services/authService";
+
+// Helper function to capitalize first letter
+const capitalize = str => {
+  if (!str) return "User";
+  return str.charAt(0).toUpperCase() + str.slice(1);
+};
 
 const Header = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
-  // Fetch userRole from Redux state
-  const userRole = useSelector(selectUserRole);
+  const userName = useSelector(selectUserName);
 
-  // Fetch userRole from localStorage if Redux state doesn't have it
-  useEffect(() => {
-    const storedRole = localStorage.getItem("userRole");
-    console.log("Stored role from localStorage:", storedRole); // Debugging line
-
-    if (storedRole && userRole !== storedRole) {
-      dispatch(SET_ROLE(storedRole)); // Update Redux state with stored role
-    }
-  }, [dispatch, userRole]);
+  useEffect(
+    () => {
+      const storedName = localStorage.getItem("userName");
+      if (storedName && userName !== storedName) {
+        dispatch(SET_NAME(storedName));
+      }
+    },
+    [dispatch, userName]
+  );
 
   const logout = async () => {
     await logoutUser();
-    localStorage.removeItem("userRole"); // Clear role from localStorage on logout
+    localStorage.removeItem("userRole");
+    localStorage.removeItem("userName");
     dispatch(SET_LOGIN(false));
-    dispatch(SET_ROLE("")); // Clear role from Redux state
+    dispatch(SET_ROLE(""));
+    dispatch(SET_NAME(""));
     navigate("/login");
   };
 
@@ -34,7 +46,9 @@ const Header = () => {
       <div className="--flex-between">
         <h3>
           <span className="--fw-thin">Welcome, </span>
-          <span className="--color-danger">{userRole || "User"}</span> {/* Default to "User" if role is missing */}
+          <span className="--color-danger">
+            {capitalize(userName)}
+          </span>
         </h3>
         <button onClick={logout} className="--btn --btn-danger">
           Logout
