@@ -18,8 +18,9 @@ import { useSelector } from "react-redux";
 import { selectCanDelete } from "../../../redux/features/auth/authSlice";
 import TransactionHistoryModal from "../../../components/Models/TransactionModal";
 import CashTransactionHistoryModal from "../../../components/Models/CashTransactionModal";
-
-// PDF libs
+import TransferModal from "../../../components/Models/TransferModal";
+import { SwapHoriz } from "@mui/icons-material";
+// PDF libs 
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -43,7 +44,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
   const [isEditModalOpen, setEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isTransactionModalOpen, setTransactionModalOpen] = useState(false);
-
+const [isTransferModalOpen, setTransferModalOpen] = useState(false);
   // ===== Report selectors (Daily | Monthly | Yearly) =====
   const [reportType, setReportType] = useState("monthly");
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -765,6 +766,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
       sx={{ margin: 3, bgcolor: "white", borderRadius: 2, padding: 3, width: "auto" }}
     >
       {/* ===== PDF Export controls ===== */}
+
       <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }}>
         <FormControl size="small" sx={{ minWidth: 220 }}>
           <InputLabel>Select Bank for PDF</InputLabel>
@@ -788,6 +790,14 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
         <Button variant="outlined" onClick={downloadCashPdf}>
           Download Cash PDF
         </Button>
+        <Button 
+    variant="contained" 
+    color="secondary"
+    onClick={() => setTransferModalOpen(true)}
+    startIcon={<SwapHoriz />}
+  >
+    Transfer Funds
+  </Button>
       </Stack>
 
       {/* ===== Report selectors ===== */}
@@ -1028,6 +1038,16 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
           cashEntry={selectedEntry}
         />
       )}
+
+      {isTransferModalOpen && (
+  <TransferModal
+    open={isTransferModalOpen}
+    onClose={() => setTransferModalOpen(false)}
+    banks={banks}
+    cashBalance={availableCashBalance}
+    onSuccess={refreshBanks}
+  />
+)}
     </Box>
   );
 };
