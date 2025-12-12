@@ -7,8 +7,6 @@ const API_URL = `${BACKEND_URL}api/shippers/`;
 // Helper: pick axios config based on payload type
 function buildConfig(payload) {
   const cfg = { withCredentials: true };
-  // If FormData, let axios set multipart headers automatically
-  // If plain object, set JSON content-type explicitly (optional)
   if (!(typeof FormData !== "undefined" && payload instanceof FormData)) {
     cfg.headers = { "Content-Type": "application/json" };
   }
@@ -63,11 +61,7 @@ const addBalance = async (id, data) => {
   return response.data;
 };
 
-/**
- * Minus balance (CREDIT ONLY; increases payable; no cash/bank movement)
- * This posts to the same /add-balance endpoint but ensures paymentMethod=credit.
- * Accepts FormData or plain object.
- */
+// Minus balance (CREDIT ONLY; increases payable; no cash/bank movement)
 const minusBalance = async (id, payload) => {
   let data = payload;
 
@@ -104,6 +98,15 @@ const getTransactionHistory = async id => {
   return response.data;
 };
 
+// ✅ NEW: Delete a specific transaction
+const deleteTransaction = async (shipperId, transactionId) => {
+  const response = await axios.delete(
+    `${API_URL}${shipperId}/transaction/${transactionId}`,
+    { withCredentials: true }
+  );
+  return response.data;
+};
+
 const shipperService = {
   createShipper,
   getAllShippers,
@@ -111,9 +114,10 @@ const shipperService = {
   updateShipper,
   deleteShipper,
   addBalance,
-  minusBalance, // <- optional helper; your slice can call addBalance directly too
+  minusBalance,
   applyDiscount,
-  getTransactionHistory
+  getTransactionHistory,
+  deleteTransaction // ✅ NEW
 };
 
 export default shipperService;

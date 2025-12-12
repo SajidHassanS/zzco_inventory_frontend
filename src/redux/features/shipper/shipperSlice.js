@@ -97,19 +97,13 @@ export const addShipperBalance = createAsyncThunk(
   }
 );
 
-/**
- * Minus balance (CREDIT ONLY; increases payable).
- * This is an alias around the same /add-balance endpoint but forces paymentMethod=credit.
- * Supports payload shape { id, formData } (FormData) OR { id, data } (plain object).
- */
+// Minus balance (CREDIT ONLY; increases payable)
 export const minusShipperBalance = createAsyncThunk(
   "shipper/minusBalance",
   async ({ id, formData, data }, thunkAPI) => {
     try {
-      // Prefer provided formData; else fallback to data
       let payload = formData || data;
 
-      // Ensure paymentMethod=credit is enforced
       if (payload instanceof FormData) {
         if (payload.has("paymentMethod")) payload.set("paymentMethod", "credit");
         else payload.append("paymentMethod", "credit");
@@ -157,6 +151,20 @@ export const getShipperTransactions = createAsyncThunk(
   }
 );
 
+// ✅ NEW: Delete a specific transaction
+export const deleteShipperTransaction = createAsyncThunk(
+  "shipper/deleteTransaction",
+  async ({ shipperId, transactionId }, thunkAPI) => {
+    try {
+      return await shipperService.deleteTransaction(shipperId, transactionId);
+    } catch (error) {
+      const message =
+        error?.response?.data?.message || error.message || "Failed to delete transaction";
+      return thunkAPI.rejectWithValue(message);
+    }
+  }
+);
+
 const shipperSlice = createSlice({
   name: "shipper",
   initialState,
@@ -180,7 +188,6 @@ const shipperSlice = createSlice({
       .addCase(createShipper.fulfilled, (state, action) => {
         state.isLoading = false;
         state.isSuccess = true;
-        // API returns { message, shipper }
         if (action.payload?.shipper) {
           state.shippers.unshift(action.payload.shipper);
         }
@@ -319,6 +326,27 @@ const shipperSlice = createSlice({
         state.transactionHistory = action.payload?.transactionHistory || [];
       })
       .addCase(getShipperTransactions.rejected, (state, action) => {
+        state.isLoading = false;
+        state.isError = true;
+        state.message = action.payload;
+      })
+
+      // ✅ NEW: Delete transaction
+      .addCase(deleteShipperTransaction.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(deleteShipperTransaction.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.isSuccess = true;
+        const updated = action.payload?.shipper;
+        if (updated?._id) {
+          const idx = state.shippers.findIndex((s) => s._id === updated._id);
+          if (idx !== -1) state.shippers[idx] = updated;
+          // Also update transactionHistory
+          state.transactionHistory = updated.transactionHistory || [];
+        }
+      })
+      .addCase(deleteShipperTransaction.rejected, (state, action) => {
         state.isLoading = false;
         state.isError = true;
         state.message = action.payload;

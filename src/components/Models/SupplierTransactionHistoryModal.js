@@ -1,16 +1,27 @@
 // src/components/Models/SupplierTransactionHistoryModal.jsx
 import React, { useEffect, useState, useMemo, useRef } from "react";
-import { Modal, Box, Typography, Button, IconButton, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper } from "@mui/material";
-import { Visibility } from "@mui/icons-material";
+import { 
+  Modal, Box, Typography, Button, IconButton, Table, TableBody, 
+  TableCell, TableContainer, TableHead, TableRow, Paper,
+  Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
+  CircularProgress, Tooltip
+} from "@mui/material";
+import { Visibility, Delete } from "@mui/icons-material";
 import axios from "axios";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { toast } from "react-toastify";
 
-const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
+const SupplierTransactionHistoryModal = ({ open, onClose, supplier, onTransactionDeleted }) => {
   const [transactions, setTransactions] = useState([]);
   const [totalBalance, setTotalBalance] = useState(0);
   const [imageModalOpen, setImageModalOpen] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
+  
+  // ✅ NEW: Delete confirmation states
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [transactionToDelete, setTransactionToDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   // Ref for auto-scrolling to bottom
   const tableContainerRef = useRef(null);
@@ -22,13 +33,15 @@ const SupplierTransactionHistoryModal = ({ open, onClose, supplier }) => {
     const n = Number(v);
     return Number.isFinite(n) ? n : 0;
   };
-// Add this helper for comma formatting
-const formatNumber = (num) => {
-  return toNum(num).toLocaleString("en-PK", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-};
+
+  // Add this helper for comma formatting
+  const formatNumber = (num) => {
+    return toNum(num).toLocaleString("en-PK", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  };
+
   // Parse qty from flexible description patterns
   const parseQtyFromDesc = (desc) => {
     const s = String(desc || "");
@@ -87,6 +100,56 @@ const formatNumber = (num) => {
     if (obj['imageFilePath']) return obj['imageFilePath'];
     
     return null;
+  };
+
+  // ✅ NEW: Handle delete button click
+  const handleDeleteClick = (transaction) => {
+    setTransactionToDelete(transaction);
+    setDeleteDialogOpen(true);
+  };
+
+  // ✅ NEW: Close delete dialog
+  const handleCloseDeleteDialog = () => {
+    setDeleteDialogOpen(false);
+    setTransactionToDelete(null);
+  };
+
+  // ✅ NEW: Confirm and execute delete
+  const handleConfirmDelete = async () => {
+    if (!transactionToDelete || !supplier?._id) return;
+
+    setIsDeleting(true);
+    try {
+      const response = await axios.delete(
+        `${API_URL}/${supplier._id}/transaction/${transactionToDelete._id || transactionToDelete.id}`,
+        { withCredentials: true }
+      );
+
+      console.log("✅ Transaction deleted:", response.data);
+
+      // Remove from local state
+      setTransactions((prev) => 
+        prev.filter((t) => (t._id || t.id) !== (transactionToDelete._id || transactionToDelete.id))
+      );
+
+      // Update total balance from response
+      if (response.data.newBalance !== undefined) {
+        setTotalBalance(response.data.newBalance);
+      }
+
+      // Notify parent component to refresh supplier list
+      if (onTransactionDeleted) {
+        onTransactionDeleted(supplier._id, response.data.newBalance);
+      }
+
+      toast.success("Transaction deleted successfully!");
+      handleCloseDeleteDialog();
+    } catch (error) {
+      console.error("Error deleting transaction:", error);
+      toast.error(error.response?.data?.message || "Failed to delete transaction");
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   // Fetch & build running ledger
@@ -152,6 +215,7 @@ const formatNumber = (num) => {
 
           return {
             id: plainT._id || t._id || idx,
+            _id: plainT._id || t._id, // ✅ Keep _id for deletion
             ...plainT,
             quantity,
             debit,
@@ -186,150 +250,150 @@ const formatNumber = (num) => {
     }
   }, [transactions]);
 
- // ✅ Professional PDF download with Z&Z TRADERS logo
-const downloadPDF = () => {
-  const doc = new jsPDF('landscape');
-  
-  // ✅ COMPANY LOGO/HEADER - ORANGE COLOR
-  doc.setFontSize(20);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(255, 87, 34); // ✅ Orange/Red color (matching Admin logo)
-  doc.text("Z&Z TRADERS .CO", 148, 12, { align: "center" });
-  
-  // Decorative line under logo
-  doc.setLineWidth(0.8);
-  doc.setDrawColor(255, 87, 34); // ✅ Orange/Red color
-  doc.line(110, 15, 186, 15);
-  
-  // ✅ Supplier name
-  doc.setFontSize(16);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(0, 0, 0);
-  doc.text(`${supplier?.username || "SUPPLIER"}`, 14, 15);
-  
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "normal");
-  doc.text("Ledger", 14, 22);
-  
-  // ✅ Date range
-  doc.setFontSize(10);
-  const today = new Date().toLocaleDateString();
-  const firstDate = transactions.length > 0 
-    ? new Date(transactions[0]?.date || transactions[0]?.createdAt).toLocaleDateString()
-    : today;
-  doc.text(`From Date: ${firstDate}`, 240, 15);
-  doc.text(`To Date: ${today}`, 240, 20);
+  // ✅ Professional PDF download with Z&Z TRADERS logo
+  const downloadPDF = () => {
+    const doc = new jsPDF('landscape');
+    
+    // ✅ COMPANY LOGO/HEADER - ORANGE COLOR
+    doc.setFontSize(20);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(255, 87, 34); // ✅ Orange/Red color (matching Admin logo)
+    doc.text("Z&Z TRADERS .CO", 148, 12, { align: "center" });
+    
+    // Decorative line under logo
+    doc.setLineWidth(0.8);
+    doc.setDrawColor(255, 87, 34); // ✅ Orange/Red color
+    doc.line(110, 15, 186, 15);
+    
+    // ✅ Supplier name
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(0, 0, 0);
+    doc.text(`${supplier?.username || "SUPPLIER"}`, 14, 15);
+    
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "normal");
+    doc.text("Ledger", 14, 22);
+    
+    // ✅ Date range
+    doc.setFontSize(10);
+    const today = new Date().toLocaleDateString();
+    const firstDate = transactions.length > 0 
+      ? new Date(transactions[0]?.date || transactions[0]?.createdAt).toLocaleDateString()
+      : today;
+    doc.text(`From Date: ${firstDate}`, 240, 15);
+    doc.text(`To Date: ${today}`, 240, 20);
 
-  // ✅ Table columns
-  const tableColumn = [
-    "Date",
-    "Type",
-    "Product Name",
-    "Description",
-    "Quantity",
-    "Debit",
-    "Credit",
-    "Cheque Date",
-    "Running Balance"
-  ];
+    // ✅ Table columns
+    const tableColumn = [
+      "Date",
+      "Type",
+      "Product Name",
+      "Description",
+      "Quantity",
+      "Debit",
+      "Credit",
+      "Cheque Date",
+      "Running Balance"
+    ];
 
-const tableRows = transactions.map((tr) => {
-  const type = String(tr?.paymentMethod || "").toUpperCase().substring(0, 3);
-  const qty = tr?.quantity != null && toNum(tr.quantity) > 0 ? formatNumber(tr.quantity) : "-";
-  const chequeDate = tr?.chequeDate ? new Date(tr.chequeDate).toLocaleDateString() : "-";
-  
-  return [
-    tr?.date ? new Date(tr.date).toLocaleDateString() : "-",
-    type,
-    tr?.productName || "-",
-    tr?.description || "-",
-    qty,
-    formatNumber(tr?.debit),
-    formatNumber(tr?.credit),
-    chequeDate,
-    formatNumber(tr?.runningBalance),
-  ];
-});
+    const tableRows = transactions.map((tr) => {
+      const type = String(tr?.paymentMethod || "").toUpperCase().substring(0, 3);
+      const qty = tr?.quantity != null && toNum(tr.quantity) > 0 ? formatNumber(tr.quantity) : "-";
+      const chequeDate = tr?.chequeDate ? new Date(tr.chequeDate).toLocaleDateString() : "-";
+      
+      return [
+        tr?.date ? new Date(tr.date).toLocaleDateString() : "-",
+        type,
+        tr?.productName || "-",
+        tr?.description || "-",
+        qty,
+        formatNumber(tr?.debit),
+        formatNumber(tr?.credit),
+        chequeDate,
+        formatNumber(tr?.runningBalance),
+      ];
+    });
 
-// ✅ Add totals row
-const totalDebit = transactions.reduce((sum, tr) => sum + toNum(tr?.debit), 0);
-const totalCredit = transactions.reduce((sum, tr) => sum + toNum(tr?.credit), 0);
+    // ✅ Add totals row
+    const totalDebit = transactions.reduce((sum, tr) => sum + toNum(tr?.debit), 0);
+    const totalCredit = transactions.reduce((sum, tr) => sum + toNum(tr?.credit), 0);
 
-tableRows.push([
-  "",
-  "",
-  "",
-  "",
-  "Total:",
-  formatNumber(totalDebit),
-  formatNumber(totalCredit),
-  "",
-  ""
-]);
+    tableRows.push([
+      "",
+      "",
+      "",
+      "",
+      "Total:",
+      formatNumber(totalDebit),
+      formatNumber(totalCredit),
+      "",
+      ""
+    ]);
 
-  // ✅ Professional table
-  autoTable(doc, {
-    head: [tableColumn],
-    body: tableRows,
-    startY: 28,
-    theme: 'grid',
-    headStyles: {
-      fillColor: [41, 128, 185],
-      textColor: 255,
-      fontStyle: 'bold',
-      halign: 'center',
-      fontSize: 9
-    },
-    bodyStyles: {
-      fontSize: 8,
-      cellPadding: 2
-    },
-    columnStyles: {
-      0: { cellWidth: 22, halign: 'center' },   // Date
-      1: { cellWidth: 15, halign: 'center' },   // Type
-      2: { cellWidth: 30, halign: 'left' },     // Product Name
-      3: { cellWidth: 60, halign: 'left' },     // Description
-      4: { cellWidth: 20, halign: 'right' },    // Quantity
-      5: { cellWidth: 25, halign: 'right', textColor: [255, 0, 0] },  // Debit (red)
-      6: { cellWidth: 25, halign: 'right', textColor: [0, 128, 0] },  // Credit (green)
-      7: { cellWidth: 22, halign: 'center' },   // Cheque Date
-      8: { cellWidth: 30, halign: 'right', fontStyle: 'bold' }        // Running Balance
-    },
-    didParseCell: function(data) {
-      if (data.row.index === tableRows.length - 1) {
-        data.cell.styles.fontStyle = 'bold';
-        data.cell.styles.fillColor = [240, 240, 240];
+    // ✅ Professional table
+    autoTable(doc, {
+      head: [tableColumn],
+      body: tableRows,
+      startY: 28,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [41, 128, 185],
+        textColor: 255,
+        fontStyle: 'bold',
+        halign: 'center',
+        fontSize: 9
+      },
+      bodyStyles: {
+        fontSize: 8,
+        cellPadding: 2
+      },
+      columnStyles: {
+        0: { cellWidth: 22, halign: 'center' },   // Date
+        1: { cellWidth: 15, halign: 'center' },   // Type
+        2: { cellWidth: 30, halign: 'left' },     // Product Name
+        3: { cellWidth: 60, halign: 'left' },     // Description
+        4: { cellWidth: 20, halign: 'right' },    // Quantity
+        5: { cellWidth: 25, halign: 'right', textColor: [255, 0, 0] },  // Debit (red)
+        6: { cellWidth: 25, halign: 'right', textColor: [0, 128, 0] },  // Credit (green)
+        7: { cellWidth: 22, halign: 'center' },   // Cheque Date
+        8: { cellWidth: 30, halign: 'right', fontStyle: 'bold' }        // Running Balance
+      },
+      didParseCell: function(data) {
+        if (data.row.index === tableRows.length - 1) {
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fillColor = [240, 240, 240];
+        }
+      },
+      styles: {
+        overflow: 'linebreak',
+        cellWidth: 'wrap'
       }
-    },
-    styles: {
-      overflow: 'linebreak',
-      cellWidth: 'wrap'
-    }
-  });
+    });
 
-  const finalY = doc.lastAutoTable.finalY || 28;
-  
-  // ✅ Summary
-  doc.setFontSize(11);
-  doc.setFont("helvetica", "bold");
-  
-const purchaseQty = transactions
-  .filter(tr => String(tr?.type).toLowerCase() === 'debit')
-  .reduce((sum, tr) => sum + toNum(tr?.quantity), 0);
-  
-const saleQty = transactions
-  .filter(tr => String(tr?.type).toLowerCase() === 'credit')
-  .reduce((sum, tr) => sum + toNum(tr?.quantity), 0);
+    const finalY = doc.lastAutoTable.finalY || 28;
+    
+    // ✅ Summary
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    
+    const purchaseQty = transactions
+      .filter(tr => String(tr?.type).toLowerCase() === 'debit')
+      .reduce((sum, tr) => sum + toNum(tr?.quantity), 0);
+      
+    const saleQty = transactions
+      .filter(tr => String(tr?.type).toLowerCase() === 'credit')
+      .reduce((sum, tr) => sum + toNum(tr?.quantity), 0);
 
-const finalBalance = totalCredit - totalDebit;
+    const finalBalance = totalCredit - totalDebit;
 
-doc.text(`P.Q: ${formatNumber(purchaseQty)}`, 14, finalY + 10);
-doc.text(`S.Q: ${formatNumber(saleQty)}`, 70, finalY + 10);
-doc.text(`Total Debit: ${formatNumber(totalDebit)}`, 130, finalY + 10);
-doc.text(`Final Balance: ${formatNumber(finalBalance)}`, 200, finalY + 10);
+    doc.text(`P.Q: ${formatNumber(purchaseQty)}`, 14, finalY + 10);
+    doc.text(`S.Q: ${formatNumber(saleQty)}`, 70, finalY + 10);
+    doc.text(`Total Debit: ${formatNumber(totalDebit)}`, 130, finalY + 10);
+    doc.text(`Final Balance: ${formatNumber(finalBalance)}`, 200, finalY + 10);
 
-  doc.save(`Supplier_Ledger_${supplier?.username || "supplier"}_${new Date().toISOString().split('T')[0]}.pdf`);
-};
+    doc.save(`Supplier_Ledger_${supplier?.username || "supplier"}_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
 
   // ✅ Get image URL for a row
   const getImageUrl = (row) => {
@@ -345,7 +409,7 @@ doc.text(`Final Balance: ${formatNumber(finalBalance)}`, 200, finalY + 10);
       <Modal open={open} onClose={onClose}>
         <Box
           sx={{
-            width: 1100,
+            width: 1200, // ✅ Slightly wider to accommodate delete column
             p: 3,
             mx: "auto",
             mt: 5,
@@ -365,7 +429,7 @@ doc.text(`Final Balance: ${formatNumber(finalBalance)}`, 200, finalY + 10);
             component={Paper} 
             ref={tableContainerRef}
             sx={{ 
-              maxHeight: 320, // ~5 rows height (adjust as needed)
+              maxHeight: 320,
               overflow: 'auto',
               '&::-webkit-scrollbar': {
                 width: '8px',
@@ -396,60 +460,73 @@ doc.text(`Final Balance: ${formatNumber(finalBalance)}`, 200, finalY + 10);
                   <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Cheque Date</TableCell>
                   <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Image</TableCell>
                   <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Running Balance</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: '#d32f2f', color: 'white', width: 60 }}>Delete</TableCell>
                 </TableRow>
               </TableHead>
-             <TableBody>
-  {transactions.map((row, index) => {
-    const imageUrl = getImageUrl(row);
-    const productName = row?.productName;
-    const displayProductName = (productName === supplier?.username || productName === supplier?.name) ? "-" : (productName || "-");
-    const pm = String(row?.paymentMethod || "");
-    const displayPaymentMethod = pm ? pm.charAt(0).toUpperCase() + pm.slice(1).toLowerCase() : "-";
-    
-    return (
-      <TableRow key={row.id || index} hover>
-        <TableCell>{row?.date ? new Date(row.date).toLocaleDateString() : "-"}</TableCell>
-        <TableCell>{displayProductName}</TableCell>
-        <TableCell sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {row?.description || "-"}
-        </TableCell>
-        <TableCell>{toNum(row?.quantity) > 0 ? formatNumber(row.quantity) : "-"}</TableCell>
-        <TableCell>{displayPaymentMethod}</TableCell>
-        <TableCell sx={{ color: 'red' }}>{formatNumber(row?.debit)}</TableCell>
-        <TableCell sx={{ color: 'green' }}>{formatNumber(row?.credit)}</TableCell>
-        <TableCell>{row?.chequeDate ? new Date(row.chequeDate).toLocaleDateString() : "-"}</TableCell>
-        <TableCell>
-          {imageUrl ? (
-            <IconButton
-              size="small"
-              color="primary"
-              onClick={() => handleViewImage(imageUrl)}
-              title="View Image"
-            >
-              <Visibility />
-            </IconButton>
-          ) : "-"}
-        </TableCell>
-        <TableCell sx={{ 
-          color: toNum(row?.runningBalance) >= 0 ? "green" : "red",
-          fontWeight: "bold" 
-        }}>
-          {formatNumber(row?.runningBalance)}
-        </TableCell>
-      </TableRow>
-    );
-  })}
-</TableBody>
+              <TableBody>
+                {transactions.map((row, index) => {
+                  const imageUrl = getImageUrl(row);
+                  const productName = row?.productName;
+                  const displayProductName = (productName === supplier?.username || productName === supplier?.name) ? "-" : (productName || "-");
+                  const pm = String(row?.paymentMethod || "");
+                  const displayPaymentMethod = pm ? pm.charAt(0).toUpperCase() + pm.slice(1).toLowerCase() : "-";
+                  
+                  return (
+                    <TableRow key={row.id || row._id || index} hover>
+                      <TableCell>{row?.date ? new Date(row.date).toLocaleDateString() : "-"}</TableCell>
+                      <TableCell>{displayProductName}</TableCell>
+                      <TableCell sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {row?.description || "-"}
+                      </TableCell>
+                      <TableCell>{toNum(row?.quantity) > 0 ? formatNumber(row.quantity) : "-"}</TableCell>
+                      <TableCell>{displayPaymentMethod}</TableCell>
+                      <TableCell sx={{ color: 'red' }}>{formatNumber(row?.debit)}</TableCell>
+                      <TableCell sx={{ color: 'green' }}>{formatNumber(row?.credit)}</TableCell>
+                      <TableCell>{row?.chequeDate ? new Date(row.chequeDate).toLocaleDateString() : "-"}</TableCell>
+                      <TableCell>
+                        {imageUrl ? (
+                          <IconButton
+                            size="small"
+                            color="primary"
+                            onClick={() => handleViewImage(imageUrl)}
+                            title="View Image"
+                          >
+                            <Visibility />
+                          </IconButton>
+                        ) : "-"}
+                      </TableCell>
+                      <TableCell sx={{ 
+                        color: toNum(row?.runningBalance) >= 0 ? "green" : "red",
+                        fontWeight: "bold" 
+                      }}>
+                        {formatNumber(row?.runningBalance)}
+                      </TableCell>
+                      {/* ✅ NEW: Delete Button */}
+                      <TableCell>
+                        <Tooltip title="Delete Transaction">
+                          <IconButton
+                            size="small"
+                            color="error"
+                            onClick={() => handleDeleteClick(row)}
+                          >
+                            <Delete />
+                          </IconButton>
+                        </Tooltip>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
             </Table>
           </TableContainer>
 
           <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mt: 2 }}>
             <Typography
-  variant="subtitle1"
-  sx={{ fontWeight: "bold", color: totalBalance >= 0 ? "green" : "red" }}
->
-  Total Balance: {formatNumber(totalBalance)}
-</Typography>
+              variant="subtitle1"
+              sx={{ fontWeight: "bold", color: totalBalance >= 0 ? "green" : "red" }}
+            >
+              Total Balance: {formatNumber(totalBalance)}
+            </Typography>
 
             <Box>
               <Button variant="contained" color="secondary" onClick={downloadPDF} sx={{ mr: 2 }}>
@@ -463,6 +540,7 @@ doc.text(`Final Balance: ${formatNumber(finalBalance)}`, 200, finalY + 10);
         </Box>
       </Modal>
 
+      {/* Image View Modal */}
       <Modal open={imageModalOpen} onClose={handleCloseImageModal}>
         <Box
           sx={{
@@ -496,6 +574,53 @@ doc.text(`Final Balance: ${formatNumber(finalBalance)}`, 200, finalY + 10);
           </Button>
         </Box>
       </Modal>
+
+      {/* ✅ NEW: Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={handleCloseDeleteDialog}
+        aria-labelledby="delete-dialog-title"
+        aria-describedby="delete-dialog-description"
+      >
+        <DialogTitle id="delete-dialog-title" sx={{ color: '#d32f2f' }}>
+          ⚠️ Delete Transaction
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText id="delete-dialog-description">
+            Are you sure you want to delete this transaction?
+            <br /><br />
+            <strong>Amount:</strong> Rs {formatNumber(transactionToDelete?.amount || 0)}
+            <br />
+            <strong>Type:</strong> {transactionToDelete?.type?.toUpperCase() || "-"}
+            <br />
+            <strong>Method:</strong> {transactionToDelete?.paymentMethod || "-"}
+            <br />
+            <strong>Description:</strong> {transactionToDelete?.description || "-"}
+            <br /><br />
+            <span style={{ color: '#d32f2f', fontWeight: 'bold' }}>
+              This will also reverse the supplier balance and delete related records from History, Cheques, and Bank transactions.
+            </span>
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button 
+            onClick={handleCloseDeleteDialog} 
+            variant="outlined"
+            disabled={isDeleting}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleConfirmDelete} 
+            variant="contained" 
+            color="error"
+            disabled={isDeleting}
+            startIcon={isDeleting ? <CircularProgress size={20} color="inherit" /> : <Delete />}
+          >
+            {isDeleting ? "Deleting..." : "Delete"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 };
