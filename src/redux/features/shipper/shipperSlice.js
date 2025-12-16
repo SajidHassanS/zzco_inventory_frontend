@@ -151,6 +151,20 @@ export const getShipperTransactions = createAsyncThunk(
   }
 );
 
+// ✅ NEW: Edit a specific transaction (within 2 hours)
+export const editShipperTransaction = createAsyncThunk(
+  "shipper/editTransaction",
+  async ({ shipperId, transactionId, data }, thunkAPI) => {
+    try {
+      return await shipperService.editTransaction(shipperId, transactionId, data);
+    } catch (error) {
+      const message =
+        error?.response?.data?.message || error.message || "Failed to edit transaction";
+      return thunkAPI.rejectWithValue(message);
+    }
+  }
+);
+
 // ✅ NEW: Delete a specific transaction
 export const deleteShipperTransaction = createAsyncThunk(
   "shipper/deleteTransaction",
@@ -350,7 +364,27 @@ const shipperSlice = createSlice({
         state.isLoading = false;
         state.isError = true;
         state.message = action.payload;
-      });
+      })
+      // ✅ NEW: Edit transaction
+.addCase(editShipperTransaction.pending, (state) => {
+  state.isLoading = true;
+})
+.addCase(editShipperTransaction.fulfilled, (state, action) => {
+  state.isLoading = false;
+  state.isSuccess = true;
+  const updated = action.payload?.shipper;
+  if (updated?._id) {
+    const idx = state.shippers.findIndex((s) => s._id === updated._id);
+    if (idx !== -1) state.shippers[idx] = updated;
+    // Also update transactionHistory
+    state.transactionHistory = updated.transactionHistory || [];
+  }
+})
+.addCase(editShipperTransaction.rejected, (state, action) => {
+  state.isLoading = false;
+  state.isError = true;
+  state.message = action.payload;
+});
   },
 });
 

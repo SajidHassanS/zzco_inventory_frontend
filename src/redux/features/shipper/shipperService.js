@@ -98,10 +98,20 @@ const getTransactionHistory = async id => {
   return response.data;
 };
 
-// ✅ NEW: Delete a specific transaction
+// Delete a specific transaction
 const deleteTransaction = async (shipperId, transactionId) => {
   const response = await axios.delete(
     `${API_URL}${shipperId}/transaction/${transactionId}`,
+    { withCredentials: true }
+  );
+  return response.data;
+};
+
+// ✅ NEW: Edit a specific transaction (within 2 hours)
+const editTransaction = async (shipperId, transactionId, data) => {
+  const response = await axios.put(
+    `${API_URL}${shipperId}/transaction/${transactionId}`,
+    data,
     { withCredentials: true }
   );
   return response.data;
@@ -117,7 +127,8 @@ const shipperService = {
   minusBalance,
   applyDiscount,
   getTransactionHistory,
-  deleteTransaction // ✅ NEW
+  deleteTransaction,
+  editTransaction  // ✅ NEW
 };
 
 export default shipperService;

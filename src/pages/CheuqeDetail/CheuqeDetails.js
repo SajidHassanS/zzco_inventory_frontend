@@ -29,7 +29,16 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
+  IconButton,
 } from "@mui/material";
+import {
+  Delete as DeleteIcon,
+} from "@mui/icons-material";
 import {
   getPendingCheques,
   updateChequeStatus,
@@ -61,40 +70,41 @@ const ChequeDetails = () => {
 
   // TRANSFER STATE
   const [transferModalOpen, setTransferModalOpen] = useState(false);
-  const [selectedChequeForTransfer, setSelectedChequeForTransfer] =
-    useState(null);
+  const [selectedChequeForTransfer, setSelectedChequeForTransfer] = useState(null);
   const [transferTo, setTransferTo] = useState("");
   const [transferToId, setTransferToId] = useState("");
   const [transferDescription, setTransferDescription] = useState("");
   const [customers, setCustomers] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
 
+  // ✅ NEW: DELETE STATE
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [chequeToDelete, setChequeToDelete] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
   const API_URL = `${BACKEND_URL}api/cheques`;
 
   // ---------- Helpers ----------
 
-  // treat Supplier / Shipper / Product as pay-out cheques
   const isPayOutCheque = (row) => {
     const t = (row?.type || "").toString().toLowerCase();
     return t === "supplier" || t === "shipper" || t === "product";
   };
 
-  // get bank id from multiple possible shapes
   const getChequeBankId = (row) => {
     if (!row) return null;
     return (
-      row.bankId || // explicit
-      row.bank_id || // snake_case
-      (row.bank && row.bank._id) || // populated object
-      row.bank || // plain id in "bank"
+      row.bankId ||
+      row.bank_id ||
+      (row.bank && row.bank._id) ||
+      row.bank ||
       null
     );
   };
 
   // ---------- Effects ----------
 
-  // Fetch ALL so cleared remain visible
   useEffect(() => {
     dispatch(getPendingCheques({ status: "all" }));
     dispatch(getBanks());
@@ -153,10 +163,9 @@ const ChequeDetails = () => {
 
       all.push(c);
 
-      // Only count PENDING, NOT CANCELLED, NOT TRANSFERRED-CASHED-OUT
       if (c.status === false && !c.cancelled) {
         if (c.transferred && c.transferredCashedOut) {
-          return; // Skip this cheque for pending count
+          return;
         }
 
         if (dayDiff === 0) t.push(c);
@@ -169,7 +178,6 @@ const ChequeDetails = () => {
     setUpcomingCheques(u);
   }, [cheques]);
 
-  // ✅ Auto-scroll to bottom when cheques load
   useEffect(() => {
     if (allCheques.length > 0 && tableContainerRef.current) {
       setTimeout(() => {
@@ -188,13 +196,11 @@ const ChequeDetails = () => {
     [selectedCheques, allCheques]
   );
 
-  // need user to pick a bank if ANY selected cheque has no saved bank
   const needBankSelection = useMemo(
     () => selectedChequeRows.some((row) => !getChequeBankId(row)),
     [selectedChequeRows]
   );
 
-  // all selected cheques are payout AND all have bank -> we can auto-bank
   const isAllPayoutWithBank = useMemo(
     () =>
       selectedChequeRows.length > 0 &&
@@ -222,9 +228,7 @@ const ChequeDetails = () => {
     );
   };
 
-  // open modal
   const handleCashOutClick = () => {
-    // if they're all Shipper/Supplier/Product & have bank → auto-bank
     if (isAllPayoutWithBank) {
       setCashOutMethod("bank");
     } else {
@@ -240,7 +244,6 @@ const ChequeDetails = () => {
       return;
     }
 
-    // only require manual bank select if we actually need one
     if (cashOutMethod === "bank" && needBankSelection && !selectedBankId) {
       toast.error("Please select a bank for cheques without a saved bank");
       return;
@@ -443,6 +446,40 @@ const ChequeDetails = () => {
 
   const handleCloseModal = () => setSelectedImage(null);
 
+  // ✅ NEW: Delete handlers
+  const handleDeleteClick = (cheque) => {
+    setChequeToDelete(cheque);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleCloseDeleteDialog = () => {
+    setDeleteDialogOpen(false);
+    setChequeToDelete(null);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!chequeToDelete) return;
+
+    setIsDeleting(true);
+    try {
+      await axios.delete(
+        `${API_URL}/${chequeToDelete._id}`,
+        { withCredentials: true }
+      );
+
+      await dispatch(getPendingCheques({ status: "all" }));
+      toast.success("Cancelled cheque deleted successfully");
+      handleCloseDeleteDialog();
+    } catch (err) {
+      const msg =
+        err?.response?.data?.message || err?.message || "Failed to delete cheque";
+      console.error(msg);
+      toast.error(msg);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   // ---------- Render helpers ----------
 
   const renderStatus = (row) => (
@@ -493,7 +530,20 @@ const ChequeDetails = () => {
   };
 
   const renderActions = (row) => (
-    <Box sx={{ display: "flex", gap: 1 }}>
+    <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+      {/* ✅ NEW: Delete button for cancelled cheques */}
+      {row.cancelled && (
+        <Tooltip title="Delete Cancelled Cheque">
+          <IconButton
+            size="small"
+            color="error"
+            onClick={() => handleDeleteClick(row)}
+          >
+            <DeleteIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      )}
+
       {!row.cancelled && !row.status && (
         <>
           {!row.transferred && (
@@ -581,26 +631,15 @@ const ChequeDetails = () => {
       </Stack>
 
       <Paper>
-        {/* ✅ Scrollable Table Container - Shows ~5 rows, scrolls to bottom */}
         <TableContainer
           ref={tableContainerRef}
           sx={{
             maxHeight: 350,
             overflow: 'auto',
-            '&::-webkit-scrollbar': {
-              width: '8px',
-            },
-            '&::-webkit-scrollbar-track': {
-              background: '#f1f1f1',
-              borderRadius: '4px',
-            },
-            '&::-webkit-scrollbar-thumb': {
-              background: '#888',
-              borderRadius: '4px',
-            },
-            '&::-webkit-scrollbar-thumb:hover': {
-              background: '#555',
-            },
+            '&::-webkit-scrollbar': { width: '8px' },
+            '&::-webkit-scrollbar-track': { background: '#f1f1f1', borderRadius: '4px' },
+            '&::-webkit-scrollbar-thumb': { background: '#888', borderRadius: '4px' },
+            '&::-webkit-scrollbar-thumb:hover': { background: '#555' },
           }}
         >
           <Table stickyHeader size="small">
@@ -617,7 +656,7 @@ const ChequeDetails = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {allCheques.map((row, index) => (
+              {allCheques.map((row, index) => ( 
                 <TableRow key={row._id || index} hover>
                   <TableCell>
                     {new Date(row.chequeDate || row.date).toLocaleDateString()}
@@ -750,7 +789,6 @@ const ChequeDetails = () => {
             })()}
           </Alert>
 
-          {/* Only show Bank/Cash choice if NOT auto-bank scenario */}
           {!isAllPayoutWithBank && (
             <FormControl component="fieldset" sx={{ mb: 2 }}>
               <FormLabel component="legend">Select Destination</FormLabel>
@@ -779,7 +817,6 @@ const ChequeDetails = () => {
             </FormControl>
           )}
 
-          {/* Only show bank dropdown if we really need a manual bank */}
           {cashOutMethod === "bank" && needBankSelection && (
             <TextField
               select
@@ -961,6 +998,50 @@ const ChequeDetails = () => {
           </Box>
         </Box>
       </Modal>
+
+      {/* ✅ NEW: DELETE CONFIRMATION DIALOG */}
+      <Dialog open={deleteDialogOpen} onClose={handleCloseDeleteDialog}>
+        <DialogTitle sx={{ color: '#d32f2f' }}>
+          🗑️ Delete Cancelled Cheque
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to permanently delete this cancelled cheque?
+            <br /><br />
+            <strong>Amount:</strong> Rs {Number(chequeToDelete?.amount || 0).toLocaleString()}
+            <br />
+            <strong>Type:</strong> {chequeToDelete?.type || "N/A"}
+            <br />
+            <strong>Description:</strong> {chequeToDelete?.name || chequeToDelete?.description || "N/A"}
+            <br />
+            <strong>Date:</strong> {chequeToDelete?.chequeDate || chequeToDelete?.date 
+              ? new Date(chequeToDelete.chequeDate || chequeToDelete.date).toLocaleDateString() 
+              : "N/A"}
+            <br /><br />
+            <span style={{ color: '#1976d2' }}>
+              A history record will be created before deletion for audit purposes.
+            </span>
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button 
+            onClick={handleCloseDeleteDialog} 
+            variant="outlined"
+            disabled={isDeleting}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleConfirmDelete} 
+            variant="contained" 
+            color="error"
+            disabled={isDeleting}
+            startIcon={isDeleting ? <CircularProgress size={20} color="inherit" /> : <DeleteIcon />}
+          >
+            {isDeleting ? "Deleting..." : "Delete Permanently"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </div>
   );
 };

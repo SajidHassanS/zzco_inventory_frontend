@@ -1,13 +1,13 @@
 // src/components/Models/TransactionHistoryModal.jsx
-// ✅ Updated with DELETE functionality
+// ✅ Updated with DELETE and EDIT functionality (2-hour window)
 import React, { useEffect, useState, useRef } from "react";
 import { 
   Modal, Box, Typography, Button, IconButton, Table, TableBody, 
   TableCell, TableContainer, TableHead, TableRow, Paper,
   Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
-  CircularProgress, Tooltip
+  CircularProgress, Tooltip, TextField, FormControl, InputLabel, Select, MenuItem
 } from "@mui/material";
-import { Visibility, Delete } from "@mui/icons-material";
+import { Visibility, Delete, Edit } from "@mui/icons-material";
 import axios from "axios";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -28,23 +28,61 @@ function parseQtyUnitFromDesc(desc) {
   return { qty: Number(m[1]), unit: Number(m[2]) };
 }
 
-const TransactionHistoryModal = ({ open, onClose, customer, onTransactionDeleted }) => {
+// ✅ Helper: Check if transaction is within 2-hour edit window
+const isWithinEditWindow = (transaction) => {
+  const createdAt = new Date(transaction.createdAt || transaction.date);
+  const now = new Date();
+  const hoursDiff = (now - createdAt) / (1000 * 60 * 60);
+  return hoursDiff <= 2;
+};
+
+// ✅ Helper: Get remaining edit time
+const getRemainingEditTime = (transaction) => {
+  const createdAt = new Date(transaction.createdAt || transaction.date);
+  const now = new Date();
+  const msRemaining = (2 * 60 * 60 * 1000) - (now - createdAt);
+  
+  if (msRemaining <= 0) return null;
+  
+  const minutes = Math.floor(msRemaining / (1000 * 60));
+  const hours = Math.floor(minutes / 60);
+  const remainingMins = minutes % 60;
+  
+  if (hours > 0) {
+    return `${hours}h ${remainingMins}m left`;
+  }
+  return `${remainingMins}m left`;
+};
+
+const TransactionHistoryModal = ({ open, onClose, customer, banks = [], onTransactionDeleted, onTransactionEdited }) => {
   const [transactions, setTransactions] = useState([]);
   const [totalBalance, setTotalBalance] = useState(0);
   const [imageModalOpen, setImageModalOpen] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
 
-  // ✅ NEW: Delete confirmation states
+  // Delete states
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [transactionToDelete, setTransactionToDelete] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // ✅ NEW: Edit states
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [transactionToEdit, setTransactionToEdit] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    amount: "",
+    description: "",
+    paymentMethod: "",
+    bankId: "",
+    chequeDate: "",
+  });
 
   const tableContainerRef = useRef(null);
 
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
   const API_URL = `${BACKEND_URL}api/customers`;
 
-  // ✅ NEW: Handle delete button click
+  // Delete handlers
   const handleDeleteClick = (transaction) => {
     setTransactionToDelete(transaction);
     setDeleteDialogOpen(true);
@@ -55,7 +93,6 @@ const TransactionHistoryModal = ({ open, onClose, customer, onTransactionDeleted
     setTransactionToDelete(null);
   };
 
-  // ✅ NEW: Confirm and execute delete
   const handleConfirmDelete = async () => {
     if (!transactionToDelete || !customer?._id) return;
 
@@ -66,19 +103,14 @@ const TransactionHistoryModal = ({ open, onClose, customer, onTransactionDeleted
         { withCredentials: true }
       );
 
-      console.log("✅ Transaction deleted:", response.data);
-
-      // Remove from local state
       setTransactions((prev) =>
         prev.filter((t) => t._id !== transactionToDelete._id)
       );
 
-      // Update total balance from response
       if (response.data.newBalance !== undefined) {
         setTotalBalance(response.data.newBalance);
       }
 
-      // Notify parent component
       if (onTransactionDeleted) {
         onTransactionDeleted(customer._id, response.data.newBalance);
       }
@@ -90,6 +122,136 @@ const TransactionHistoryModal = ({ open, onClose, customer, onTransactionDeleted
       toast.error(error.response?.data?.message || "Failed to delete transaction");
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  // ✅ NEW: Edit handlers
+  const handleEditClick = (transaction) => {
+    if (!isWithinEditWindow(transaction)) {
+      toast.error("Cannot edit: 2-hour edit window has expired");
+      return;
+    }
+
+    setTransactionToEdit(transaction);
+    setEditFormData({
+      amount: transaction.lineTotal || transaction.amount || "",
+      description: transaction.description || "",
+      paymentMethod: transaction.paymentMethod || "",
+      bankId: transaction.bankId || "",
+      chequeDate: transaction.chequeDate 
+        ? new Date(transaction.chequeDate).toISOString().split('T')[0] 
+        : "",
+    });
+    setEditDialogOpen(true);
+  };
+
+  const handleCloseEditDialog = () => {
+    setEditDialogOpen(false);
+    setTransactionToEdit(null);
+    setEditFormData({
+      amount: "",
+      description: "",
+      paymentMethod: "",
+      bankId: "",
+      chequeDate: "",
+    });
+  };
+
+  const handleEditFormChange = (field, value) => {
+    setEditFormData((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const handleConfirmEdit = async () => {
+    if (!transactionToEdit || !customer?._id) return;
+
+    if (!editFormData.amount || Number(editFormData.amount) <= 0) {
+      toast.error("Please enter a valid amount");
+      return;
+    }
+
+    setIsEditing(true);
+    try {
+      const response = await axios.put(
+        `${API_URL}/${customer._id}/transaction/${transactionToEdit._id}`,
+        {
+          amount: editFormData.amount,
+          description: editFormData.description,
+          paymentMethod: editFormData.paymentMethod,
+          bankId: editFormData.bankId || undefined,
+          chequeDate: editFormData.chequeDate || undefined,
+        },
+        { withCredentials: true }
+      );
+
+      console.log("✅ Transaction edited:", response.data);
+
+      // Refresh transactions
+      const { data } = await axios.get(
+        `${API_URL}/transactionHistory/${customer._id}`,
+        { withCredentials: true }
+      );
+
+      let history = Array.isArray(data?.transactionHistory) ? data.transactionHistory : [];
+      
+      // Re-sort and recalculate
+      history = history.sort((a, b) => {
+        const dateA = new Date(a.date || a.createdAt || 0);
+        const dateB = new Date(b.date || b.createdAt || 0);
+        const dayA = new Date(dateA.getFullYear(), dateA.getMonth(), dateA.getDate()).getTime();
+        const dayB = new Date(dateB.getFullYear(), dateB.getMonth(), dateB.getDate()).getTime();
+        if (dayA !== dayB) return dayA - dayB;
+        const createdA = new Date(a.createdAt || a.date || 0).getTime();
+        const createdB = new Date(b.createdAt || b.date || 0).getTime();
+        return createdA - createdB;
+      });
+
+      let balance = 0;
+      const ledger = history.map((t, index) => {
+        const type = String(t?.type || "").toLowerCase();
+        let qty = toNum(t?.quantity);
+        let unitPrice = t?.unitPrice != null ? toNum(t.unitPrice) : null;
+        if (!qty || !unitPrice) {
+          const { qty: q2, unit: u2 } = parseQtyUnitFromDesc(t?.description);
+          if (!qty && q2) qty = q2;
+          if (!unitPrice && u2) unitPrice = u2;
+        }
+        let lineTotal = toNum(t?.total ?? t?.amount);
+        if (!lineTotal && qty && unitPrice != null) {
+          lineTotal = qty * unitPrice;
+        }
+        const debit = type === "debit" ? lineTotal : 0;
+        const credit = type === "credit" ? lineTotal : 0;
+        balance += credit - debit;
+
+        return {
+          ...t,
+          _sortIndex: index,
+          quantity: qty || null,
+          unitPrice: unitPrice != null ? unitPrice : null,
+          lineTotal,
+          debit,
+          credit,
+          runningBalance: balance,
+        };
+      });
+
+      setTransactions(ledger);
+      setTotalBalance(balance);
+
+      if (onTransactionEdited) {
+        onTransactionEdited(customer._id, response.data.newBalance);
+      }
+
+      toast.success("Transaction edited successfully!");
+      handleCloseEditDialog();
+    } catch (error) {
+      console.error("Error editing transaction:", error);
+      toast.error(error.response?.data?.message || "Failed to edit transaction");
+    } finally {
+      setIsEditing(false);
     }
   };
 
@@ -107,44 +269,31 @@ const TransactionHistoryModal = ({ open, onClose, customer, onTransactionDeleted
           ? data.transactionHistory
           : [];
 
-        console.log("📦 RAW CUSTOMER TRANSACTION HISTORY:", history);
-
         history = history.sort((a, b) => {
           const dateA = new Date(a.date || a.createdAt || 0);
           const dateB = new Date(b.date || b.createdAt || 0);
-          
           const dayA = new Date(dateA.getFullYear(), dateA.getMonth(), dateA.getDate()).getTime();
           const dayB = new Date(dateB.getFullYear(), dateB.getMonth(), dateB.getDate()).getTime();
-          
-          if (dayA !== dayB) {
-            return dayA - dayB;
-          }
-          
+          if (dayA !== dayB) return dayA - dayB;
           const createdA = new Date(a.createdAt || a.date || 0).getTime();
           const createdB = new Date(b.createdAt || b.date || 0).getTime();
-          
           return createdA - createdB;
         });
 
         let balance = 0;
-
         const ledger = history.map((t, index) => {
           const type = String(t?.type || "").toLowerCase();
-
           let qty = toNum(t?.quantity);
           let unitPrice = t?.unitPrice != null ? toNum(t.unitPrice) : null;
-
           if (!qty || !unitPrice) {
             const { qty: q2, unit: u2 } = parseQtyUnitFromDesc(t?.description);
             if (!qty && q2) qty = q2;
             if (!unitPrice && u2) unitPrice = u2;
           }
-
           let lineTotal = toNum(t?.total ?? t?.amount);
           if (!lineTotal && qty && unitPrice != null) {
             lineTotal = qty * unitPrice;
           }
-
           const debit = type === "debit" ? lineTotal : 0;
           const credit = type === "credit" ? lineTotal : 0;
           balance += credit - debit;
@@ -300,7 +449,7 @@ const TransactionHistoryModal = ({ open, onClose, customer, onTransactionDeleted
       <Modal open={open} onClose={onClose}>
         <Box
           sx={{
-            width: 1250,
+            width: 1300,
             p: 3,
             mx: "auto",
             mt: 5,
@@ -341,12 +490,14 @@ const TransactionHistoryModal = ({ open, onClose, customer, onTransactionDeleted
                   <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Cheque Date</TableCell>
                   <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Image</TableCell>
                   <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Running Balance</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', bgcolor: '#d32f2f', color: 'white', width: 60 }}>Delete</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white', width: 100 }}>Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {transactions.map((row, index) => {
                   const imageUrl = row?.image?.filePath;
+                  const canEdit = isWithinEditWindow(row);
+                  const remainingTime = getRemainingEditTime(row);
                   
                   return (
                     <TableRow key={row._id || index} hover>
@@ -371,13 +522,31 @@ const TransactionHistoryModal = ({ open, onClose, customer, onTransactionDeleted
                       <TableCell sx={{ color: toNum(row?.runningBalance) >= 0 ? "green" : "red", fontWeight: "bold" }}>
                         {formatNumber(row?.runningBalance)}
                       </TableCell>
-                      {/* ✅ NEW: Delete Button */}
+                      {/* ✅ Actions Column with Edit & Delete */}
                       <TableCell>
-                        <Tooltip title="Delete Transaction">
-                          <IconButton size="small" color="error" onClick={() => handleDeleteClick(row)}>
-                            <Delete />
-                          </IconButton>
-                        </Tooltip>
+                        <Box sx={{ display: 'flex', gap: 0.5 }}>
+                          <Tooltip title={canEdit ? `Edit (${remainingTime})` : "Edit window expired"}>
+                            <span>
+                              <IconButton 
+                                size="small" 
+                                color="primary" 
+                                onClick={() => handleEditClick(row)}
+                                disabled={!canEdit}
+                                sx={{ 
+                                  opacity: canEdit ? 1 : 0.3,
+                                  '&.Mui-disabled': { color: 'grey.400' }
+                                }}
+                              >
+                                <Edit />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                          <Tooltip title="Delete Transaction">
+                            <IconButton size="small" color="error" onClick={() => handleDeleteClick(row)}>
+                              <Delete />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
                       </TableCell>
                     </TableRow>
                   );
@@ -429,7 +598,7 @@ const TransactionHistoryModal = ({ open, onClose, customer, onTransactionDeleted
         </Box>
       </Modal>
 
-      {/* ✅ NEW: Delete Confirmation Dialog */}
+      {/* Delete Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onClose={handleCloseDeleteDialog}>
         <DialogTitle sx={{ color: '#d32f2f' }}>⚠️ Delete Transaction</DialogTitle>
         <DialogContent>
@@ -445,7 +614,7 @@ const TransactionHistoryModal = ({ open, onClose, customer, onTransactionDeleted
             <strong>Description:</strong> {transactionToDelete?.description || "-"}
             <br /><br />
             <span style={{ color: '#d32f2f', fontWeight: 'bold' }}>
-              This will reverse the customer balance and delete related records from History, Cheques, Bank, and Cash.
+              This will reverse the customer balance and delete related records.
             </span>
           </DialogContentText>
         </DialogContent>
@@ -461,6 +630,105 @@ const TransactionHistoryModal = ({ open, onClose, customer, onTransactionDeleted
             startIcon={isDeleting ? <CircularProgress size={20} color="inherit" /> : <Delete />}
           >
             {isDeleting ? "Deleting..." : "Delete"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ✅ NEW: Edit Transaction Dialog */}
+      <Dialog open={editDialogOpen} onClose={handleCloseEditDialog} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ color: '#1976d2' }}>
+          ✏️ Edit Transaction
+          {transactionToEdit && (
+            <Typography variant="caption" display="block" sx={{ color: 'text.secondary', mt: 0.5 }}>
+              Time remaining: {getRemainingEditTime(transactionToEdit) || "Expired"}
+            </Typography>
+          )}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            <TextField
+              label="Amount"
+              type="number"
+              value={editFormData.amount}
+              onChange={(e) => handleEditFormChange('amount', e.target.value)}
+              fullWidth
+              required
+              InputProps={{ inputProps: { min: 0, step: 0.01 } }}
+            />
+            
+            <TextField
+              label="Description"
+              value={editFormData.description}
+              onChange={(e) => handleEditFormChange('description', e.target.value)}
+              fullWidth
+              multiline
+              rows={2}
+            />
+
+            <FormControl fullWidth>
+              <InputLabel>Payment Method</InputLabel>
+              <Select
+                value={editFormData.paymentMethod}
+                onChange={(e) => handleEditFormChange('paymentMethod', e.target.value)}
+                label="Payment Method"
+              >
+                <MenuItem value="cash">Cash</MenuItem>
+                <MenuItem value="online">Online</MenuItem>
+                <MenuItem value="cheque">Cheque</MenuItem>
+                <MenuItem value="owncheque">Own Cheque</MenuItem>
+                <MenuItem value="credit">Credit</MenuItem>
+              </Select>
+            </FormControl>
+
+            {(editFormData.paymentMethod === 'online' || editFormData.paymentMethod === 'owncheque') && (
+              <FormControl fullWidth>
+                <InputLabel>Bank</InputLabel>
+                <Select
+                  value={editFormData.bankId}
+                  onChange={(e) => handleEditFormChange('bankId', e.target.value)}
+                  label="Bank"
+                >
+                  <MenuItem value="">Select Bank</MenuItem>
+                  {banks.map((bank) => (
+                    <MenuItem key={bank._id} value={bank._id}>
+                      {bank.bankName} - Rs {formatNumber(bank.totalBalance || bank.balance || 0)}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+
+            {(editFormData.paymentMethod === 'cheque' || editFormData.paymentMethod === 'owncheque') && (
+              <TextField
+                label="Cheque Date"
+                type="date"
+                value={editFormData.chequeDate}
+                onChange={(e) => handleEditFormChange('chequeDate', e.target.value)}
+                fullWidth
+                InputLabelProps={{ shrink: true }}
+              />
+            )}
+
+            <Box sx={{ bgcolor: '#fff3e0', p: 2, borderRadius: 1 }}>
+              <Typography variant="body2" color="warning.dark">
+                <strong>Note:</strong> Editing will reverse the original transaction effects and apply the new values.
+                Bank/Cash balances will be adjusted accordingly.
+              </Typography>
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={handleCloseEditDialog} variant="outlined" disabled={isEditing}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleConfirmEdit} 
+            variant="contained" 
+            color="primary"
+            disabled={isEditing}
+            startIcon={isEditing ? <CircularProgress size={20} color="inherit" /> : <Edit />}
+          >
+            {isEditing ? "Saving..." : "Save Changes"}
           </Button>
         </DialogActions>
       </Dialog>
