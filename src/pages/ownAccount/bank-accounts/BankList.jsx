@@ -19,7 +19,8 @@ import { selectCanDelete } from "../../../redux/features/auth/authSlice";
 import TransactionHistoryModal from "../../../components/Models/TransactionModal";
 import CashTransactionHistoryModal from "../../../components/Models/CashTransactionModal";
 import TransferModal from "../../../components/Models/TransferModal";
-import { SwapHoriz } from "@mui/icons-material";
+import { SwapHoriz, Add } from "@mui/icons-material";
+import AddFundsModal from "../../../components/Models/AddFundsModal";
 // PDF libs 
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -45,6 +46,8 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
   const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isTransactionModalOpen, setTransactionModalOpen] = useState(false);
 const [isTransferModalOpen, setTransferModalOpen] = useState(false);
+const [isAddFundsModalOpen, setAddFundsModalOpen] = useState(false);
+const [selectedBankForFunds, setSelectedBankForFunds] = useState(null);
   // ===== Report selectors (Daily | Monthly | Yearly) =====
   const [reportType, setReportType] = useState("monthly");
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -405,6 +408,16 @@ const [isTransferModalOpen, setTransferModalOpen] = useState(false);
     setEntryType(type);
     setTransactionModalOpen(true);
   };
+
+  const handleOpenAddFundsModal = (bank) => {
+  setSelectedBankForFunds(bank);
+  setAddFundsModalOpen(true);
+};
+
+const handleCloseAddFundsModal = () => {
+  setAddFundsModalOpen(false);
+  setSelectedBankForFunds(null);
+};
 
   const closeModals = () => {
     setEditModalOpen(false);
@@ -937,14 +950,15 @@ const [isTransferModalOpen, setTransferModalOpen] = useState(false);
       <Typography variant="h3" align="center" sx={{ mt: 4 }}>
         Banks List
       </Typography>
-      <CustomTable
-        columns={bankColumns}
-        data={banks || []}
-        onEdit={(bank) => handleOpenEditModal(bank, "bank")}
-        onDelete={(bank) => handleOpenDeleteModal(bank, "bank")}
-        onView={(bank) => handleOpenTransactionModal(bank, "bank")}
-        cashtrue={false}
-      />
+ <CustomTable
+  columns={bankColumns}
+  data={banks || []}
+  onEdit={(bank) => handleOpenEditModal(bank, "bank")}
+  onDelete={(bank) => handleOpenDeleteModal(bank, "bank")}
+  onView={(bank) => handleOpenTransactionModal(bank, "bank")}
+  onAdd={(bank) => handleOpenAddFundsModal(bank)}
+  cashtrue={false}
+/>
 
       {/* ===== Cash list (FIXED) ===== */}
       <Typography variant="h3" align="center" mt={3}>
@@ -1045,6 +1059,15 @@ const [isTransferModalOpen, setTransferModalOpen] = useState(false);
     onClose={() => setTransferModalOpen(false)}
     banks={banks}
     cashBalance={availableCashBalance}
+    onSuccess={refreshBanks}
+  />
+)}
+
+{isAddFundsModalOpen && selectedBankForFunds && (
+  <AddFundsModal
+    open={isAddFundsModalOpen}
+    onClose={handleCloseAddFundsModal}
+    bank={selectedBankForFunds}
     onSuccess={refreshBanks}
   />
 )}

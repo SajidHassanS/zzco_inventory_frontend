@@ -14,14 +14,16 @@ import {
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import VisibilityIcon from "@mui/icons-material/Visibility";
+import AddCircleIcon from "@mui/icons-material/AddCircle"; // ✅ Add this import
 
 const CustomTable = ({
   columns = [],
   data = [],
   onEdit,
   onDelete,
-  onView,        // 👈 show eye if provided (works for bank & cash)
-  cashtrue = false, // kept for compatibility; no longer gates the eye
+  onView,
+  onAdd,           // ✅ Add this prop
+  cashtrue = false,
 }) => {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(5);
@@ -35,7 +37,7 @@ const CustomTable = ({
   const emptyRows =
     rowsPerPage - Math.min(rowsPerPage, data.length - page * rowsPerPage);
 
-  const showActions = Boolean(onEdit || onDelete || onView);
+  const showActions = Boolean(onEdit || onDelete || onView || onAdd); // ✅ Include onAdd
 
   return (
     <Paper>
@@ -67,6 +69,18 @@ const CustomTable = ({
 
                   {showActions && (
                     <TableCell align="center">
+                      {/* ✅ Add Funds Button - Only show for banks (not cash) */}
+                      {onAdd && !cashtrue && (
+                        <Tooltip title="Add Funds">
+                          <IconButton
+                            size="small"
+                            onClick={() => onAdd(row)}
+                            sx={{ color: "#4CAF50" }}
+                          >
+                            <AddCircleIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      )}
                       {onView && (
                         <Tooltip title="View">
                           <IconButton size="small" onClick={() => onView(row)}>

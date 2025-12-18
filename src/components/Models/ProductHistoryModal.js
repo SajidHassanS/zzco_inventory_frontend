@@ -23,6 +23,16 @@ import {
   Stack,
   Card,
   CardContent,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Tooltip,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
@@ -32,17 +42,60 @@ import LocalShippingIcon from "@mui/icons-material/LocalShipping";
 import PeopleIcon from "@mui/icons-material/People";
 import WarehouseIcon from "@mui/icons-material/Warehouse";
 import TimelineIcon from "@mui/icons-material/Timeline";
+import EditIcon from "@mui/icons-material/Edit";
 import axios from "axios";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { toast } from "react-toastify";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
-const ProductHistoryModal = ({ open, onClose, productId, title }) => {
+// ✅ Helper: Check if within 2-hour edit window
+const isWithinEditWindow = (createdAt) => {
+  const created = new Date(createdAt);
+  const now = new Date();
+  const hoursDiff = (now - created) / (1000 * 60 * 60);
+  return hoursDiff <= 2;
+};
+
+// ✅ Helper: Get remaining edit time
+const getRemainingEditTime = (createdAt) => {
+  const created = new Date(createdAt);
+  const now = new Date();
+  const msRemaining = (2 * 60 * 60 * 1000) - (now - created);
+  
+  if (msRemaining <= 0) return null;
+  
+  const minutes = Math.floor(msRemaining / (1000 * 60));
+  const hours = Math.floor(minutes / 60);
+  const remainingMins = minutes % 60;
+  
+  if (hours > 0) {
+    return `${hours}h ${remainingMins}m left`;
+  }
+  return `${remainingMins}m left`;
+};
+
+const ProductHistoryModal = ({ open, onClose, productId, title, banks = [], suppliers = [], warehouses: warehousesProp = [], onProductEdited }) => {
   const [tab, setTab] = useState(0);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [data, setData] = useState(null);
+  
+  // ✅ Edit states
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    name: "",
+    category: "",
+    price: "",
+    quantity: "",
+    paymentMethod: "",
+    bankId: "",
+    supplierId: "",
+    chequeDate: "",
+    description: "",
+  });
   
   // Refs for auto-scrolling
   const tableContainerRef = useRef(null);
@@ -52,11 +105,29 @@ const ProductHistoryModal = ({ open, onClose, productId, title }) => {
   const fmtMoney = (n) =>
     `Rs ${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
-  const warehouses = useMemo(() => data?.summary?.warehouses || [], [data]);
+  const warehousesData = useMemo(() => data?.summary?.warehouses || [], [data]);
   const purchases = useMemo(() => data?.purchases || [], [data]);
   const stockArrivals = useMemo(() => data?.stockArrivals || [], [data]);
   const sales = useMemo(() => data?.sales || [], [data]);
   const byCustomer = useMemo(() => data?.salesByCustomer || [], [data]);
+
+  // Check if product can be edited
+  const canEdit = useMemo(() => {
+    if (!data?.summary) return false;
+    // We need to check createdAt from product - fetch it separately or include in summary
+    // For now, we'll check based on earliest purchase date
+    if (purchases.length > 0) {
+      return isWithinEditWindow(purchases[0].when);
+    }
+    return false;
+  }, [data, purchases]);
+
+  const remainingTime = useMemo(() => {
+    if (purchases.length > 0) {
+      return getRemainingEditTime(purchases[0].when);
+    }
+    return null;
+  }, [purchases]);
 
   // Build unified timeline
   const timeline = useMemo(() => {
@@ -121,6 +192,101 @@ const ProductHistoryModal = ({ open, onClose, productId, title }) => {
     
     return { soldQty, soldAmount };
   }, [data]);
+
+  // ✅ Edit handlers
+  const handleEditClick = () => {
+    if (!data?.summary) return;
+    
+    const s = data.summary;
+    setEditFormData({
+      name: s.name || "",
+      category: s.category || "",
+      price: s.unitPrice || "",
+      quantity: s.purchaseQuantity || "",
+      paymentMethod: "", // Will need to fetch from product
+      bankId: "",
+      supplierId: s.supplier?.id || "",
+      chequeDate: "",
+      description: "",
+    });
+    setEditDialogOpen(true);
+  };
+
+  const handleCloseEditDialog = () => {
+    setEditDialogOpen(false);
+    setEditFormData({
+      name: "",
+      category: "",
+      price: "",
+      quantity: "",
+      paymentMethod: "",
+      bankId: "",
+      supplierId: "",
+      chequeDate: "",
+      description: "",
+    });
+  };
+
+  const handleEditFormChange = (field, value) => {
+    setEditFormData((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const handleConfirmEdit = async () => {
+    if (!productId) return;
+
+    if (!editFormData.price || Number(editFormData.price) <= 0) {
+      toast.error("Please enter a valid price");
+      return;
+    }
+
+    if (!editFormData.quantity || Number(editFormData.quantity) <= 0) {
+      toast.error("Please enter a valid quantity");
+      return;
+    }
+
+    setIsEditing(true);
+    try {
+      const response = await axios.put(
+        `${BACKEND_URL}api/products/${productId}/edit`,
+        {
+          name: editFormData.name,
+          category: editFormData.category,
+          price: editFormData.price,
+          quantity: editFormData.quantity,
+          paymentMethod: editFormData.paymentMethod || undefined,
+          bank: editFormData.bankId || undefined,
+          supplier: editFormData.supplierId || undefined,
+          chequeDate: editFormData.chequeDate || undefined,
+          description: editFormData.description || undefined,
+        },
+        { withCredentials: true }
+      );
+
+      console.log("✅ Product edited:", response.data);
+
+      // Refresh product history
+      const historyRes = await axios.get(
+        `${BACKEND_URL}api/products/${productId}/history`,
+        { withCredentials: true }
+      );
+      setData(historyRes.data);
+
+      if (onProductEdited) {
+        onProductEdited(productId, response.data.product);
+      }
+
+      toast.success("Product edited successfully!");
+      handleCloseEditDialog();
+    } catch (error) {
+      console.error("Error editing product:", error);
+      toast.error(error.response?.data?.message || "Failed to edit product");
+    } finally {
+      setIsEditing(false);
+    }
+  };
 
   useEffect(() => {
     if (!open || !productId) return;
@@ -195,11 +361,11 @@ const ProductHistoryModal = ({ open, onClose, productId, title }) => {
   };
 
   const handlePdf = () => {
+    // ... existing PDF code (unchanged)
     if (!data) return;
 
     const doc = new jsPDF("landscape");
 
-    // Header
     doc.setFontSize(20);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(255, 87, 34);
@@ -209,7 +375,6 @@ const ProductHistoryModal = ({ open, onClose, productId, title }) => {
     doc.setDrawColor(255, 87, 34);
     doc.line(110, 15, 186, 15);
 
-    // Product name
     doc.setFontSize(16);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(0, 0, 0);
@@ -219,11 +384,9 @@ const ProductHistoryModal = ({ open, onClose, productId, title }) => {
     doc.setFont("helvetica", "normal");
     doc.text("Product History", 14, 22);
 
-    // Date
     doc.setFontSize(10);
     doc.text(`Generated: ${fmtDateTime(new Date())}`, 240, 15);
 
-    // Summary info
     const s = data.summary || {};
     doc.text(`Category: ${s.category || "-"}`, 14, 32);
     doc.text(`Supplier: ${s.supplier?.name || "Own Inventory"}`, 14, 38);
@@ -234,7 +397,6 @@ const ProductHistoryModal = ({ open, onClose, productId, title }) => {
 
     let startY = 46;
 
-    // Timeline table
     if (timeline.length > 0) {
       const tableColumn = ["Date", "Type", "Description", "Entity", "Qty", "Unit Price", "Amount"];
 
@@ -275,7 +437,6 @@ const ProductHistoryModal = ({ open, onClose, productId, title }) => {
       startY = doc.lastAutoTable.finalY + 10;
     }
 
-    // Sales by Customer
     if (byCustomer.length > 0) {
       doc.setFontSize(12);
       doc.setFont("helvetica", "bold");
@@ -309,6 +470,24 @@ const ProductHistoryModal = ({ open, onClose, productId, title }) => {
 
     return (
       <Stack spacing={3}>
+        {/* ✅ Edit Button */}
+        <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+          <Tooltip title={canEdit ? `Edit Product (${remainingTime})` : "Edit window expired (2 hours)"}>
+            <span>
+              <Button
+                variant="outlined"
+                color="primary"
+                startIcon={<EditIcon />}
+                onClick={handleEditClick}
+                disabled={!canEdit}
+                sx={{ opacity: canEdit ? 1 : 0.5 }}
+              >
+                Edit Product {remainingTime && `(${remainingTime})`}
+              </Button>
+            </span>
+          </Tooltip>
+        </Box>
+
         {/* Summary Cards */}
         <Grid container spacing={2}>
           <Grid item xs={6} md={3}>
@@ -398,9 +577,9 @@ const ProductHistoryModal = ({ open, onClose, productId, title }) => {
           <Typography variant="subtitle1" fontWeight="bold" gutterBottom sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             <WarehouseIcon fontSize="small" /> Stock by Warehouse
           </Typography>
-          {warehouses.length > 0 ? (
+          {warehousesData.length > 0 ? (
             <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-              {warehouses.map((w, i) => (
+              {warehousesData.map((w, i) => (
                 <Chip
                   key={i}
                   label={`${w.warehouseName || w.warehouseId || "Unknown"}: ${w.quantity || 0}`}
@@ -417,6 +596,7 @@ const ProductHistoryModal = ({ open, onClose, productId, title }) => {
     );
   };
 
+  // ... (rest of the panes remain the same - TimelinePane, PurchasesPane, etc.)
   const TimelinePane = () => (
     <TableContainer component={Paper} ref={tableContainerRef} sx={scrollableTableSx}>
       <Table stickyHeader size="small">
@@ -609,94 +789,250 @@ const ProductHistoryModal = ({ open, onClose, productId, title }) => {
   );
 
   return (
-    <Modal open={open} onClose={onClose}>
-      <Box
-        sx={{
-          position: "absolute",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          width: { xs: "95vw", md: "90vw" },
-          maxWidth: 1200,
-          maxHeight: "92vh",
-          bgcolor: "background.paper",
-          boxShadow: 24,
-          borderRadius: 2,
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-        }}
-      >
-        {/* Header */}
-        <Box sx={{ p: 2, borderBottom: "1px solid #e0e0e0", display: "flex", alignItems: "center", gap: 1 }}>
-          <Typography variant="h6" sx={{ flex: 1 }}>
-            {title || "Product History"}
-            {data?.summary?.name ? ` — ${data.summary.name}` : ""}
-          </Typography>
-          <Button
-            size="small"
-            variant="contained"
-            color="secondary"
-            startIcon={<PictureAsPdfIcon />}
-            onClick={handlePdf}
-            disabled={!data || loading}
-          >
-            Download PDF
-          </Button>
-          <IconButton onClick={onClose}>
-            <CloseIcon />
-          </IconButton>
-        </Box>
-
-        {/* Body */}
-        <Box sx={{ display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}>
-          {/* Sidebar Tabs */}
-          <Box sx={{ borderRight: "1px solid #eee", minWidth: { xs: 140, md: 180 }, bgcolor: "#fafafa" }}>
-            <Tabs
-              orientation="vertical"
-              value={tab}
-              onChange={(_, v) => setTab(v)}
-              variant="scrollable"
-              sx={{ height: "100%" }}
+    <>
+      <Modal open={open} onClose={onClose}>
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: { xs: "95vw", md: "90vw" },
+            maxWidth: 1200,
+            maxHeight: "92vh",
+            bgcolor: "background.paper",
+            boxShadow: 24,
+            borderRadius: 2,
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+          }}
+        >
+          {/* Header */}
+          <Box sx={{ p: 2, borderBottom: "1px solid #e0e0e0", display: "flex", alignItems: "center", gap: 1 }}>
+            <Typography variant="h6" sx={{ flex: 1 }}>
+              {title || "Product History"}
+              {data?.summary?.name ? ` — ${data.summary.name}` : ""}
+            </Typography>
+            <Button
+              size="small"
+              variant="contained"
+              color="secondary"
+              startIcon={<PictureAsPdfIcon />}
+              onClick={handlePdf}
+              disabled={!data || loading}
             >
-              <Tab icon={<InventoryIcon />} label="Summary" iconPosition="start" sx={{ justifyContent: "flex-start" }} />
-              <Tab icon={<TimelineIcon />} label="Timeline" iconPosition="start" sx={{ justifyContent: "flex-start" }} />
-              <Tab icon={<ShoppingCartIcon />} label="Purchases" iconPosition="start" sx={{ justifyContent: "flex-start" }} />
-              <Tab icon={<LocalShippingIcon />} label="Arrivals" iconPosition="start" sx={{ justifyContent: "flex-start" }} />
-              <Tab icon={<PeopleIcon />} label="Sales" iconPosition="start" sx={{ justifyContent: "flex-start" }} />
-              <Tab icon={<PeopleIcon />} label="By Customer" iconPosition="start" sx={{ justifyContent: "flex-start" }} />
-            </Tabs>
+              Download PDF
+            </Button>
+            <IconButton onClick={onClose}>
+              <CloseIcon />
+            </IconButton>
           </Box>
 
-          {/* Content */}
-          <Box sx={{ p: 2, flex: 1, overflow: "auto" }}>
-            {loading && (
-              <Stack alignItems="center" justifyContent="center" sx={{ py: 8 }}>
-                <CircularProgress />
-                <Typography variant="body2" sx={{ mt: 2 }}>Loading history…</Typography>
-              </Stack>
-            )}
+          {/* Body */}
+          <Box sx={{ display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}>
+            {/* Sidebar Tabs */}
+            <Box sx={{ borderRight: "1px solid #eee", minWidth: { xs: 140, md: 180 }, bgcolor: "#fafafa" }}>
+              <Tabs
+                orientation="vertical"
+                value={tab}
+                onChange={(_, v) => setTab(v)}
+                variant="scrollable"
+                sx={{ height: "100%" }}
+              >
+                <Tab icon={<InventoryIcon />} label="Summary" iconPosition="start" sx={{ justifyContent: "flex-start" }} />
+                <Tab icon={<TimelineIcon />} label="Timeline" iconPosition="start" sx={{ justifyContent: "flex-start" }} />
+                <Tab icon={<ShoppingCartIcon />} label="Purchases" iconPosition="start" sx={{ justifyContent: "flex-start" }} />
+                <Tab icon={<LocalShippingIcon />} label="Arrivals" iconPosition="start" sx={{ justifyContent: "flex-start" }} />
+                <Tab icon={<PeopleIcon />} label="Sales" iconPosition="start" sx={{ justifyContent: "flex-start" }} />
+                <Tab icon={<PeopleIcon />} label="By Customer" iconPosition="start" sx={{ justifyContent: "flex-start" }} />
+              </Tabs>
+            </Box>
 
-            {!loading && err && <Alert severity="error">{err}</Alert>}
+            {/* Content */}
+            <Box sx={{ p: 2, flex: 1, overflow: "auto" }}>
+              {loading && (
+                <Stack alignItems="center" justifyContent="center" sx={{ py: 8 }}>
+                  <CircularProgress />
+                  <Typography variant="body2" sx={{ mt: 2 }}>Loading history…</Typography>
+                </Stack>
+              )}
 
-            {!loading && !err && !data && (
-              <Typography variant="body2" color="text.secondary">No data available.</Typography>
-            )}
+              {!loading && err && <Alert severity="error">{err}</Alert>}
 
-            {!loading && !err && data && (
-              <>
-                {tab === 0 && <SummaryPane />}
-                {tab === 1 && <TimelinePane />}
-                {tab === 2 && <PurchasesPane />}
-                {tab === 3 && <StockArrivalsPane />}
-                {tab === 4 && <SalesPane />}
-                {tab === 5 && <ByCustomerPane />}
-              </>
-            )}
+              {!loading && !err && !data && (
+                <Typography variant="body2" color="text.secondary">No data available.</Typography>
+              )}
+
+              {!loading && !err && data && (
+                <>
+                  {tab === 0 && <SummaryPane />}
+                  {tab === 1 && <TimelinePane />}
+                  {tab === 2 && <PurchasesPane />}
+                  {tab === 3 && <StockArrivalsPane />}
+                  {tab === 4 && <SalesPane />}
+                  {tab === 5 && <ByCustomerPane />}
+                </>
+              )}
+            </Box>
           </Box>
         </Box>
-      </Box>
-    </Modal>
+      </Modal>
+
+      {/* ✅ Edit Product Dialog */}
+      <Dialog open={editDialogOpen} onClose={handleCloseEditDialog} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ color: '#1976d2' }}>
+          ✏️ Edit Product
+          {remainingTime && (
+            <Typography variant="caption" display="block" sx={{ color: 'text.secondary', mt: 0.5 }}>
+              Time remaining: {remainingTime}
+            </Typography>
+          )}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            <TextField
+              label="Product Name"
+              value={editFormData.name}
+              onChange={(e) => handleEditFormChange('name', e.target.value)}
+              fullWidth
+              required
+            />
+            
+            <TextField
+              label="Category"
+              value={editFormData.category}
+              onChange={(e) => handleEditFormChange('category', e.target.value)}
+              fullWidth
+            />
+
+            <Grid container spacing={2}>
+              <Grid item xs={6}>
+                <TextField
+                  label="Price (per unit)"
+                  type="number"
+                  value={editFormData.price}
+                  onChange={(e) => handleEditFormChange('price', e.target.value)}
+                  fullWidth
+                  required
+                  InputProps={{ inputProps: { min: 0, step: 0.01 } }}
+                />
+              </Grid>
+              <Grid item xs={6}>
+                <TextField
+                  label="Purchase Quantity"
+                  type="number"
+                  value={editFormData.quantity}
+                  onChange={(e) => handleEditFormChange('quantity', e.target.value)}
+                  fullWidth
+                  required
+                  InputProps={{ inputProps: { min: 1 } }}
+                />
+              </Grid>
+            </Grid>
+
+            {/* Show calculated total */}
+            {editFormData.price && editFormData.quantity && (
+              <Alert severity="info">
+                <b>Total:</b> Rs {(Number(editFormData.price) * Number(editFormData.quantity)).toLocaleString()}
+              </Alert>
+            )}
+
+            <FormControl fullWidth>
+              <InputLabel>Payment Method</InputLabel>
+              <Select
+                value={editFormData.paymentMethod}
+                onChange={(e) => handleEditFormChange('paymentMethod', e.target.value)}
+                label="Payment Method"
+              >
+                <MenuItem value="">-- Select --</MenuItem>
+                <MenuItem value="cash">Cash</MenuItem>
+                <MenuItem value="online">Online</MenuItem>
+                <MenuItem value="cheque">Cheque</MenuItem>
+                <MenuItem value="credit">Credit</MenuItem>
+              </Select>
+            </FormControl>
+
+            {(editFormData.paymentMethod === 'online' || editFormData.paymentMethod === 'cheque') && (
+              <FormControl fullWidth>
+                <InputLabel>Bank</InputLabel>
+                <Select
+                  value={editFormData.bankId}
+                  onChange={(e) => handleEditFormChange('bankId', e.target.value)}
+                  label="Bank"
+                >
+                  <MenuItem value="">Select Bank</MenuItem>
+                  {banks.map((bank) => (
+                    <MenuItem key={bank._id} value={bank._id}>
+                      {bank.bankName} - Rs {Number(bank.totalBalance || bank.balance || 0).toLocaleString()}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+
+            {editFormData.paymentMethod === 'cheque' && (
+              <TextField
+                label="Cheque Date"
+                type="date"
+                value={editFormData.chequeDate}
+                onChange={(e) => handleEditFormChange('chequeDate', e.target.value)}
+                fullWidth
+                InputLabelProps={{ shrink: true }}
+              />
+            )}
+
+            {suppliers.length > 0 && (
+              <FormControl fullWidth>
+                <InputLabel>Supplier</InputLabel>
+                <Select
+                  value={editFormData.supplierId}
+                  onChange={(e) => handleEditFormChange('supplierId', e.target.value)}
+                  label="Supplier"
+                >
+                  <MenuItem value="">No Supplier (Own Inventory)</MenuItem>
+                  {suppliers.map((s) => (
+                    <MenuItem key={s._id} value={s._id}>
+                      {s.username || s.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+
+            <TextField
+              label="Description"
+              value={editFormData.description}
+              onChange={(e) => handleEditFormChange('description', e.target.value)}
+              fullWidth
+              multiline
+              rows={2}
+            />
+
+            <Box sx={{ bgcolor: '#fff3e0', p: 2, borderRadius: 1 }}>
+              <Typography variant="body2" color="warning.dark">
+                <strong>Note:</strong> Editing will reverse the original financial transactions and apply the new values.
+                Supplier balance, Bank/Cash balances will be adjusted accordingly.
+              </Typography>
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={handleCloseEditDialog} variant="outlined" disabled={isEditing}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleConfirmEdit} 
+            variant="contained" 
+            color="primary"
+            disabled={isEditing}
+            startIcon={isEditing ? <CircularProgress size={20} color="inherit" /> : <EditIcon />}
+          >
+            {isEditing ? "Saving..." : "Save Changes"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 };
 

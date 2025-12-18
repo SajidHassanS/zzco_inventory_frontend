@@ -43,6 +43,7 @@ import {
 } from "@mui/material";
 
 import axios from "axios";
+import { toast } from "react-toastify";
 
 // ——— API base ———
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -56,12 +57,38 @@ if (token) {
   api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
 }
 
+// ✅ Helper: Check if sale is within 2-hour edit window
+const isWithinEditWindow = (sale) => {
+  const createdAt = new Date(sale.createdAt || sale.saleDate);
+  const now = new Date();
+  const hoursDiff = (now - createdAt) / (1000 * 60 * 60);
+  return hoursDiff <= 2;
+};
+
+// ✅ Helper: Get remaining edit time
+const getRemainingEditTime = (sale) => {
+  const createdAt = new Date(sale.createdAt || sale.saleDate);
+  const now = new Date();
+  const msRemaining = (2 * 60 * 60 * 1000) - (now - createdAt);
+  
+  if (msRemaining <= 0) return null;
+  
+  const minutes = Math.floor(msRemaining / (1000 * 60));
+  const hours = Math.floor(minutes / 60);
+  const remainingMins = minutes % 60;
+  
+  if (hours > 0) {
+    return `${hours}h ${remainingMins}m left`;
+  }
+  return `${remainingMins}m left`;
+};
+
 function Sales() {
   const [showSaleModal, setShowSaleModal] = useState(false);
   const [sales, setAllSalesData] = useState([]);
   const [customer, setAllCustomer] = useState([]);
   const [banks, setBanks] = useState([]);
-  const [warehouses, setWarehouses] = useState([]); // keep as array
+  const [warehouses, setWarehouses] = useState([]);
   const [updatePage, setUpdatePage] = useState(true);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -77,6 +104,9 @@ function Sales() {
   const [editErrors, setEditErrors] = useState({});
   const [editImage, setEditImage] = useState(null);
   const [editImagePreview, setEditImagePreview] = useState("");
+  
+  // ✅ Track original sale for time display
+  const [editingSaleOriginal, setEditingSaleOriginal] = useState(null);
 
   useRedirectLoggedOutUser("/login");
   const dispatch = useDispatch();
@@ -136,7 +166,6 @@ function Sales() {
     }
   };
 
-  // ✅ Normalize warehouses response to an array
   const fetchWarehouseData = async () => {
     try {
       const res = await api.get("/warehouses/all");
@@ -151,7 +180,7 @@ function Sales() {
       setWarehouses(list);
     } catch (error) {
       console.error("Error fetching warehouses:", error);
-      setWarehouses([]); // ensure array
+      setWarehouses([]);
     }
   };
 
@@ -163,28 +192,31 @@ function Sales() {
     setUpdatePage(!updatePage);
   };
 
-  // ⛔ Removed recordSaleTransaction & handleSaleSubmit to avoid double-writing ledgers
-
   const handleChangePage = (event, newPage) => setPage(newPage);
   const handleChangeRowsPerPage = (event) => {
     setRowsPerPage(parseInt(event.target.value, 10));
     setPage(0);
   };
 
+  // ✅ Delete - NO time restriction
   const handleDeleteSale = async (saleId) => {
     if (!saleId) {
       alert("Invalid sale ID");
       return;
     }
+    
+    if (!window.confirm("Are you sure you want to delete this sale?")) {
+      return;
+    }
+
     try {
       await api.delete(`/sales/${saleId}`);
-      // Prefer re-fetch to keep populated refs correct
       await fetchSalesData();
-      alert("Sale deleted successfully");
+      toast.success("Sale deleted successfully");
       handlePageUpdate();
     } catch (error) {
       console.error("Error deleting sale:", error);
-      alert("Failed to delete sale");
+      toast.error(error?.response?.data?.message || "Failed to delete sale");
     }
   };
 
@@ -234,6 +266,12 @@ function Sales() {
 
   // ===== EDIT: open/close + state mapping =====
   const openEdit = (sale) => {
+    // ✅ Check 2-hour window before opening
+    if (!isWithinEditWindow(sale)) {
+      toast.error("Cannot edit: 2-hour edit window has expired");
+      return;
+    }
+
     const mapped = {
       _id: sale._id,
       productID: sale.productID?._id || sale.productID || "",
@@ -248,6 +286,7 @@ function Sales() {
       status: Boolean(sale.status),
     };
     setEditSale(mapped);
+    setEditingSaleOriginal(sale);
     setEditErrors({});
     setEditImage(null);
     setEditImagePreview("");
@@ -257,6 +296,7 @@ function Sales() {
   const closeEdit = () => {
     setEditOpen(false);
     setEditSale(null);
+    setEditingSaleOriginal(null);
     setEditErrors({});
     setEditImage(null);
     setEditImagePreview("");
@@ -360,14 +400,13 @@ function Sales() {
       await fetchSalesData();
       handlePageUpdate();
       closeEdit();
-      alert("Sale updated successfully");
+      toast.success("Sale updated successfully");
     } catch (err) {
       console.error("Failed to update sale:", err?.response?.data || err);
-      alert(err?.response?.data?.message || "Failed to update sale");
+      toast.error(err?.response?.data?.message || "Failed to update sale");
     }
   };
 
-  // Safe array for rendering warehouses
   const safeWarehouses = Array.isArray(warehouses) ? warehouses : [];
 
   return (
@@ -390,7 +429,6 @@ function Sales() {
               banks={banks}
               fetchCustomerData={fetchCustomerData}
               handlePageUpdate={handlePageUpdate}
-              // ⛔ removed onSaleSubmit
             />
           )}
 
@@ -412,73 +450,87 @@ function Sales() {
                 <TableBody>
                   {sales
                     .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                    .map((element) => (
-                      <TableRow key={element._id}>
-                        <TableCell>
-                          {element.productID ? element.productID.name : "Unknown Product"}
-                        </TableCell>
-                        <TableCell>
-                          {element.customerID ? element.customerID.username : "Unknown Customer"}
-                        </TableCell>
-                        <TableCell>{element.stockSold}</TableCell>
-                        <TableCell>{new Date(element.saleDate).toLocaleDateString()}</TableCell>
-                        <TableCell>{element.totalSaleAmount}</TableCell>
+                    .map((element) => {
+                      // ✅ Calculate edit window for each sale
+                      const canEdit = isWithinEditWindow(element);
+                      const remainingTime = getRemainingEditTime(element);
 
-                        <TableCell>
-                          {/* EDIT */}
-                          <Tooltip title="Edit sale">
-                            <IconButton
-                              aria-label="edit"
-                              onClick={() => openEdit(element)}
-                              size="small"
-                              sx={{ mr: 0.5 }}
-                            >
-                              <EditIcon />
-                            </IconButton>
-                          </Tooltip>
+                      return (
+                        <TableRow key={element._id}>
+                          <TableCell>
+                            {element.productID ? element.productID.name : "Unknown Product"}
+                          </TableCell>
+                          <TableCell>
+                            {element.customerID ? element.customerID.username : "Unknown Customer"}
+                          </TableCell>
+                          <TableCell>{element.stockSold}</TableCell>
+                          <TableCell>{new Date(element.saleDate).toLocaleDateString()}</TableCell>
+                          <TableCell>{element.totalSaleAmount}</TableCell>
 
-                          {/* VIEW */}
-                          <Tooltip title="View details">
-                            <IconButton
-                              aria-label="view"
-                              onClick={() => {
-                                setSelectedSale(element);
-                                setViewOpen(true);
-                              }}
-                              size="small"
+                          <TableCell>
+                            {/* ✅ EDIT - with 2-hour window check */}
+                            <Tooltip 
+                              title={canEdit ? `Edit sale (${remainingTime})` : "Edit window expired (2 hours)"}
                             >
-                              <VisibilityIcon />
-                            </IconButton>
-                          </Tooltip>
+                              <span>
+                                <IconButton
+                                  aria-label="edit"
+                                  onClick={() => openEdit(element)}
+                                  size="small"
+                                  sx={{ 
+                                    mr: 0.5,
+                                    opacity: canEdit ? 1 : 0.3,
+                                  }}
+                                  disabled={!canEdit}
+                                >
+                                  <EditIcon />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
 
-                          {/* INFO */}
-                          <Tooltip title="What is this?">
-                            <IconButton
-                              aria-label="info"
-                              onClick={() => {
-                                setSelectedSale(element);
-                                setViewOpen(true);
-                              }}
-                              size="small"
-                            >
-                              <InfoOutlinedIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
+                            {/* VIEW */}
+                            <Tooltip title="View details">
+                              <IconButton
+                                aria-label="view"
+                                onClick={() => {
+                                  setSelectedSale(element);
+                                  setViewOpen(true);
+                                }}
+                                size="small"
+                              >
+                                <VisibilityIcon />
+                              </IconButton>
+                            </Tooltip>
 
-                          {/* DELETE */}
-                          <Tooltip title="Delete sale">
-                            <IconButton
-                              aria-label="delete"
-                              onClick={() => handleDeleteSale(element._id)}
-                              size="small"
-                              sx={{ color: "red", ml: 1 }}
-                            >
-                              <DeleteIcon />
-                            </IconButton>
-                          </Tooltip>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                            {/* INFO */}
+                            <Tooltip title="What is this?">
+                              <IconButton
+                                aria-label="info"
+                                onClick={() => {
+                                  setSelectedSale(element);
+                                  setViewOpen(true);
+                                }}
+                                size="small"
+                              >
+                                <InfoOutlinedIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+
+                            {/* ✅ DELETE - Always enabled (no time restriction) */}
+                            <Tooltip title="Delete sale">
+                              <IconButton
+                                aria-label="delete"
+                                onClick={() => handleDeleteSale(element._id)}
+                                size="small"
+                                sx={{ color: "red", ml: 1 }}
+                              >
+                                <DeleteIcon />
+                              </IconButton>
+                            </Tooltip>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                 </TableBody>
               </Table>
             </TableContainer>
@@ -531,6 +583,19 @@ function Sales() {
                   <Typography variant="body2">
                     Sale Date: {selectedSale.saleDate ? formatDate(selectedSale.saleDate) : "-"}
                   </Typography>
+                  {/* ✅ Show edit window status */}
+                  <Typography 
+                    variant="body2" 
+                    sx={{ 
+                      mt: 1, 
+                      color: isWithinEditWindow(selectedSale) ? 'success.main' : 'error.main',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    Edit Window: {isWithinEditWindow(selectedSale) 
+                      ? `✅ ${getRemainingEditTime(selectedSale)} remaining` 
+                      : "❌ Expired"}
+                  </Typography>
                 </Paper>
               )}
             </DialogContent>
@@ -541,9 +606,16 @@ function Sales() {
             </DialogActions>
           </Dialog>
 
-          {/* EDIT DIALOG */}
+          {/* ✅ EDIT DIALOG - with time remaining display */}
           <Dialog open={editOpen} onClose={closeEdit} fullWidth maxWidth="sm">
-            <DialogTitle>Edit Sale</DialogTitle>
+            <DialogTitle>
+              Edit Sale
+              {editingSaleOriginal && (
+                <Typography variant="caption" display="block" sx={{ color: 'text.secondary', mt: 0.5 }}>
+                  Time remaining: {getRemainingEditTime(editingSaleOriginal) || "Expired"}
+                </Typography>
+              )}
+            </DialogTitle>
             <DialogContent dividers>
               {editSale && (
                 <Grid container spacing={2} sx={{ mt: 0 }}>
@@ -744,6 +816,16 @@ function Sales() {
                         style={{ width: "100%", maxHeight: 300, marginTop: 12, objectFit: "cover" }}
                       />
                     )}
+                  </Grid>
+
+                  {/* ✅ Warning note */}
+                  <Grid item xs={12}>
+                    <Paper sx={{ p: 2, bgcolor: '#fff3e0' }}>
+                      <Typography variant="body2" color="warning.dark">
+                        <strong>Note:</strong> Editing will adjust customer balance, bank/cash balances, 
+                        and product stock accordingly.
+                      </Typography>
+                    </Paper>
                   </Grid>
                 </Grid>
               )}

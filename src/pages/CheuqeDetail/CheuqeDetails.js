@@ -81,7 +81,8 @@ const ChequeDetails = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [chequeToDelete, setChequeToDelete] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
-
+// ✅ DATE FILTER STATE
+const [filterDate, setFilterDate] = useState("");
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
   const API_URL = `${BACKEND_URL}api/cheques`;
 
@@ -178,13 +179,29 @@ const ChequeDetails = () => {
     setUpcomingCheques(u);
   }, [cheques]);
 
-  useEffect(() => {
-    if (allCheques.length > 0 && tableContainerRef.current) {
-      setTimeout(() => {
-        tableContainerRef.current.scrollTop = tableContainerRef.current.scrollHeight;
-      }, 100);
-    }
-  }, [allCheques]);
+  
+// ✅ FILTERED CHEQUES BY DATE (MOVE THIS FIRST!)
+const filteredCheques = useMemo(() => {
+  if (!filterDate) return allCheques;
+  
+  const selectedDate = new Date(filterDate);
+  selectedDate.setHours(0, 0, 0, 0);
+  
+  return allCheques.filter((cheque) => {
+    const chequeDate = new Date(cheque.chequeDate || cheque.date);
+    chequeDate.setHours(0, 0, 0, 0);
+    return chequeDate.getTime() === selectedDate.getTime();
+  });
+}, [allCheques, filterDate]);
+
+// ✅ NOW the useEffect can use filteredCheques
+useEffect(() => {
+  if (filteredCheques.length > 0 && tableContainerRef.current) {
+    setTimeout(() => {
+      tableContainerRef.current.scrollTop = tableContainerRef.current.scrollHeight;
+    }, 100);
+  }
+}, [filteredCheques]);  // ✅ Fixed dependency
 
   // ---------- Derived selections ----------
 
@@ -628,7 +645,31 @@ const ChequeDetails = () => {
             days.
           </Alert>
         )}
-      </Stack>
+   </Stack>
+
+      {/* ✅ DATE FILTER */}
+      <Box sx={{ mb: 2, display: "flex", alignItems: "center", gap: 2 }}>
+        <TextField
+          label="Filter by Date"
+          type="date"
+          value={filterDate}
+          onChange={(e) => setFilterDate(e.target.value)}
+          InputLabelProps={{ shrink: true }}
+          sx={{ width: 200 }}
+        />
+        {filterDate && (
+          <Button
+            variant="outlined"
+            color="secondary"
+            onClick={() => setFilterDate("")}
+          >
+            Clear Filter
+          </Button>
+        )}
+        <Typography variant="body2" color="text.secondary">
+          Showing: {filteredCheques.length} of {allCheques.length} cheques
+        </Typography>
+      </Box>
 
       <Paper>
         <TableContainer
@@ -656,7 +697,7 @@ const ChequeDetails = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {allCheques.map((row, index) => ( 
+            {filteredCheques.map((row, index) => (
                 <TableRow key={row._id || index} hover>
                   <TableCell>
                     {new Date(row.chequeDate || row.date).toLocaleDateString()}
