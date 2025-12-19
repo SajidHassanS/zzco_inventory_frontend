@@ -25,6 +25,13 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
+  // ✅ NEW: Transfer state
+  const [transferTo, setTransferTo] = useState("");
+  const [transferToId, setTransferToId] = useState("");
+  const [customers, setCustomers] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
+  const [shippers, setShippers] = useState([]);
+
   const RAW_BACKEND = process.env.REACT_APP_BACKEND_URL || "";
   const BACKEND_URL = withSlash(RAW_BACKEND);
 
@@ -34,6 +41,7 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
   useEffect(() => {
     if (open) {
       dispatch(getBanks());
+      fetchEntities(); // ✅ Fetch entities for transfer
       setErrors({});
       setLoading(false);
     } else {
@@ -45,16 +53,45 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
       setSelectedBank("");
       setImage(null);
       setImagePreview("");
+      setTransferTo("");
+      setTransferToId("");
       setErrors({});
     }
   }, [dispatch, open]);
 
+  // ✅ NEW: Fetch customers, suppliers, shippers for transfer options
+  const fetchEntities = async () => {
+    try {
+      const [custResp, suppResp, shipResp] = await Promise.all([
+        axios.get(`${BACKEND_URL}api/customers/allcustomer`, { withCredentials: true }),
+        axios.get(`${BACKEND_URL}api/suppliers`, { withCredentials: true }),
+        axios.get(`${BACKEND_URL}api/shippers`, { withCredentials: true }),
+      ]);
+
+      const customersData = Array.isArray(custResp.data)
+        ? custResp.data
+        : custResp.data?.customers || [];
+
+      const suppliersData = Array.isArray(suppResp.data)
+        ? suppResp.data
+        : suppResp.data?.suppliers || [];
+
+      const shippersData = Array.isArray(shipResp.data)
+        ? shipResp.data
+        : shipResp.data?.shippers || shipResp.data || [];
+
+      setCustomers(customersData);
+      setSuppliers(suppliersData);
+      setShippers(shippersData);
+    } catch (err) {
+      console.error("Error fetching entities:", err);
+    }
+  };
+
   const API_URL = `${BACKEND_URL}api/suppliers`;
-  const CASH_API_URL = `${BACKEND_URL}api/cash`;
 
   const currentBalance = Number(supplier?.balance || 0);
 
-  // Helper to get selected bank info
   const getSelectedBankInfo = () => {
     if (!selectedBank) return null;
     return banks.find((b) => b._id === selectedBank);
@@ -91,7 +128,7 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
       }
     }
 
-    // ✅ Own Cheque: require bank, chequeDate, and image
+    // Own Cheque: require bank, chequeDate, and image
     if (paymentMethod === "owncheque") {
       if (!selectedBank) {
         formErrors.selectedBank = "Bank selection is required for own cheque";
@@ -102,6 +139,21 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
       if (!image) {
         formErrors.image = "Image is required for cheque";
       }
+    }
+
+    // ✅ NEW: Transfer cheque validation
+    if (paymentMethod === "transfercheque") {
+      if (!chequeDate) formErrors.chequeDate = "Cheque date is required";
+      if (!image) formErrors.image = "Cheque image is required";
+      if (!transferTo) formErrors.transferTo = "Please select transfer destination type";
+      if (!transferToId) formErrors.transferToId = "Please select who to transfer to";
+    }
+
+    // ✅ NEW: Transfer online validation
+    if (paymentMethod === "transferonline") {
+      if (!image) formErrors.image = "Screenshot/proof is required for online transfer";
+      if (!transferTo) formErrors.transferTo = "Please select transfer destination type";
+      if (!transferToId) formErrors.transferToId = "Please select who to transfer to";
     }
 
     setErrors(formErrors);
@@ -119,11 +171,15 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
         return;
       }
 
-      if (!validateForm()) return;
+      if (!validateForm()) {
+        setLoading(false);
+        return;
+      }
 
       const numericAmount = parseFloat(amount.trim());
       if (isNaN(numericAmount) || numericAmount <= 0) {
         toast.error("Amount is not a valid number.");
+        setLoading(false);
         return;
       }
 
@@ -142,9 +198,15 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
         formData.append("bankId", selectedBank);
       }
       
-      // Send chequeDate for cheque and owncheque
-      if (method === "cheque" || method === "owncheque") {
+      // Send chequeDate for cheque, owncheque, and transfercheque
+      if (method === "cheque" || method === "owncheque" || method === "transfercheque") {
         formData.append("chequeDate", chequeDate || "");
+      }
+
+      // ✅ NEW: Transfer fields
+      if (method === "transfercheque" || method === "transferonline") {
+        formData.append("transferTo", transferTo);
+        formData.append("transferToId", transferToId);
       }
       
       if (image) formData.append("image", image);
@@ -157,62 +219,23 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
 
       toast.success(supplierRes.data?.message || "Balance subtracted from supplier");
 
-      // Ledger entry handling
-      let ledgerRes;
-      if (method === "cash") {
-        ledgerRes = await axios.post(
-          `${CASH_API_URL}/add`,
-          {
-            balance: numericAmount,
-            type: "add",
-            description: cleanDesc || `Payment received from supplier ${supplier?.username || ""}`.trim(),
-          },
-          { withCredentials: true }
-        );
-      } else if (method === "online") {
-        ledgerRes = await axios.post(
-          `${BACKEND_URL}api/banks/${selectedBank}/transaction`,
-          {
-            amount: numericAmount,
-            type: "add",
-            description: cleanDesc || `Online payment received from supplier ${supplier?.username || ""}`.trim(),
-          },
-          { withCredentials: true }
-        );
-      } else if (method === "owncheque") {
-        // Own cheque - bank already updated by backend
-        toast.success("Cheque deposited to bank immediately.");
-      } else if (method === "cheque") {
-        toast.info("Cheque recorded as pending. Cash/Bank will increase when the cheque is cleared.");
-      } else if (method === "credit") {
-        toast.info("Credit recorded (no immediate cash/bank movement).");
-      }
-
       // Refresh banks to get updated balances
       dispatch(getBanks());
 
-      if (
-        method === "cheque" ||
-        method === "credit" ||
-        method === "owncheque" ||
-        ledgerRes?.status === 200 ||
-        ledgerRes?.status === 201
-      ) {
-        onSuccess?.(supplierRes.data?.supplier || supplier);
-        onClose?.();
+      onSuccess?.(supplierRes.data?.supplier || supplier);
+      onClose?.();
 
-        // reset
-        setAmount("");
-        setPaymentMethod("");
-        setChequeDate("");
-        setDescription("");
-        setSelectedBank("");
-        setImage(null);
-        setImagePreview("");
-        setErrors({});
-      } else {
-        throw new Error("Failed to post Cash/Bank ledger entry");
-      }
+      // Reset form
+      setAmount("");
+      setPaymentMethod("");
+      setChequeDate("");
+      setDescription("");
+      setSelectedBank("");
+      setImage(null);
+      setImagePreview("");
+      setTransferTo("");
+      setTransferToId("");
+      setErrors({});
     } catch (error) {
       const apiMsg = error?.response?.data?.message;
       if (apiMsg) toast.error(apiMsg);
@@ -239,6 +262,8 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
     setImagePreview(URL.createObjectURL(file));
   };
 
+  const isTransferMethod = paymentMethod === "transfercheque" || paymentMethod === "transferonline";
+
   const disableSubmit =
     loading ||
     !amount ||
@@ -246,7 +271,9 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
     !paymentMethod ||
     (paymentMethod === "online" && (!selectedBank || !image)) ||
     (paymentMethod === "cheque" && (!chequeDate || !image)) ||
-    (paymentMethod === "owncheque" && (!selectedBank || !chequeDate || !image));
+    (paymentMethod === "owncheque" && (!selectedBank || !chequeDate || !image)) ||
+    (paymentMethod === "transfercheque" && (!chequeDate || !image || !transferTo || !transferToId)) ||
+    (paymentMethod === "transferonline" && (!image || !transferTo || !transferToId));
 
   return (
     <Modal open={open} onClose={onClose}>
@@ -258,7 +285,7 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
           top: "50%",
           left: "50%",
           transform: "translate(-50%, -50%)",
-          width: 450,
+          width: 500,
           bgcolor: "background.paper",
           boxShadow: 24,
           p: 4,
@@ -289,6 +316,7 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
           margin="normal"
           error={!!errors.amount}
           helperText={errors.amount}
+          disabled={loading}
         />
 
         <TextField
@@ -299,10 +327,15 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
             const v = e.target.value;
             setPaymentMethod(v);
             setSelectedBank("");
-            if (v !== "cheque" && v !== "owncheque") setChequeDate("");
+            if (v !== "cheque" && v !== "owncheque" && v !== "transfercheque") setChequeDate("");
             if (v === "credit" || v === "cash") {
               setImage(null);
               setImagePreview("");
+            }
+            // Reset transfer fields if not transfer method
+            if (v !== "transfercheque" && v !== "transferonline") {
+              setTransferTo("");
+              setTransferToId("");
             }
           }}
           fullWidth
@@ -316,14 +349,21 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
               ? "Pending cheque - no immediate bank addition"
               : paymentMethod === "owncheque"
               ? "Cheque deposited to your bank - immediate addition"
+              : paymentMethod === "transfercheque"
+              ? "Transfer this cheque to another entity (pending)"
+              : paymentMethod === "transferonline"
+              ? "Transfer online payment to another entity (immediate)"
               : "")
           }
+          disabled={loading}
         >
           <MenuItem value="cash">Cash</MenuItem>
           <MenuItem value="online">Online Transfer</MenuItem>
           <MenuItem value="cheque">Cheque (Pending)</MenuItem>
           <MenuItem value="owncheque">Cheque to Own Account</MenuItem>
           <MenuItem value="credit">Credit</MenuItem>
+          <MenuItem value="transfercheque">Transfer Cheque</MenuItem>
+          <MenuItem value="transferonline">Transfer To Others</MenuItem>
         </TextField>
 
         {/* Show bank dropdown for ONLINE and OWN CHEQUE */}
@@ -338,6 +378,7 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
               margin="normal"
               error={!!errors.selectedBank}
               helperText={errors.selectedBank}
+              disabled={loading}
             >
               {banks.length ? (
                 banks.map((bank) => (
@@ -352,7 +393,6 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
               )}
             </TextField>
 
-            {/* Show selected bank balance info */}
             {getSelectedBankInfo() && (
               <Alert severity="info" sx={{ mt: 1, mb: 1 }}>
                 Current Balance: Rs {Number(getSelectedBankInfo().balance || 0).toLocaleString()}
@@ -364,8 +404,8 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
           </>
         )}
 
-        {/* Show cheque date for CHEQUE and OWN CHEQUE */}
-        {(paymentMethod === "cheque" || paymentMethod === "owncheque") && (
+        {/* Show cheque date for CHEQUE, OWN CHEQUE, and TRANSFER CHEQUE */}
+        {(paymentMethod === "cheque" || paymentMethod === "owncheque" || paymentMethod === "transfercheque") && (
           <TextField
             label="Cheque Date"
             type="date"
@@ -376,15 +416,20 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
             InputLabelProps={{ shrink: true }}
             error={!!errors.chequeDate}
             helperText={errors.chequeDate}
+            disabled={loading}
           />
         )}
 
-        {/* Show image upload for ONLINE, CHEQUE, and OWN CHEQUE */}
-        {(paymentMethod === "online" || paymentMethod === "cheque" || paymentMethod === "owncheque") && (
+        {/* Show image upload for ONLINE, CHEQUE, OWN CHEQUE, TRANSFER CHEQUE, TRANSFER ONLINE */}
+        {(paymentMethod === "online" || 
+          paymentMethod === "cheque" || 
+          paymentMethod === "owncheque" ||
+          paymentMethod === "transfercheque" ||
+          paymentMethod === "transferonline") && (
           <Grid item xs={12}>
             <TextField
               type="file"
-              label="Upload Image"
+              label={paymentMethod === "transferonline" ? "Upload Screenshot/Proof" : "Upload Image"}
               name="image"
               onChange={handleImageChange}
               fullWidth
@@ -392,6 +437,7 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
               InputLabelProps={{ shrink: true }}
               error={!!errors.image}
               helperText={errors.image}
+              disabled={loading}
             />
             {imagePreview && (
               <img
@@ -401,6 +447,77 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
               />
             )}
           </Grid>
+        )}
+
+        {/* ✅ NEW: TRANSFER OPTIONS */}
+        {(paymentMethod === "transfercheque" || paymentMethod === "transferonline") && (
+          <>
+            <Alert severity="warning" sx={{ mt: 2, mb: 1 }}>
+              {paymentMethod === "transfercheque"
+                ? "⚠️ This will transfer the cheque to another entity (pending)"
+                : "⚠️ This will transfer the online payment to another entity (completed immediately)"}
+            </Alert>
+
+            <TextField
+              label="Transfer To"
+              select
+              value={transferTo}
+              onChange={(e) => {
+                setTransferTo(e.target.value);
+                setTransferToId("");
+              }}
+              fullWidth
+              margin="normal"
+              error={!!errors.transferTo}
+              helperText={errors.transferTo}
+              disabled={loading}
+            >
+              <MenuItem value="">-- Select Type --</MenuItem>
+              <MenuItem value="customer">Customer</MenuItem>
+              <MenuItem value="supplier">Supplier</MenuItem>
+              <MenuItem value="shipper">Shipper</MenuItem>
+            </TextField>
+
+            {transferTo && (
+              <TextField
+                label={`Select ${
+                  transferTo === "customer" ? "Customer" : transferTo === "supplier" ? "Supplier" : "Shipper"
+                }`}
+                select
+                value={transferToId}
+                onChange={(e) => setTransferToId(e.target.value)}
+                fullWidth
+                margin="normal"
+                error={!!errors.transferToId}
+                helperText={errors.transferToId}
+                disabled={loading}
+              >
+                <MenuItem value="">
+                  -- Select {transferTo === "customer" ? "Customer" : transferTo === "supplier" ? "Supplier" : "Shipper"} --
+                </MenuItem>
+
+                {(transferTo === "customer"
+                  ? customers
+                  : transferTo === "supplier"
+                  ? suppliers
+                  : shippers
+                )
+                  .filter((entity) => {
+                    if (!entity || !entity._id) return false;
+                    // Avoid offering the same supplier as destination
+                    if (transferTo === "supplier" && supplier && supplier._id) {
+                      return entity._id !== supplier._id;
+                    }
+                    return true;
+                  })
+                  .map((entity) => (
+                    <MenuItem key={entity._id} value={entity._id}>
+                      {entity.username || entity.name}
+                    </MenuItem>
+                  ))}
+              </TextField>
+            )}
+          </>
         )}
 
         <TextField
@@ -416,11 +533,16 @@ const MinusSupplierBalanceModal = ({ open, onClose, supplier, onSuccess }) => {
               ? "e.g. Credit note / write-off / adjustment"
               : paymentMethod === "owncheque"
               ? `e.g. Cheque deposited from supplier ${supplier?.username || ""}`
+              : paymentMethod === "transfercheque"
+              ? `e.g. Cheque transferred to ${transferTo || "..."}`
+              : paymentMethod === "transferonline"
+              ? `e.g. Online payment transferred to ${transferTo || "..."}`
               : `e.g. Payment received from supplier ${supplier?.username || ""}`
           }
+          disabled={loading}
         />
 
-        <Button variant="contained" color="primary" type="submit" fullWidth disabled={disableSubmit}>
+        <Button variant="contained" color="primary" type="submit" fullWidth disabled={disableSubmit} sx={{ mt: 2 }}>
           {loading ? "Submitting..." : "Subtract Balance"}
         </Button>
       </Box>
