@@ -9,6 +9,8 @@ import {
   Chip,
   Button,
   Stack,
+  IconButton,
+  Tooltip,
 } from "@mui/material";
 import axios from "axios";
 import ConfirmDeleteModal from "../../../components/Models/ConfirmDeleteModal";
@@ -19,8 +21,9 @@ import { selectCanDelete } from "../../../redux/features/auth/authSlice";
 import TransactionHistoryModal from "../../../components/Models/TransactionModal";
 import CashTransactionHistoryModal from "../../../components/Models/CashTransactionModal";
 import TransferModal from "../../../components/Models/TransferModal";
-import { SwapHoriz, Add } from "@mui/icons-material";
+import { SwapHoriz, Add, Remove } from "@mui/icons-material";
 import AddFundsModal from "../../../components/Models/AddFundsModal";
+import AddCashModal from "../../../components/Models/AddCashModal"; // ✅ NEW IMPORT
 // PDF libs 
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -45,9 +48,14 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
   const [isEditModalOpen, setEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
   const [isTransactionModalOpen, setTransactionModalOpen] = useState(false);
-const [isTransferModalOpen, setTransferModalOpen] = useState(false);
-const [isAddFundsModalOpen, setAddFundsModalOpen] = useState(false);
-const [selectedBankForFunds, setSelectedBankForFunds] = useState(null);
+  const [isTransferModalOpen, setTransferModalOpen] = useState(false);
+  const [isAddFundsModalOpen, setAddFundsModalOpen] = useState(false);
+  const [selectedBankForFunds, setSelectedBankForFunds] = useState(null);
+
+  // ✅ NEW: Cash modal state
+  const [isCashModalOpen, setCashModalOpen] = useState(false);
+  const [cashModalType, setCashModalType] = useState("add"); // "add" or "deduct"
+
   // ===== Report selectors (Daily | Monthly | Yearly) =====
   const [reportType, setReportType] = useState("monthly");
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -410,14 +418,24 @@ const [selectedBankForFunds, setSelectedBankForFunds] = useState(null);
   };
 
   const handleOpenAddFundsModal = (bank) => {
-  setSelectedBankForFunds(bank);
-  setAddFundsModalOpen(true);
-};
+    setSelectedBankForFunds(bank);
+    setAddFundsModalOpen(true);
+  };
 
-const handleCloseAddFundsModal = () => {
-  setAddFundsModalOpen(false);
-  setSelectedBankForFunds(null);
-};
+  const handleCloseAddFundsModal = () => {
+    setAddFundsModalOpen(false);
+    setSelectedBankForFunds(null);
+  };
+
+  // ✅ NEW: Cash modal handlers
+  const handleOpenCashModal = (type) => {
+    setCashModalType(type);
+    setCashModalOpen(true);
+  };
+
+  const handleCloseCashModal = () => {
+    setCashModalOpen(false);
+  };
 
   const closeModals = () => {
     setEditModalOpen(false);
@@ -804,13 +822,13 @@ const handleCloseAddFundsModal = () => {
           Download Cash PDF
         </Button>
         <Button 
-    variant="contained" 
-    color="secondary"
-    onClick={() => setTransferModalOpen(true)}
-    startIcon={<SwapHoriz />}
-  >
-    Transfer Funds
-  </Button>
+          variant="contained" 
+          color="secondary"
+          onClick={() => setTransferModalOpen(true)}
+          startIcon={<SwapHoriz />}
+        >
+          Transfer Funds
+        </Button>
       </Stack>
 
       {/* ===== Report selectors ===== */}
@@ -950,20 +968,54 @@ const handleCloseAddFundsModal = () => {
       <Typography variant="h3" align="center" sx={{ mt: 4 }}>
         Banks List
       </Typography>
- <CustomTable
-  columns={bankColumns}
-  data={banks || []}
-  onEdit={(bank) => handleOpenEditModal(bank, "bank")}
-  onDelete={(bank) => handleOpenDeleteModal(bank, "bank")}
-  onView={(bank) => handleOpenTransactionModal(bank, "bank")}
-  onAdd={(bank) => handleOpenAddFundsModal(bank)}
-  cashtrue={false}
-/>
+      <CustomTable
+        columns={bankColumns}
+        data={banks || []}
+        onEdit={(bank) => handleOpenEditModal(bank, "bank")}
+        onDelete={(bank) => handleOpenDeleteModal(bank, "bank")}
+        onView={(bank) => handleOpenTransactionModal(bank, "bank")}
+        onAdd={(bank) => handleOpenAddFundsModal(bank)}
+        cashtrue={false}
+      />
 
-      {/* ===== Cash list (FIXED) ===== */}
-      <Typography variant="h3" align="center" mt={3}>
-        Cash List
-      </Typography>
+      {/* ===== Cash list with + / - buttons ===== */}
+      <Box display="flex" alignItems="center" justifyContent="center" mt={3} gap={2}>
+        <Typography variant="h3" align="center">
+          Cash List
+        </Typography>
+        
+        {/* ✅ NEW: Plus and Minus buttons */}
+        <Tooltip title="Add Cash">
+          <IconButton
+            onClick={() => handleOpenCashModal("add")}
+            sx={{
+              bgcolor: "success.main",
+              color: "white",
+              "&:hover": { bgcolor: "success.dark" },
+              width: 40,
+              height: 40,
+            }}
+          >
+            <Add />
+          </IconButton>
+        </Tooltip>
+        
+        <Tooltip title="Deduct Cash">
+          <IconButton
+            onClick={() => handleOpenCashModal("deduct")}
+            sx={{
+              bgcolor: "error.main",
+              color: "white",
+              "&:hover": { bgcolor: "error.dark" },
+              width: 40,
+              height: 40,
+            }}
+          >
+            <Remove />
+          </IconButton>
+        </Tooltip>
+      </Box>
+
       <CustomTable
         columns={cashColumns}
         data={filteredCashTransactions}
@@ -1054,23 +1106,31 @@ const handleCloseAddFundsModal = () => {
       )}
 
       {isTransferModalOpen && (
-  <TransferModal
-    open={isTransferModalOpen}
-    onClose={() => setTransferModalOpen(false)}
-    banks={banks}
-    cashBalance={availableCashBalance}
-    onSuccess={refreshBanks}
-  />
-)}
+        <TransferModal
+          open={isTransferModalOpen}
+          onClose={() => setTransferModalOpen(false)}
+          banks={banks}
+          cashBalance={availableCashBalance}
+          onSuccess={refreshBanks}
+        />
+      )}
 
-{isAddFundsModalOpen && selectedBankForFunds && (
-  <AddFundsModal
-    open={isAddFundsModalOpen}
-    onClose={handleCloseAddFundsModal}
-    bank={selectedBankForFunds}
-    onSuccess={refreshBanks}
-  />
-)}
+      {isAddFundsModalOpen && selectedBankForFunds && (
+        <AddFundsModal
+          open={isAddFundsModalOpen}
+          onClose={handleCloseAddFundsModal}
+          bank={selectedBankForFunds}
+          onSuccess={refreshBanks}
+        />
+      )}
+
+      {/* ✅ NEW: Cash Add/Deduct Modal */}
+      <AddCashModal
+        open={isCashModalOpen}
+        onClose={handleCloseCashModal}
+        type={cashModalType}
+        onSuccess={refreshBanks}
+      />
     </Box>
   );
 };
