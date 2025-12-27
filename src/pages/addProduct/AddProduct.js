@@ -659,46 +659,50 @@ const AddProduct = () => {
         <Typography variant="h4" gutterBottom align="center">
           Existing Products
         </Typography>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Name</TableCell>
-              <TableCell>Category</TableCell>
-              <TableCell>Price</TableCell>
-              <TableCell>Description</TableCell>
-              <TableCell>Quantity</TableCell>
-              <TableCell>Created Date</TableCell>
-              <TableCell>Action</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {products.map(product => (
-              <TableRow key={product._id}>
-                <TableCell>{product.name}</TableCell>
-                <TableCell>{product.category}</TableCell>
-                <TableCell>{product.price}</TableCell>
-                <TableCell>{product.description}</TableCell>
-                <TableCell>{product.quantity}</TableCell>
-                <TableCell>
-                  {new Date(product.createdAt).toLocaleDateString()}
-                </TableCell>
-
-                 <TableCell>
-        <Button
-          size="small"
-          variant="outlined"
-          onClick={() => {
-            setActiveProductId(product._id);
-            setShowHistory(true);
-          }}
-        >
-          History
-        </Button>
-      </TableCell>
+        {/* ✅ Scrollable table container - shows ~5-6 rows, newest at bottom */}
+        <Box sx={{ maxHeight: 350, overflowY: "auto" }}>
+          <Table stickyHeader>
+            <TableHead>
+              <TableRow>
+                <TableCell>Name</TableCell>
+                <TableCell>Category</TableCell>
+                <TableCell>Price</TableCell>
+                <TableCell>Description</TableCell>
+                <TableCell>Quantity</TableCell>
+                <TableCell>Created Date</TableCell>
+                <TableCell>Action</TableCell>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHead>
+            <TableBody>
+              {[...products]
+                .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+                .map(product => (
+                  <TableRow key={product._id}>
+                    <TableCell>{product.name}</TableCell>
+                    <TableCell>{product.category}</TableCell>
+                    <TableCell>{product.price}</TableCell>
+                    <TableCell>{product.description}</TableCell>
+                    <TableCell>{product.quantity}</TableCell>
+                    <TableCell>
+                      {new Date(product.createdAt).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => {
+                          setActiveProductId(product._id);
+                          setShowHistory(true);
+                        }}
+                      >
+                        History
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+            </TableBody>
+          </Table>
+        </Box>
       </StyledPaper>
 
       <Modal
