@@ -57,7 +57,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
   const [cashModalType, setCashModalType] = useState("add"); // "add" or "deduct"
 
   // ===== Report selectors (Daily | Monthly | Yearly) =====
-  const [reportType, setReportType] = useState("monthly");
+const [reportType, setReportType] = useState("all"); 
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
 
@@ -115,16 +115,24 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
     fetchExpenses();
   }, []);
 
-  // ===== helpers for date filters =====
-  const isInSelectedPeriod = (isoDate) => {
-    const d = new Date(isoDate);
-    const y = d.getFullYear();
-    const m = d.getMonth() + 1;
-    if (reportType === "daily") return y === selectedYear && m === selectedMonth;
-    if (reportType === "monthly") return y === selectedYear && m === selectedMonth;
-    if (reportType === "yearly") return y === selectedYear;
-    return true;
-  };
+  
+ 
+
+// Update isInSelectedPeriod function
+const isInSelectedPeriod = (isoDate) => {
+  if (reportType === "all") return true;  // Show everything by default
+  
+  const d = new Date(isoDate);
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1;
+  
+  if (reportType === "daily") return y === selectedYear && m === selectedMonth;
+  if (reportType === "monthly") return y === selectedYear && m === selectedMonth;
+  if (reportType === "yearly") return y === selectedYear;
+  return true;
+};
+
+ 
 
   const isCashOutType = (type) => {
     const t = (type || "").toLowerCase();
@@ -246,34 +254,42 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
   const [plRows, setPlRows] = useState([]);
   const [plTotals, setPlTotals] = useState(null);
 
-  useEffect(() => {
-    const fetchPL = async () => {
-      try {
-        setPlLoading(true);
-        const params = {
-          period: reportType,
-          year: selectedYear,
-        };
-        if (reportType === "daily") params.month = selectedMonth;
+useEffect(() => {
+  const fetchPL = async () => {
+    // Skip P&L fetch for "all" mode - backend doesn't support it
+    if (reportType === "all") {
+      setPlRows([]);
+      setPlTotals(null);
+      setPlLoading(false);
+      return;
+    }
 
-        const { data } = await axios.get(`${API_BASE}/reports/profit-loss`, {
-          params,
-          withCredentials: true,
-        });
+    try {
+      setPlLoading(true);
+      const params = {
+        period: reportType,
+        year: selectedYear,
+      };
+      if (reportType === "daily") params.month = selectedMonth;
 
-        setPlRows(Array.isArray(data?.rows) ? data.rows : []);
-        setPlTotals(data?.totals ?? null);
-      } catch (e) {
-        console.error("Failed to fetch Profit/Loss", e);
-        setPlRows([]);
-        setPlTotals(null);
-      } finally {
-        setPlLoading(false);
-      }
-    };
+      const { data } = await axios.get(`${API_BASE}/reports/profit-loss`, {
+        params,
+        withCredentials: true,
+      });
 
-    fetchPL();
-  }, [reportType, selectedYear, selectedMonth]);
+      setPlRows(Array.isArray(data?.rows) ? data.rows : []);
+      setPlTotals(data?.totals ?? null);
+    } catch (e) {
+      console.error("Failed to fetch Profit/Loss", e);
+      setPlRows([]);
+      setPlTotals(null);
+    } finally {
+      setPlLoading(false);
+    }
+  };
+
+  fetchPL();
+}, [reportType, selectedYear, selectedMonth]);
 
   // ✅ P&L columns with comma formatting
   const plColumns = useMemo(
@@ -847,6 +863,7 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
             onChange={(e) => setReportType(e.target.value)}
             sx={{ minWidth: 160 }}
           >
+           <MenuItem value="all">All Time</MenuItem>
             <MenuItem value="daily">Daily</MenuItem>
             <MenuItem value="monthly">Monthly</MenuItem>
             <MenuItem value="yearly">Yearly</MenuItem>
@@ -873,24 +890,27 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
           </FormControl>
         )}
 
-        <FormControl>
-          <InputLabel>Year</InputLabel>
-          <Select
-            value={selectedYear}
-            label="Year"
-            onChange={(e) => setSelectedYear(Number(e.target.value))}
-            sx={{ minWidth: 140 }}
-          >
-            {Array.from({ length: 7 }, (_, i) => {
-              const y = new Date().getFullYear() - i;
-              return (
-                <MenuItem key={y} value={y}>
-                  {y}
-                </MenuItem>
-              );
-            })}
-          </Select>
-        </FormControl>
+       {/* Only show Year selector when NOT "all" */}
+{reportType !== "all" && (
+  <FormControl>
+    <InputLabel>Year</InputLabel>
+    <Select
+      value={selectedYear}
+      label="Year"
+      onChange={(e) => setSelectedYear(Number(e.target.value))}
+      sx={{ minWidth: 140 }}
+    >
+      {Array.from({ length: 7 }, (_, i) => {
+        const y = new Date().getFullYear() - i;
+        return (
+          <MenuItem key={y} value={y}>
+            {y}
+          </MenuItem>
+        );
+      })}
+    </Select>
+  </FormControl>
+)}
       </Box>
 
       {/* ===== Profit & Loss ===== */}
@@ -909,15 +929,17 @@ const BankList = ({ banks = [], refreshBanks, cash }) => {
           justifyContent="space-between"
           mb={2}
         >
-          <Typography variant="h5" fontWeight="bold">
-            Profit &amp; Loss{" "}
-            {reportType === "daily"
-              ? `(${new Date(selectedYear, selectedMonth - 1).toLocaleString(
-                  "default",
-                  { month: "long" }
-                )} ${selectedYear})`
-              : `(${selectedYear})`}
-          </Typography>
+         <Typography variant="h5" fontWeight="bold">
+  Profit &amp; Loss{" "}
+  {reportType === "all"
+    ? "(All Time)"
+    : reportType === "daily"
+    ? `(${new Date(selectedYear, selectedMonth - 1).toLocaleString(
+        "default",
+        { month: "long" }
+      )} ${selectedYear})`
+    : `(${selectedYear})`}
+</Typography>
           {plLoading && <Typography variant="body2">Loading…</Typography>}
         </Box>
 
