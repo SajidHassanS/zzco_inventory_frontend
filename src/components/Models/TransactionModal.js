@@ -175,17 +175,17 @@ const TransactionHistoryModal = ({ open, onClose, entry, entryType, onChanged })
             <CircularProgress />
           </Box>
         ) : (
-          <TableContainer>
-            <Table size="small">
+          <TableContainer sx={{ maxHeight: 400, overflowY: 'auto' }}>
+            <Table size="small" stickyHeader>
               <TableHead>
                 <TableRow>
-                  <TableCell>Description</TableCell>
-                  <TableCell>Type</TableCell>
-                  <TableCell>Debit</TableCell>
-                  <TableCell>Credit</TableCell>
-                  <TableCell>Running Balance</TableCell>
-                  <TableCell>Date</TableCell>
-                  {isBank && <TableCell align="right">Actions</TableCell>}
+                  <TableCell sx={{ bgcolor: 'background.paper', fontWeight: 'bold' }}>Description</TableCell>
+                  <TableCell sx={{ bgcolor: 'background.paper', fontWeight: 'bold' }}>Type</TableCell>
+                  <TableCell sx={{ bgcolor: 'background.paper', fontWeight: 'bold' }}>Debit</TableCell>
+                  <TableCell sx={{ bgcolor: 'background.paper', fontWeight: 'bold' }}>Credit</TableCell>
+                  <TableCell sx={{ bgcolor: 'background.paper', fontWeight: 'bold' }}>Running Balance</TableCell>
+                  <TableCell sx={{ bgcolor: 'background.paper', fontWeight: 'bold' }}>Date</TableCell>
+                  {isBank && <TableCell sx={{ bgcolor: 'background.paper', fontWeight: 'bold' }} align="right">Actions</TableCell>}
                 </TableRow>
               </TableHead>
               <TableBody>
