@@ -697,25 +697,53 @@ const ViewExpenses = () => {
 
   useEffect(() => {
     fetchDailyBook();
-  }, [selectedDate]); // eslint-disable-line
+  }, [selectedDate, reportType, selectedMonth, selectedYear]); // eslint-disable-line
 
   useEffect(() => {
     fetchCash();
-  }, [selectedDate]); // eslint-disable-line
+  }, [selectedDate, reportType, selectedMonth, selectedYear]); // eslint-disable-line
 
   useEffect(() => {
     fetchBankTransactions();
-  }, [banks, selectedDate]); // eslint-disable-line
+  }, [banks, selectedDate, reportType, selectedMonth, selectedYear]); // eslint-disable-line
 
   useEffect(() => {
     filterEntriesByDate();
-  }, [entries, transfers, selectedDate]);
+  }, [entries, transfers, selectedDate, reportType, selectedMonth, selectedYear]);
+
+  // ── helper: compute from/to date range for the current report period ──
+  const getPeriodRange = () => {
+    if (reportType === "monthly") {
+      const [y, m] = selectedMonth.split("-");
+      const from = `${y}-${m}-01`;
+      const lastDay = new Date(Number(y), Number(m), 0).getDate();
+      const to = `${y}-${m}-${String(lastDay).padStart(2, "0")}`;
+      return { from, to };
+    }
+    if (reportType === "yearly") {
+      return { from: `${selectedYear}-01-01`, to: `${selectedYear}-12-31` };
+    }
+    // daily
+    return { from: selectedDate, to: selectedDate };
+  };
+
+  // ── period label for table headings ──
+  const getPeriodLabel = () => {
+    if (reportType === "monthly") {
+      const [y, m] = selectedMonth.split("-");
+      return new Date(Number(y), Number(m) - 1).toLocaleString("default", {
+        month: "long",
+        year: "numeric",
+      });
+    }
+    if (reportType === "yearly") return `Year ${selectedYear}`;
+    return new Date(selectedDate).toDateString();
+  };
 
   /* ----------------------------- fetch daily-book ---------------------------- */
   const fetchDailyBook = async () => {
     try {
-      const from = selectedDate;
-      const to = selectedDate;
+      const { from, to } = getPeriodRange();
 
       const { data } = await axios.get(
         `${API_URL}/daily/daily-book?from=${from}&to=${to}`,
@@ -1031,10 +1059,29 @@ const ViewExpenses = () => {
 
   /* -------------------------------- helpers --------------------------------- */
   const filterEntriesByDate = () => {
-    const sel = selectedDate;
-    const filtered = entries
-      .filter((entry) => toLocalYMD(entry.date) === sel)
-      .sort((a, b) => new Date(a.date) - new Date(b.date));
+    let filtered;
+    if (reportType === "monthly") {
+      filtered = entries
+        .filter((entry) => {
+          const dt = new Date(entry.date);
+          return (
+            `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}` ===
+            selectedMonth
+          );
+        })
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
+    } else if (reportType === "yearly") {
+      filtered = entries
+        .filter(
+          (entry) =>
+            String(new Date(entry.date).getFullYear()) === selectedYear
+        )
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
+    } else {
+      filtered = entries
+        .filter((entry) => toLocalYMD(entry.date) === selectedDate)
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
+    }
 
     setFilteredEntries(filtered);
     setPage(1);
@@ -1045,15 +1092,58 @@ const ViewExpenses = () => {
   };
 
   // ── PDF download handler ──
-  const handleDownloadPDF = () => {
+  const handleDownloadPDF = async () => {
     setPdfLoading(true);
     try {
+      let allEntries = entries; // default: already-loaded single day
+
+      if (reportType === "monthly") {
+        // Fetch the full month's data
+        const [y, m] = selectedMonth.split("-");
+        const from = `${y}-${m}-01`;
+        // Last day of month
+        const lastDay = new Date(Number(y), Number(m), 0).getDate();
+        const to = `${y}-${m}-${String(lastDay).padStart(2, "0")}`;
+        const { data } = await axios.get(
+          `${API_URL}/daily/daily-book?from=${from}&to=${to}`,
+          { withCredentials: true }
+        );
+        allEntries = (data?.rows || []).map((r) => ({
+          id: r._id,
+          date: new Date(r.date),
+          type: KIND_LABEL[r.kind] || r.kind,
+          rawKind: r.kind,
+          name: r.productName || r.description || r.counterpartyName || "-",
+          description: r.description || "",
+          amount: Number(r.amount) || 0,
+          paymentMethod: r.paymentMethod || "-",
+        }));
+      } else if (reportType === "yearly") {
+        // Fetch the full year's data
+        const from = `${selectedYear}-01-01`;
+        const to = `${selectedYear}-12-31`;
+        const { data } = await axios.get(
+          `${API_URL}/daily/daily-book?from=${from}&to=${to}`,
+          { withCredentials: true }
+        );
+        allEntries = (data?.rows || []).map((r) => ({
+          id: r._id,
+          date: new Date(r.date),
+          type: KIND_LABEL[r.kind] || r.kind,
+          rawKind: r.kind,
+          name: r.productName || r.description || r.counterpartyName || "-",
+          description: r.description || "",
+          amount: Number(r.amount) || 0,
+          paymentMethod: r.paymentMethod || "-",
+        }));
+      }
+
       generatePDF({
         reportType,
         selectedDate,
         selectedMonth,
         selectedYear,
-        allEntries: entries,
+        allEntries,
         cashData,
         bankTxns,
         banks,
@@ -1352,9 +1442,24 @@ const ViewExpenses = () => {
     saStart + saRowsPerPage
   );
 
-  /* ------------------------ CASH MOVEMENTS (this day) ----------------------- */
+  /* ------------------------ CASH MOVEMENTS (this period) ----------------------- */
   const cashRowsForDay = useMemo(() => {
-    const day = selectedDate;
+    const matchPeriod = (c) => {
+      const when =
+        c.effectiveDate || c.createdAt || c.date || c.updatedAt || Date.now();
+      const dt = new Date(when);
+      if (reportType === "monthly") {
+        return (
+          `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}` ===
+          selectedMonth
+        );
+      }
+      if (reportType === "yearly") {
+        return String(dt.getFullYear()) === selectedYear;
+      }
+      return toLocalYMD(dt) === selectedDate;
+    };
+
     const asc = [...(cashData.allEntries || [])]
       .map((c) => {
         const when =
@@ -1365,7 +1470,7 @@ const ViewExpenses = () => {
           Date.now();
         return { ...c, _ts: new Date(when) };
       })
-      .filter((c) => toLocalYMD(c._ts) === day)
+      .filter(matchPeriod)
       .sort((a, b) => a._ts - b._ts);
 
     let bal = 0;
@@ -1388,7 +1493,7 @@ const ViewExpenses = () => {
     });
 
     return out;
-  }, [cashData, selectedDate, cashDescById]);
+  }, [cashData, selectedDate, reportType, selectedMonth, selectedYear, cashDescById]);
 
   // ✅ Cash columns with comma formatting
   const cashColumns = [
@@ -1431,13 +1536,25 @@ const ViewExpenses = () => {
   const cStart = (cPage - 1) * cRowsPerPage;
   const cashRowsPaged = cashRowsForDay.slice(cStart, cStart + cRowsPerPage);
 
-  /* ---------------------- BANK TRANSACTIONS (this day) ---------------------- */
+  /* ---------------------- BANK TRANSACTIONS (this period) ---------------------- */
   const bankRowsForDay = useMemo(() => {
-    const day = selectedDate;
+    const matchPeriod = (d) => {
+      if (reportType === "monthly") {
+        return (
+          `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` ===
+          selectedMonth
+        );
+      }
+      if (reportType === "yearly") {
+        return String(d.getFullYear()) === selectedYear;
+      }
+      return toLocalYMD(d) === selectedDate;
+    };
+
     const byBank = new Map();
     for (const tx of bankTxns) {
       const d = new Date(tx.date || tx.createdAt || 0);
-      if (toLocalYMD(d) !== day) continue;
+      if (!matchPeriod(d)) continue;
       const list = byBank.get(tx.bankID) || [];
       list.push({ ...tx, _date: d });
       byBank.set(tx.bankID, list);
@@ -1469,7 +1586,7 @@ const ViewExpenses = () => {
       }
     }
     return out.sort((a, b) => a.date - b.date);
-  }, [bankTxns, banks, selectedDate]);
+  }, [bankTxns, banks, selectedDate, reportType, selectedMonth, selectedYear]);
 
   // ✅ Bank columns with comma formatting
   const bankColumns = [
@@ -1538,21 +1655,70 @@ const ViewExpenses = () => {
   /* --------------------------------- render -------------------------------- */
   return (
     <Container>
-      {/* Date & Add Expense */}
+      {/* ── Report Period Selector + Add Expense ── */}
       <Box
         display="flex"
         justifyContent="space-between"
         alignItems="center"
+        flexWrap="wrap"
+        gap={2}
         mt={2}
         mb={2}
       >
-        <TextField
-          label="Select Date"
-          type="date"
-          value={selectedDate}
-          onChange={(e) => setSelectedDate(e.target.value)}
-          InputLabelProps={{ shrink: true }}
-        />
+        {/* Left: toggle + date picker */}
+        <Box display="flex" alignItems="center" gap={2} flexWrap="wrap">
+          <ToggleButtonGroup
+            value={reportType}
+            exclusive
+            onChange={(_e, v) => {
+              if (v) setReportType(v);
+            }}
+            size="small"
+          >
+            <ToggleButton value="daily">Daily</ToggleButton>
+            <ToggleButton value="monthly">Monthly</ToggleButton>
+            <ToggleButton value="yearly">Yearly</ToggleButton>
+          </ToggleButtonGroup>
+
+          {reportType === "daily" && (
+            <TextField
+              label="Select Date"
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+            />
+          )}
+
+          {reportType === "monthly" && (
+            <TextField
+              label="Month"
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+            />
+          )}
+
+          {reportType === "yearly" && (
+            <FormControl sx={{ minWidth: 140 }}>
+              <InputLabel>Year</InputLabel>
+              <Select
+                value={selectedYear}
+                label="Year"
+                onChange={(e) => setSelectedYear(e.target.value)}
+              >
+                {yearOptions.map((y) => (
+                  <MenuItem key={y} value={y}>
+                    {y}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+        </Box>
+
+        {/* Right: Add Expense button */}
         <Button variant="contained" color="primary" onClick={openAdd}>
           Add Expense
         </Button>
@@ -1570,69 +1736,7 @@ const ViewExpenses = () => {
             Download Report as PDF
           </Typography>
 
-          <Box
-            display="flex"
-            alignItems="center"
-            gap={2}
-            flexWrap="wrap"
-            mt={1}
-          >
-            {/* Report type toggle */}
-            <ToggleButtonGroup
-              value={reportType}
-              exclusive
-              onChange={(_e, v) => {
-                if (v) setReportType(v);
-              }}
-              size="small"
-            >
-              <ToggleButton value="daily">Daily</ToggleButton>
-              <ToggleButton value="monthly">Monthly</ToggleButton>
-              <ToggleButton value="yearly">Yearly</ToggleButton>
-            </ToggleButtonGroup>
-
-            {/* Daily: reuses the date already selected above */}
-            {reportType === "daily" && (
-              <TextField
-                label="Date"
-                type="date"
-                size="small"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                InputLabelProps={{ shrink: true }}
-              />
-            )}
-
-            {/* Monthly picker */}
-            {reportType === "monthly" && (
-              <TextField
-                label="Month"
-                type="month"
-                size="small"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                InputLabelProps={{ shrink: true }}
-              />
-            )}
-
-            {/* Yearly picker */}
-            {reportType === "yearly" && (
-              <FormControl size="small" sx={{ minWidth: 120 }}>
-                <InputLabel>Year</InputLabel>
-                <Select
-                  value={selectedYear}
-                  label="Year"
-                  onChange={(e) => setSelectedYear(e.target.value)}
-                >
-                  {yearOptions.map((y) => (
-                    <MenuItem key={y} value={y}>
-                      {y}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            )}
-
+          <Box display="flex" alignItems="center" gap={2} mt={1} flexWrap="wrap">
             <Button
               variant="contained"
               color="error"
@@ -1640,22 +1744,18 @@ const ViewExpenses = () => {
               onClick={handleDownloadPDF}
               disabled={pdfLoading}
             >
-              {pdfLoading ? "Generating…" : "Download PDF"}
+              {pdfLoading ? "Generating…" : `Download ${reportType.charAt(0).toUpperCase() + reportType.slice(1)} PDF`}
             </Button>
-          </Box>
 
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{ mt: 1, display: "block" }}
-          >
-            {reportType === "daily" &&
-              `Daily report for ${new Date(selectedDate).toDateString()}`}
-            {reportType === "monthly" &&
-              `Monthly report for ${selectedMonth} — includes summary by transaction type`}
-            {reportType === "yearly" &&
-              `Yearly report for ${selectedYear} — includes month-by-month breakdown`}
-          </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {reportType === "daily" &&
+                `Daily report for ${new Date(selectedDate).toDateString()}`}
+              {reportType === "monthly" &&
+                `Monthly report for ${getPeriodLabel()} — includes summary by transaction type`}
+              {reportType === "yearly" &&
+                `Yearly report for ${selectedYear} — includes month-by-month breakdown`}
+            </Typography>
+          </Box>
         </CardContent>
       </Card>
 
@@ -1663,12 +1763,12 @@ const ViewExpenses = () => {
       <Card sx={{ mt: 3 }}>
         <CardContent>
           <Typography variant="h5" gutterBottom>
-            Daily Book for {new Date(selectedDate).toDateString()}
+            Daily Book — {getPeriodLabel()}
           </Typography>
 
           {mainFilteredEntries.length === 0 ? (
             <Typography variant="body1">
-              No entries for the selected date.
+              No entries for the selected period.
             </Typography>
           ) : (
             <CustomTable
@@ -1697,12 +1797,12 @@ const ViewExpenses = () => {
       <Card sx={{ mt: 3 }}>
         <CardContent>
           <Typography variant="h5" gutterBottom>
-            Warehouse Transfers ({new Date(selectedDate).toDateString()})
+            Warehouse Transfers — {getPeriodLabel()}
           </Typography>
 
           {tRowsForDay.length === 0 ? (
             <Typography variant="body1">
-              No transfers for the selected date.
+              No transfers for the selected period.
             </Typography>
           ) : (
             <CustomTable
@@ -1735,8 +1835,7 @@ const ViewExpenses = () => {
             gutterBottom
             sx={{ display: "flex", alignItems: "center", gap: 1 }}
           >
-            📦 Stock Arrivals - International (
-            {new Date(selectedDate).toDateString()})
+            📦 Stock Arrivals - International — {getPeriodLabel()}
           </Typography>
           <Typography variant="body2" color="text.secondary" gutterBottom>
             Products received from international shipping
@@ -1744,7 +1843,7 @@ const ViewExpenses = () => {
 
           {saTotal === 0 ? (
             <Typography variant="body1">
-              No stock arrivals for the selected date.
+              No stock arrivals for the selected period.
             </Typography>
           ) : (
             <CustomTable
