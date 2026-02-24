@@ -225,10 +225,37 @@ const generatePDF = ({
   // ════════════════════════════════════════════════
   // SECTION 2 – Cash Movements
   // ════════════════════════════════════════════════
-  const cashEntries = (cashData.allEntries || []).filter((c) => {
+  const getPeriodStart = () => {
+    if (reportType === "monthly") {
+      const [y, m] = selectedMonth.split("-");
+      return new Date(Number(y), Number(m) - 1, 1);
+    }
+    if (reportType === "yearly") return new Date(Number(selectedYear), 0, 1);
+    const d = new Date(selectedDate);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+
+  const periodStart = getPeriodStart();
+
+  const allCash = (cashData.allEntries || []).map((c) => {
     const when = c.effectiveDate || c.createdAt || c.date || c.updatedAt;
-    return when && matchFn(when);
+    return { ...c, _ts: new Date(when) };
   });
+
+  const openingBalCash = allCash
+    .filter((c) => c._ts < periodStart)
+    .reduce((sum, c) => {
+      const type = toPM(c.type);
+      const amt = Math.abs(toNum(c.amount ?? c.balance));
+      const credit = CREDIT_TYPES.has(type) ? amt : 0;
+      const debit = DEBIT_TYPES.has(type) ? amt : 0;
+      return sum + (credit - debit);
+    }, 0);
+
+  const cashEntries = allCash
+    .filter((c) => matchFn(c._ts))
+    .sort((a, b) => a._ts - b._ts);
 
   if (curY > 480) {
     doc.addPage();
@@ -239,20 +266,16 @@ const generatePDF = ({
   if (cashEntries.length === 0) {
     doc.setFontSize(9);
     doc.setTextColor(120, 120, 120);
+    doc.text(`Opening Balance: ${formatNumber(openingBalCash)}`, 40, curY);
+    curY += 14;
     doc.text("No cash movements found for this period.", 40, curY);
     curY += 18;
   } else {
-    const sorted = [...cashEntries].sort(
-      (a, b) =>
-        new Date(a.effectiveDate || a.createdAt || 0) -
-        new Date(b.effectiveDate || b.createdAt || 0)
-    );
-
-    let runBal = 0;
+    let runBal = openingBalCash;
     let totalDebit = 0;
     let totalCredit = 0;
 
-    const body = sorted.map((c) => {
+    const body = cashEntries.map((c) => {
       const type = toPM(c.type);
       const amt = Math.abs(toNum(c.amount ?? c.balance));
       const credit = CREDIT_TYPES.has(type) ? amt : 0;
@@ -261,7 +284,7 @@ const generatePDF = ({
       totalDebit += debit;
       totalCredit += credit;
       return [
-        new Date(c.effectiveDate || c.createdAt || 0).toLocaleDateString(),
+        c._ts.toLocaleDateString(),
         type,
         c.description || c.note || "-",
         debit ? formatNumber(debit) : "",
@@ -269,6 +292,11 @@ const generatePDF = ({
         formatNumber(runBal),
       ];
     });
+
+    doc.setFontSize(8);
+    doc.setTextColor(80, 80, 80);
+    doc.text(`Opening Balance: ${formatNumber(openingBalCash)}`, 40, curY);
+    curY += 12;
 
     autoTable(doc, {
       startY: curY,
@@ -283,7 +311,7 @@ const generatePDF = ({
           "TOTAL",
           formatNumber(totalDebit),
           formatNumber(totalCredit),
-          "",
+          `End: ${formatNumber(runBal)}`,
         ],
       ],
       styles: { fontSize: 7.5, cellPadding: 3 },
@@ -304,16 +332,61 @@ const generatePDF = ({
         }
       },
     });
-    curY = doc.lastAutoTable.finalY + 24;
   }
 
   // ════════════════════════════════════════════════
   // SECTION 3 – Bank Transactions
   // ════════════════════════════════════════════════
-  const bankFiltered = bankTxns.filter((t) => {
-    const d = t.date || t.createdAt || 0;
-    return matchFn(d);
-  });
+  // ════════════════════════════════════════════════
+  // SECTION 3 – Bank Transactions
+  // ════════════════════════════════════════════════
+  const allBank = bankTxns.map((tx) => ({
+    ...tx,
+    _date: new Date(tx.date || tx.createdAt || 0),
+  }));
+
+  const byBankPdf = new Map();
+  const openingBalsBank = new Map();
+
+  for (const tx of allBank) {
+    if (tx._date < periodStart) {
+      const ttype = toPM(tx.type);
+      const amt = Math.abs(toNum(tx.amount));
+      const credit = CREDIT_TYPES.has(ttype) ? amt : 0;
+      const debit = DEBIT_TYPES.has(ttype) ? amt : 0;
+      const current = openingBalsBank.get(tx.bankID) || 0;
+      openingBalsBank.set(tx.bankID, current + (credit - debit));
+    } else if (matchFn(tx._date)) {
+      const list = byBankPdf.get(tx.bankID) || [];
+      list.push(tx);
+      byBankPdf.set(tx.bankID, list);
+    }
+  }
+
+  const bankRowsPdf = [];
+  for (const [bankId, list] of byBankPdf) {
+    list.sort((a, b) => a._date - b._date);
+    let bal = openingBalsBank.get(bankId) || 0;
+    for (const t of list) {
+      const ttype = toPM(t.type);
+      const amt = Math.abs(toNum(t.amount));
+      const credit = CREDIT_TYPES.has(ttype) ? amt : 0;
+      const debit = DEBIT_TYPES.has(ttype) ? amt : 0;
+      bal += credit - debit;
+      bankRowsPdf.push({
+        ...t,
+        debit,
+        credit,
+        running: bal,
+        bankName:
+          t.bankName ||
+          banks.find((b) => String(b._id) === String(bankId))?.bankName ||
+          "-",
+      });
+    }
+  }
+
+  bankRowsPdf.sort((a, b) => a._date - b._date);
 
   if (curY > 480) {
     doc.addPage();
@@ -321,45 +394,34 @@ const generatePDF = ({
   }
   curY = drawHeading("Bank Transactions", curY);
 
-  if (bankFiltered.length === 0) {
+  if (bankRowsPdf.length === 0) {
     doc.setFontSize(9);
     doc.setTextColor(120, 120, 120);
     doc.text("No bank transactions found for this period.", 40, curY);
     curY += 18;
   } else {
-    const sorted = [...bankFiltered].sort(
-      (a, b) =>
-        new Date(a.date || a.createdAt || 0) -
-        new Date(b.date || b.createdAt || 0)
-    );
-
     let totalDebit = 0;
     let totalCredit = 0;
 
-    const body = sorted.map((t) => {
-      const type = toPM(t.type);
-      const amt = Math.abs(toNum(t.amount));
-      const credit = CREDIT_TYPES.has(type) ? amt : 0;
-      const debit = DEBIT_TYPES.has(type) ? amt : 0;
-      totalDebit += debit;
-      totalCredit += credit;
-      const bankName =
-        t.bankName ||
-        banks.find((b) => String(b._id) === String(t.bankID))?.bankName ||
-        "-";
+    const body = bankRowsPdf.map((t) => {
+      totalDebit += t.debit;
+      totalCredit += t.credit;
       return [
-        new Date(t.date || t.createdAt || 0).toLocaleDateString(),
-        bankName,
+        t._date.toLocaleDateString(),
+        t.bankName,
         t.type || "-",
         t.description || "-",
-        debit ? formatNumber(debit) : "",
-        credit ? formatNumber(credit) : "",
+        t.debit ? formatNumber(t.debit) : "",
+        t.credit ? formatNumber(t.credit) : "",
+        formatNumber(t.running),
       ];
     });
 
     autoTable(doc, {
       startY: curY,
-      head: [["Date", "Bank", "Type", "Description", "Debit", "Credit"]],
+      head: [
+        ["Date", "Bank", "Type", "Description", "Debit", "Credit", "Running"],
+      ],
       body,
       foot: [
         [
@@ -369,6 +431,7 @@ const generatePDF = ({
           "TOTAL",
           formatNumber(totalDebit),
           formatNumber(totalCredit),
+          "",
         ],
       ],
       styles: { fontSize: 7.5, cellPadding: 3 },
@@ -377,6 +440,7 @@ const generatePDF = ({
       columnStyles: {
         4: { halign: "right" },
         5: { halign: "right" },
+        6: { halign: "right" },
       },
       margin: { left: 40, right: 40 },
       didParseCell: (data) => {
@@ -1319,6 +1383,16 @@ const ViewExpenses = () => {
       key: `${entry.id}-${entry.date}-${entry.description}`,
     }));
 
+  const periodSummary = useMemo(() => {
+    let totalDebit = 0;
+    let totalCredit = 0;
+    mainFilteredEntries.forEach((e) => {
+      if (e.amount < 0) totalDebit += Math.abs(e.amount);
+      else totalCredit += e.amount;
+    });
+    return { totalDebit, totalCredit, net: totalCredit - totalDebit };
+  }, [mainFilteredEntries]);
+
   /* --------------------------- transfers table cols -------------------------- */
   const tColumns = [
     {
@@ -1338,8 +1412,22 @@ const ViewExpenses = () => {
   ];
 
   const tRowsForDay = useMemo(() => {
+    const matchPeriod = (d) => {
+      const dt = new Date(d);
+      if (reportType === "monthly") {
+        return (
+          `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}` ===
+          selectedMonth
+        );
+      }
+      if (reportType === "yearly") {
+        return String(dt.getFullYear()) === selectedYear;
+      }
+      return toLocalYMD(dt) === selectedDate;
+    };
+
     return transfers
-      .filter((t) => toLocalYMD(t.date) === selectedDate)
+      .filter((t) => matchPeriod(t.date))
       .sort((a, b) => new Date(a.date) - new Date(b.date))
       .map((t) => ({
         id: t.id,
@@ -1354,7 +1442,7 @@ const ViewExpenses = () => {
         qty: t.quantity ?? "",
         note: t.description || "",
       }));
-  }, [transfers, selectedDate]);
+  }, [transfers, selectedDate, reportType, selectedMonth, selectedYear]);
 
   const tTotal = tRowsForDay.length;
   const tStart = (tPage - 1) * tRowsPerPage;
@@ -1444,10 +1532,21 @@ const ViewExpenses = () => {
 
   /* ------------------------ CASH MOVEMENTS (this period) ----------------------- */
   const cashRowsForDay = useMemo(() => {
-    const matchPeriod = (c) => {
-      const when =
-        c.effectiveDate || c.createdAt || c.date || c.updatedAt || Date.now();
-      const dt = new Date(when);
+    const startOfPeriod = () => {
+      if (reportType === "monthly") {
+        const [y, m] = selectedMonth.split("-");
+        return new Date(Number(y), Number(m) - 1, 1);
+      }
+      if (reportType === "yearly") {
+        return new Date(Number(selectedYear), 0, 1);
+      }
+      return new Date(selectedDate);
+    };
+
+    const start = startOfPeriod();
+    start.setHours(0, 0, 0, 0);
+
+    const matchPeriod = (dt) => {
       if (reportType === "monthly") {
         return (
           `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}` ===
@@ -1460,21 +1559,29 @@ const ViewExpenses = () => {
       return toLocalYMD(dt) === selectedDate;
     };
 
-    const asc = [...(cashData.allEntries || [])]
-      .map((c) => {
-        const when =
-          c.effectiveDate ||
-          c.createdAt ||
-          c.date ||
-          c.updatedAt ||
-          Date.now();
-        return { ...c, _ts: new Date(when) };
-      })
-      .filter(matchPeriod)
+    const all = (cashData.allEntries || []).map((c) => {
+      const when =
+        c.effectiveDate || c.createdAt || c.date || c.updatedAt || Date.now();
+      return { ...c, _ts: new Date(when) };
+    });
+
+    // Calculate Opening Balance (all items before start)
+    const openingBal = all
+      .filter((c) => c._ts < start)
+      .reduce((sum, c) => {
+        const type = toPM(c.type);
+        const amt = Math.abs(toNum(c.amount ?? c.balance));
+        const credit = CREDIT_TYPES.has(type) ? amt : 0;
+        const debit = DEBIT_TYPES.has(type) ? amt : 0;
+        return sum + (credit - debit);
+      }, 0);
+
+    const periodItems = all
+      .filter((c) => matchPeriod(c._ts))
       .sort((a, b) => a._ts - b._ts);
 
-    let bal = 0;
-    const out = asc.map((c) => {
+    let bal = openingBal;
+    const out = periodItems.map((c) => {
       const type = toPM(c.type);
       const amt = Math.abs(toNum(c.amount ?? c.balance));
       const credit = CREDIT_TYPES.has(type) ? amt : 0;
@@ -1492,7 +1599,7 @@ const ViewExpenses = () => {
       };
     });
 
-    return out;
+    return { rows: out, openingBal };
   }, [cashData, selectedDate, reportType, selectedMonth, selectedYear, cashDescById]);
 
   // ✅ Cash columns with comma formatting
@@ -1526,18 +1633,32 @@ const ViewExpenses = () => {
     },
     {
       field: "running",
-      headerName: "Day Running",
+      headerName: "Running Balance",
       renderCell: (r) =>
         Number.isFinite(r.running) ? formatNumber(r.running) : "",
     },
   ];
 
-  const cTotal = cashRowsForDay.length;
+  const cTotal = cashRowsForDay.rows.length;
   const cStart = (cPage - 1) * cRowsPerPage;
-  const cashRowsPaged = cashRowsForDay.slice(cStart, cStart + cRowsPerPage);
+  const cashRowsPaged = cashRowsForDay.rows.slice(cStart, cStart + cRowsPerPage);
 
   /* ---------------------- BANK TRANSACTIONS (this period) ---------------------- */
   const bankRowsForDay = useMemo(() => {
+    const startOfPeriod = () => {
+      if (reportType === "monthly") {
+        const [y, m] = selectedMonth.split("-");
+        return new Date(Number(y), Number(m) - 1, 1);
+      }
+      if (reportType === "yearly") {
+        return new Date(Number(selectedYear), 0, 1);
+      }
+      return new Date(selectedDate);
+    };
+
+    const start = startOfPeriod();
+    start.setHours(0, 0, 0, 0);
+
     const matchPeriod = (d) => {
       if (reportType === "monthly") {
         return (
@@ -1551,19 +1672,34 @@ const ViewExpenses = () => {
       return toLocalYMD(d) === selectedDate;
     };
 
+    const allWithDate = bankTxns.map((tx) => ({
+      ...tx,
+      _date: new Date(tx.date || tx.createdAt || 0),
+    }));
+
     const byBank = new Map();
-    for (const tx of bankTxns) {
-      const d = new Date(tx.date || tx.createdAt || 0);
-      if (!matchPeriod(d)) continue;
-      const list = byBank.get(tx.bankID) || [];
-      list.push({ ...tx, _date: d });
-      byBank.set(tx.bankID, list);
+    const openingBals = new Map();
+
+    // Group items for period and calculate opening balls
+    for (const tx of allWithDate) {
+      if (tx._date < start) {
+        const ttype = toPM(tx.type);
+        const amt = Math.abs(toNum(tx.amount));
+        const credit = CREDIT_TYPES.has(ttype) ? amt : 0;
+        const debit = DEBIT_TYPES.has(ttype) ? amt : 0;
+        const current = openingBals.get(tx.bankID) || 0;
+        openingBals.set(tx.bankID, current + (credit - debit));
+      } else if (matchPeriod(tx._date)) {
+        const list = byBank.get(tx.bankID) || [];
+        list.push(tx);
+        byBank.set(tx.bankID, list);
+      }
     }
 
     const out = [];
     for (const [bankId, list] of byBank) {
       list.sort((a, b) => a._date - b._date);
-      let bal = 0;
+      let bal = openingBals.get(bankId) || 0;
       for (const t of list) {
         const ttype = toPM(t.type);
         const amt = Math.abs(toNum(t.amount));
@@ -1637,7 +1773,7 @@ const ViewExpenses = () => {
     },
     {
       field: "running",
-      headerName: "Bank Day Running",
+      headerName: "Running Balance",
       renderCell: (r) =>
         Number.isFinite(r.running) ? formatNumber(r.running) : "",
     },
@@ -1759,6 +1895,35 @@ const ViewExpenses = () => {
         </CardContent>
       </Card>
 
+      {/* =========================== Period Summary =========================== */}
+      <Card sx={{ mb: 3, border: "1px solid #e0e0e0", background: "#f0f7ff" }}>
+        <CardContent>
+          <Typography variant="h6" color="primary" gutterBottom>
+            Summary for {getPeriodLabel()}
+          </Typography>
+          <Grid container spacing={4}>
+            <Grid item xs={12} sm={4}>
+              <Typography variant="caption" color="text.secondary">Total Credit (Income)</Typography>
+              <Typography variant="h5" color="green">
+                {formatNumber(periodSummary.totalCredit)}
+              </Typography>
+            </Grid>
+            <Grid item xs={12} sm={4}>
+              <Typography variant="caption" color="text.secondary">Total Debit (Expense)</Typography>
+              <Typography variant="h5" color="error">
+                {formatNumber(periodSummary.totalDebit)}
+              </Typography>
+            </Grid>
+            <Grid item xs={12} sm={4}>
+              <Typography variant="caption" color="text.secondary">Net Change</Typography>
+              <Typography variant="h5" color={periodSummary.net >= 0 ? "primary" : "error"}>
+                {formatNumber(periodSummary.net)}
+              </Typography>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
+
       {/* =========================== Main Daily Book =========================== */}
       <Card sx={{ mt: 3 }}>
         <CardContent>
@@ -1872,16 +2037,21 @@ const ViewExpenses = () => {
       <Card sx={{ mt: 3 }}>
         <CardContent>
           <Typography variant="h5" gutterBottom>
-            Cash Movements ({new Date(selectedDate).toDateString()})
+            Cash Movements — {getPeriodLabel()}
           </Typography>
           {/* ✅ Cash Total with comma formatting */}
-          <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-            Current Cash Total: {formatNumber(cashData.totalBalance || 0)}
-          </Typography>
+          <Box display="flex" justifyContent="space-between" alignItems="center">
+            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+              Cash at Start: {formatNumber(cashRowsForDay.openingBal)}
+            </Typography>
+            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+              Current Cash Total: {formatNumber(cashData.totalBalance || 0)}
+            </Typography>
+          </Box>
 
           {cTotal === 0 ? (
             <Typography variant="body1">
-              No cash movements for the selected date.
+              No cash movements for the selected period.
             </Typography>
           ) : (
             <CustomTable
@@ -1910,12 +2080,12 @@ const ViewExpenses = () => {
       <Card sx={{ mt: 3, mb: 6 }}>
         <CardContent>
           <Typography variant="h5" gutterBottom>
-            Bank Transactions ({new Date(selectedDate).toDateString()})
+            Bank Transactions — {getPeriodLabel()}
           </Typography>
 
           {bTotal === 0 ? (
             <Typography variant="body1">
-              No bank transactions for the selected date.
+              No bank transactions for the selected period.
             </Typography>
           ) : (
             <CustomTable
