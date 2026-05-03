@@ -619,7 +619,7 @@ useEffect(() => {
       <Typography variant="h4" gutterBottom>
         Cheques (Pending &amp; Cleared)
       </Typography>
-
+ 
       <Stack spacing={2} sx={{ mb: 2 }}>
         {todayCheques.length > 0 && (
           <Alert severity="warning">
@@ -687,6 +687,7 @@ useEffect(() => {
             <TableHead>
               <TableRow>
                 <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Date</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>User Name</TableCell>
                 <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Description</TableCell>
                 <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Type</TableCell>
                 <TableCell sx={{ fontWeight: 'bold', bgcolor: '#1976d2', color: 'white' }}>Amount</TableCell>
@@ -701,6 +702,9 @@ useEffect(() => {
                 <TableRow key={row._id || index} hover>
                   <TableCell>
                     {new Date(row.chequeDate || row.date).toLocaleDateString()}
+                  </TableCell>
+                  <TableCell sx={{ maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {row.userName || "—"}
                   </TableCell>
                   <TableCell sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {row.name}
