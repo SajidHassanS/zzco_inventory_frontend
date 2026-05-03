@@ -74,6 +74,7 @@ const ChequeDetails = () => {
   const [transferTo, setTransferTo] = useState("");
   const [transferToId, setTransferToId] = useState("");
   const [transferDescription, setTransferDescription] = useState("");
+  const [isTransferring, setIsTransferring] = useState(false);
   const [customers, setCustomers] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
 
@@ -425,6 +426,7 @@ useEffect(() => {
       return;
     }
 
+    setIsTransferring(true);
     try {
       await axios.post(
         `${API_URL}/transfer/${selectedChequeForTransfer._id}`,
@@ -450,6 +452,8 @@ useEffect(() => {
         "Failed to transfer cheque";
       console.error(msg);
       toast.error(msg);
+    } finally {
+      setIsTransferring(false);
     }
   };
 
@@ -1029,14 +1033,15 @@ useEffect(() => {
               color="primary"
               onClick={handleTransferSubmit}
               fullWidth
-              disabled={!transferTo || !transferToId}
+              disabled={!transferTo || !transferToId || isTransferring}
             >
-              Transfer
+              {isTransferring ? "Transferring..." : "Transfer"}
             </Button>
             <Button
               variant="outlined"
               onClick={handleCloseTransferModal}
               fullWidth
+              disabled={isTransferring}
             >
               Cancel
             </Button>
