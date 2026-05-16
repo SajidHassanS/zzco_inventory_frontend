@@ -276,6 +276,35 @@ useEffect(() => {
         const row = allCheques.find((c) => c._id === chequeId);
         if (!row) continue;
 
+        const amount = Number(row.amount) || 0;
+        const description = `Cheque cleared: ${row.name || row.description || ""}`;
+        const payOut = isPayOutCheque(row);
+        const transactionType = payOut ? "subtract" : "add";
+        const cashType = payOut ? "deduct" : "add";
+
+        // Step 1: bank/cash transaction FIRST — if this fails, cheque stays pending (safe)
+        if (methodToUse === "bank") {
+          const savedBankId = getChequeBankId(row);
+          const bankIdToUse = savedBankId || selectedBankId;
+
+          if (!bankIdToUse) {
+            throw new Error(`No bank selected for cheque: ${row.name || row._id}`);
+          }
+
+          await axios.post(
+            `${BACKEND_URL}api/banks/${bankIdToUse}/transaction`,
+            { amount, type: transactionType, description },
+            { withCredentials: true }
+          );
+        } else if (methodToUse === "cash") {
+          await axios.post(
+            `${BACKEND_URL}api/cash/add`,
+            { balance: amount, type: cashType, description },
+            { withCredentials: true }
+          );
+        }
+
+        // Step 2: mark cheque as cleared ONLY after bank/cash succeeded
         await dispatch(
           updateChequeStatus({
             id: row._id,
@@ -283,44 +312,6 @@ useEffect(() => {
             skipBankProcessing: true,
           })
         ).unwrap();
-
-        const amount = Number(row.amount) || 0;
-        const description = `Cheque cleared: ${
-          row.name || row.description || ""
-        }`;
-
-        const payOut = isPayOutCheque(row);
-        const transactionType = payOut ? "subtract" : "add";
-        const cashType = payOut ? "deduct" : "add";
-
-        if (methodToUse === "bank") {
-          const savedBankId = getChequeBankId(row);
-          const bankIdToUse = savedBankId || selectedBankId;
-
-          if (!bankIdToUse) {
-            throw new Error("No bank selected for one of the cheques");
-          }
-
-          await axios.post(
-            `${BACKEND_URL}api/banks/${bankIdToUse}/transaction`,
-            {
-              amount,
-              type: transactionType,
-              description,
-            },
-            { withCredentials: true }
-          );
-        } else if (methodToUse === "cash") {
-          await axios.post(
-            `${BACKEND_URL}api/cash/add`,
-            {
-              balance: amount,
-              type: cashType,
-              description,
-            },
-            { withCredentials: true }
-          );
-        }
       }
 
       await dispatch(getPendingCheques({ status: "all" }));
