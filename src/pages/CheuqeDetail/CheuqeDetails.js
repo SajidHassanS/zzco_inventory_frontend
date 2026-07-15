@@ -78,10 +78,16 @@ const ChequeDetails = () => {
   const [customers, setCustomers] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
 
-  // ✅ NEW: DELETE STATE
+  // DELETE STATE
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [chequeToDelete, setChequeToDelete] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // EDIT IMAGE STATE
+  const [editImageModal, setEditImageModal] = useState(false);
+  const [editingCheque, setEditingCheque] = useState(null);
+  const [newImageFile, setNewImageFile] = useState(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 // ✅ DATE FILTER STATE
 const [filterDate, setFilterDate] = useState("");
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -458,6 +464,34 @@ useEffect(() => {
 
   const handleCloseModal = () => setSelectedImage(null);
 
+  const handleEditImageClick = (cheque) => {
+    setEditingCheque(cheque);
+    setNewImageFile(null);
+    setEditImageModal(true);
+  };
+
+  const handleEditImageSubmit = async () => {
+    if (!newImageFile) { toast.error("Please select an image"); return; }
+    setIsUploadingImage(true);
+    try {
+      const formData = new FormData();
+      formData.append("image", newImageFile);
+      await axios.patch(`${API_URL}/${editingCheque._id}/image`, formData, {
+        withCredentials: true,
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      await dispatch(getPendingCheques({ status: "all" }));
+      toast.success("Image updated successfully");
+      setEditImageModal(false);
+      setEditingCheque(null);
+      setNewImageFile(null);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Failed to update image");
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
   // ✅ NEW: Delete handlers
   const handleDeleteClick = (cheque) => {
     setChequeToDelete(cheque);
@@ -709,19 +743,29 @@ useEffect(() => {
                   <TableCell>{renderStatus(row)}</TableCell>
                   <TableCell>{renderSelectCheckbox(row)}</TableCell>
                   <TableCell>
-                    {row.chequeImage?.filePath ? (
+                    <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
+                      {row.chequeImage?.filePath ? (
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={() => setSelectedImage(row.chequeImage.filePath)}
+                        >
+                          View
+                        </Button>
+                      ) : (
+                        <Typography variant="body2" color="textSecondary">
+                          No Image
+                        </Typography>
+                      )}
                       <Button
                         variant="outlined"
                         size="small"
-                        onClick={() => setSelectedImage(row.chequeImage.filePath)}
+                        color="warning"
+                        onClick={() => handleEditImageClick(row)}
                       >
-                        View
+                        Edit
                       </Button>
-                    ) : (
-                      <Typography variant="body2" color="textSecondary">
-                        No Image
-                      </Typography>
-                    )}
+                    </Box>
                   </TableCell>
                   <TableCell>{renderActions(row)}</TableCell>
                 </TableRow>
@@ -1040,7 +1084,50 @@ useEffect(() => {
         </Box>
       </Modal>
 
-      {/* ✅ NEW: DELETE CONFIRMATION DIALOG */}
+      {/* EDIT IMAGE MODAL */}
+      <Modal open={editImageModal} onClose={() => !isUploadingImage && setEditImageModal(false)}>
+        <Box sx={{
+          position: "absolute", top: "50%", left: "50%",
+          transform: "translate(-50%, -50%)",
+          width: 380, bgcolor: "background.paper", boxShadow: 24, p: 4, borderRadius: 2,
+        }}>
+          <Typography variant="h6" gutterBottom>Update Cheque Image</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            {editingCheque?.name} — Rs {Number(editingCheque?.amount || 0).toLocaleString()}
+          </Typography>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => setNewImageFile(e.target.files[0])}
+            style={{ marginBottom: 16 }}
+          />
+          {newImageFile && (
+            <img
+              src={URL.createObjectURL(newImageFile)}
+              alt="preview"
+              style={{ width: "100%", maxHeight: 200, objectFit: "contain", marginBottom: 16 }}
+            />
+          )}
+          <Box sx={{ display: "flex", gap: 2 }}>
+            <Button
+              variant="contained" fullWidth
+              onClick={handleEditImageSubmit}
+              disabled={isUploadingImage || !newImageFile}
+            >
+              {isUploadingImage ? "Uploading..." : "Save Image"}
+            </Button>
+            <Button
+              variant="outlined" fullWidth
+              onClick={() => setEditImageModal(false)}
+              disabled={isUploadingImage}
+            >
+              Cancel
+            </Button>
+          </Box>
+        </Box>
+      </Modal>
+
+      {/* DELETE CONFIRMATION DIALOG */}
       <Dialog open={deleteDialogOpen} onClose={handleCloseDeleteDialog}>
         <DialogTitle sx={{ color: '#d32f2f' }}>
           🗑️ Delete Cancelled Cheque

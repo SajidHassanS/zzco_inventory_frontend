@@ -297,11 +297,13 @@ const AddProduct = () => {
     }
 
     const res = await dispatch(createProduct(formData));
-    if (res.payload && !res.error) {
+    if (createProduct.fulfilled.match(res)) {
       toast.success(isOwnInventory ? "Own inventory added successfully" : "Product added successfully");
       return true;
+    } else {
+      toast.error(res.payload?.message || res.error?.message || "Failed to add product");
+      return false;
     }
-    return false;
   };
 
   const handleSubmit = async () => {
