@@ -14,6 +14,11 @@ import autoTable from "jspdf-autotable";
 import { toast } from "react-toastify";
 
 const toNum = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+const safeDate = (d) => {
+  if (!d || (typeof d === 'object' && !(d instanceof Date))) return '-';
+  const date = new Date(d);
+  return isNaN(date.getTime()) ? '-' : date.toLocaleDateString();
+};
 const formatNumber = (num) => {
   return toNum(num).toLocaleString("en-PK", {
     minimumFractionDigits: 2,
@@ -379,7 +384,7 @@ const TransactionHistoryModal = ({ open, onClose, customer, banks = [], onTransa
       const chequeDate = tr?.chequeDate ? new Date(tr.chequeDate).toLocaleDateString() : "-";
       
       return [
-        tr?.date ? new Date(tr.date).toLocaleDateString() : "-",
+        safeDate(tr?.date),
         type,
         tr?.description || "-",
         qty,
@@ -501,7 +506,7 @@ const TransactionHistoryModal = ({ open, onClose, customer, banks = [], onTransa
                   
                   return (
                     <TableRow key={row._id || index} hover>
-                      <TableCell>{row?.date ? new Date(row.date).toLocaleDateString() : "-"}</TableCell>
+                      <TableCell>{safeDate(row?.date)}</TableCell>
                       <TableCell sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {row?.description || "-"}
                       </TableCell>
